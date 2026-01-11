@@ -4,3 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+bevy = "0.15"
+bevy_egui = "0.31"
+
+[dev-dependencies]
+approx = "0.5"
+
+[lints.clippy]
+type_complexity = "allow"
+too_many_arguments = "allow"

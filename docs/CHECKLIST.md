@@ -6,25 +6,24 @@ A coding-focused, step-by-step checklist for implementing the orbital mechanics 
 
 ---
 
-## Phase 0: Foundation
+## Phase 0: Foundation ✓
 
 ### 0.1 Project Setup
-- [ ] Update `Cargo.toml` with dependencies:
+- [x] Update `Cargo.toml` with dependencies:
   ```toml
   [dependencies]
   bevy = "0.15"
-  bevy_egui = "0.31"  # verify compatibility
+  bevy_egui = "0.31"
   ```
-- [ ] Verify project compiles with `cargo build`
-- [ ] Create module structure in `src/`:
-  - [ ] `src/lib.rs` (library root, re-exports)
-  - [ ] `src/types.rs` (core physics types)
-  - [ ] `src/ephemeris/mod.rs` (ephemeris module root)
-  - [ ] `src/ephemeris/kepler.rs` (Kepler solver)
-  - [ ] `src/ephemeris/data.rs` (orbital elements constants)
+- [x] Verify project compiles with `cargo build`
+- [x] Create module structure in `src/` (binary-only, no lib.rs):
+  - [x] `src/types.rs` (core physics types)
+  - [x] `src/ephemeris/mod.rs` (ephemeris module root)
+  - [x] `src/ephemeris/kepler.rs` (Kepler solver)
+  - [x] `src/ephemeris/data.rs` (orbital elements constants)
 
 ### 0.2 Core Types (`src/types.rs`)
-- [ ] Define `BodyState` component:
+- [x] Define `BodyState` component:
   ```rust
   #[derive(Component, Clone, Debug)]
   pub struct BodyState {
@@ -33,7 +32,7 @@ A coding-focused, step-by-step checklist for implementing the orbital mechanics 
       pub mass: f64,
   }
   ```
-- [ ] Define `SimulationTime` resource:
+- [x] Define `SimulationTime` resource:
   ```rust
   #[derive(Resource)]
   pub struct SimulationTime {
@@ -42,7 +41,7 @@ A coding-focused, step-by-step checklist for implementing the orbital mechanics 
       pub paused: bool,
   }
   ```
-- [ ] Define unit conversion constants:
+- [x] Define unit conversion constants:
   ```rust
   pub const AU_TO_METERS: f64 = 1.495978707e11;
   pub const DEG_TO_RAD: f64 = std::f64::consts::PI / 180.0;
@@ -50,60 +49,53 @@ A coding-focused, step-by-step checklist for implementing the orbital mechanics 
   pub const SECONDS_PER_DAY: f64 = 86400.0;
   pub const G: f64 = 6.67430e-11;
   ```
-- [ ] Implement `unix_to_j2000_seconds()` function
-- [ ] Implement `j2000_seconds_to_date_string()` for display
+- [x] Implement `unix_to_j2000_seconds()` function
+- [x] Implement `j2000_seconds_to_date_string()` for display
 
 ### 0.3 Kepler Solver (`src/ephemeris/kepler.rs`)
-- [ ] Define `KeplerOrbit` struct with all orbital elements
-- [ ] Implement `solve_eccentric_anomaly()` using Newton's method:
-  - [ ] Initial guess: E = M
-  - [ ] Iterate until |delta| < 1e-12 or 50 iterations
-  - [ ] Handle high eccentricity edge cases
-- [ ] Implement `get_local_position(time: f64) -> DVec2`:
-  - [ ] Compute mean anomaly M(t)
-  - [ ] Solve for eccentric anomaly E
-  - [ ] Compute true anomaly ν
-  - [ ] Compute radius r
-  - [ ] Return (x, y) rotated by ω
-- [ ] Add `parent: Option<Entity>` field for hierarchical orbits
+- [x] Define `KeplerOrbit` struct with all orbital elements
+- [x] Implement `solve_eccentric_anomaly()` using Newton's method:
+  - [x] Initial guess: E = M (with better guess for high e)
+  - [x] Iterate until |delta| < 1e-12 or 50 iterations
+  - [x] Handle high eccentricity edge cases
+- [x] Implement `get_local_position(time: f64) -> DVec2`:
+  - [x] Compute mean anomaly M(t)
+  - [x] Solve for eccentric anomaly E
+  - [x] Compute true anomaly ν
+  - [x] Compute radius r
+  - [x] Return (x, y) rotated by ω
+- [x] Hierarchical orbits handled via `CelestialBodyId::parent()`
 
 ### 0.4 Orbital Data (`src/ephemeris/data.rs`)
-- [ ] Define `CelestialBodyData` struct (name, mass, radius, orbit, visual_scale)
-- [ ] Create constant arrays for planets:
-  - [ ] Sun (stationary at origin, mass only)
-  - [ ] Mercury, Venus, Earth, Mars
-  - [ ] Jupiter, Saturn, Uranus, Neptune
-- [ ] Create constant arrays for moons:
-  - [ ] Moon (Earth)
-  - [ ] Io, Europa, Ganymede, Callisto (Jupiter)
-  - [ ] Titan (Saturn)
-- [ ] All values in SI units (meters, kg, radians, seconds)
+- [x] Define `CelestialBodyData` struct (id, mass, radius, orbit, visual_scale)
+- [x] Create data for planets:
+  - [x] Sun (stationary at origin, mass only)
+  - [x] Mercury, Venus, Earth, Mars
+  - [x] Jupiter, Saturn, Uranus, Neptune
+- [x] Create data for moons:
+  - [x] Moon (Earth)
+  - [x] Io, Europa, Ganymede, Callisto (Jupiter)
+  - [x] Titan (Saturn)
+- [x] All values in SI units (meters, kg, radians, seconds)
 
 ### 0.5 Ephemeris Resource (`src/ephemeris/mod.rs`)
-- [ ] Define `Ephemeris` resource:
-  ```rust
-  #[derive(Resource)]
-  pub struct Ephemeris {
-      orbits: HashMap<Entity, KeplerOrbit>,
-      masses: HashMap<Entity, f64>,
-      radii: HashMap<Entity, f64>,
-  }
-  ```
-- [ ] Implement `get_position(entity, time) -> DVec2`
-- [ ] Implement `get_gravity_sources(time) -> Vec<(DVec2, f64)>`
-- [ ] Implement `check_collision(pos, time) -> Option<Entity>`
-- [ ] Handle hierarchical orbits (moons query parent position)
+- [x] Define `Ephemeris` resource with entity-to-ID mappings
+- [x] Implement `get_position(entity, time) -> DVec2`
+- [x] Implement `get_position_by_id(id, time) -> DVec2`
+- [x] Implement `get_gravity_sources(time) -> Vec<(DVec2, f64)>`
+- [x] Implement `check_collision(pos, time) -> Option<CelestialBodyId>`
+- [x] Handle hierarchical orbits (moons query parent position)
 
-### 0.6 Unit Tests (`src/ephemeris/tests.rs` or inline)
-- [ ] Test Kepler solver convergence for e=0 (circular)
-- [ ] Test Kepler solver convergence for e=0.2 (Mercury-like)
-- [ ] Test Kepler solver convergence for e=0.9 (high eccentricity)
-- [ ] Test Earth position at J2000 epoch (should be ~1 AU from Sun)
-- [ ] Test Moon position relative to Earth
-- [ ] Test unit conversions (AU↔meters, deg↔rad)
-- [ ] Verify orbital period: Earth completes orbit in ~365.25 days
+### 0.6 Unit Tests (inline in modules)
+- [x] Test Kepler solver convergence for e=0 (circular)
+- [x] Test Kepler solver convergence for e=0.2 (Mercury-like)
+- [x] Test Kepler solver convergence for e=0.9 (high eccentricity)
+- [x] Test Earth position at J2000 epoch (should be ~1 AU from Sun)
+- [x] Test Moon position relative to Earth
+- [x] Test unit conversions (AU↔meters, deg↔rad)
+- [x] Verify orbital period: Earth completes orbit in ~365.25 days
 
-**Phase 0 Acceptance:** All tests pass, `cargo test` succeeds, `cargo build` succeeds.
+**Phase 0 Acceptance:** ✓ All 27 tests pass, `cargo test` succeeds, `cargo build` succeeds.
 
 ---
 
