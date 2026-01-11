@@ -15,7 +15,7 @@ Visual representation of orbits, trajectories, and celestial bodies with accurat
  - [Physics Specification](./docs/PHYSICS.md)
 
 ## Code Style
- - Rust 2021 edition
+ - Rust 2024 edition
  - Bevy ECS architecture
  - Modular systems and components
  - Test-driven development for core physics and ephemeris calculations
