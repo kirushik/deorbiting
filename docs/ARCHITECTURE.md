@@ -1,13 +1,42 @@
 ## Architectural Overview
 
 ### 1. Tech Stack & Constraints
- - Engine: Bevy (Rust).
+ - Engine: Bevy 0.15 (Rust).
  - Renderer: 3D Renderer with Camera3dBundle set to Projection::Orthographic.
  - Physics Dimensions: 2D (x, y) logic, simulated on a flat plane.
  - Visual Dimensions: 3D (x, y, z) for z-indexing layers.
- - Math: glam::Vec2 for physics, glam::Vec3 for rendering.
+ - Math: glam::DVec2 (f64) for physics, glam::Vec3 (f32) for rendering.
+ - Precision: f64 for all physics calculations, converted to f32 only for Bevy Transform.
 
-### 2. Core Architecture: The "Split-World" Pattern
+### 2. Units & Scale
+
+#### Physics Units
+ - Position: Meters (f64)
+ - Velocity: Meters per second (f64)
+ - Time: Seconds (f64)
+ - Mass: Kilograms (f64)
+
+#### Internal Storage
+ - Full SI units (no AU scaling internally)
+ - Positions stored as meters from solar system barycenter
+
+#### Display Units (User-Facing)
+ - Toggleable between:
+   * Kilometers / km·s⁻¹ (human-readable)
+   * Astronomical Units / AU·day⁻¹ (astronomical convention)
+
+#### Conversion Pipeline
+ - Physics (f64 meters) → Camera-relative offset → Render (f32 scaled units)
+ - Camera zoom determines the render scale factor
+
+### 3. Camera Controls
+
+ - **Zoom:** Mouse scroll wheel (logarithmic scale)
+ - **Pan:** Click and drag (middle mouse button, or left mouse on background)
+ - **Focus:** Double-click on celestial body to center camera
+ - **Zoom Range:** From full solar system (~50 AU field of view) to planetary close-up (~0.01 AU)
+
+### 4. Core Architecture: The "Split-World" Pattern
 
 We strictly decouple **Simulation Space** (Physics) from **Render Space** (Visuals) to allow for "Visual Distortion" (inflating planets for visibility without breaking orbits).
 
@@ -27,26 +56,23 @@ We strictly decouple **Simulation Space** (Physics) from **Render Space** (Visua
       * 3.0: Spacecraft/Player
       * 4.0: UI Handles
 
-### 3. Data Structures (ECS)
+### 5. Data Structures (ECS)
 ```rust
 // PHYSICS COMPONENTS (The Truth)
 // Do not query Transform for physics calculations.
 #[derive(Component)]
 struct BodyState {
-    pos: Vec2,
-    vel: Vec2,
-    mass: f32,
+    pos: DVec2,   // glam::DVec2 (f64) - meters from barycenter
+    vel: DVec2,   // glam::DVec2 (f64) - meters per second
+    mass: f64,    // kilograms
 }
 
 // Deterministic orbital parameters for planets
+// See EPHEMERIS.md for full Keplerian elements
 #[derive(Component)]
 struct CelestialBody {
-    radius: f32,       // Physical radius
-    visual_scale: f32, // How much to inflate visually
-    // Keplerian elements or simple circular orbit data
-    orbit_radius: f32,
-    orbit_speed: f32,
-    phase: f32,
+    radius: f64,        // Physical radius in meters
+    visual_scale: f32,  // How much to inflate visually (render-only)
 }
 
 // PREDICTION DATA
@@ -54,16 +80,26 @@ struct CelestialBody {
 struct TrajectoryPath {
     // Stores position AND the specific time that position occurs
     // Necessary because distortion depends on where the planet IS at that specific time
-    points: Vec<(Vec2, f32)>, 
+    points: Vec<(DVec2, f64)>,  // (position in meters, time in seconds)
 }
 
-// SINGLE SOURCE OF TRUTH
+// SINGLE SOURCE OF TRUTH FOR CELESTIAL POSITIONS
 #[derive(Resource)]
-struct Ephemeris;
-// Must implement: fn get_planet_pos(&self, entity: Entity, time: f32) -> Vec2
+struct Ephemeris {
+    // Contains KeplerOrbit data for all celestial bodies
+    // See EPHEMERIS.md for implementation details
+}
+
+impl Ephemeris {
+    /// Get position of a celestial body at a given time
+    fn get_position(&self, body: Entity, time: f64) -> DVec2 { ... }
+
+    /// Get all gravitating bodies for force calculations
+    fn get_gravity_sources(&self, time: f64) -> Vec<(DVec2, f64)> { ... }  // (pos, mass)
+}
 ```
 
-### 4. The Visual Distortion Algorithm
+### 6. The Visual Distortion Algorithm
 
 To make the game playable, planets are rendered larger than their physics bodies. To prevent the asteroid from visually clipping inside a planet or looking like it's crashing when it's actually in a safe orbit, we apply a distortion to the asteroid's visual position based on its proximity to the nearest planet.
 
@@ -73,40 +109,66 @@ To make the game playable, planets are rendered larger than their physics bodies
  - Push the Asteroid's visual position away from the planet center by radius_delta.
 
 ```rust
-// Reference Implementation for AI
-fn apply_visual_distortion(obj_pos: Vec2, planet_pos: Vec2, phys_r: f32, visual_scale: f32) -> Vec2 {
+// Reference Implementation
+// Note: Only considers nearest planet. May cause visual discontinuities
+// at boundaries between planets' influence zones - acceptable for v1.
+fn apply_visual_distortion(
+    obj_pos: DVec2,
+    planet_pos: DVec2,
+    phys_r: f64,
+    visual_scale: f32
+) -> DVec2 {
     let delta = obj_pos - planet_pos;
     let dist = delta.length();
-    let visual_r = phys_r * visual_scale;
-    
+    let visual_r = phys_r * (visual_scale as f64);
+
     // If we are far away, the offset is constant (the radius difference)
     // If we are inside the planet, logic might need clamping, but for now:
     let radius_delta = visual_r - phys_r;
-    
-    let new_dist = dist + radius_delta; 
+
+    let new_dist = dist + radius_delta;
     let dir = delta.normalize_or_zero();
-    
+
     planet_pos + (dir * new_dist)
 }
 ```
 
-### 5. Systems Pipeline
+### 7. Collision Detection
+
+#### Detection
+ - Check if asteroid position enters any planet's physical radius
+ - Performed every physics step
+
+#### Response
+ - Pause simulation immediately
+ - Display "Impact!" overlay with visual effect (explosion/flash)
+ - User must manually reset or respawn asteroid
+
+```rust
+fn check_collision(asteroid_pos: DVec2, planet_pos: DVec2, planet_radius: f64) -> bool {
+    (asteroid_pos - planet_pos).length() < planet_radius
+}
+```
+
+### 8. Systems Pipeline
+
 #### A. Update Loop (Play Mode)
-1. physics_step: Updates BodyState.pos based on velocity and gravity.
-2. sync_visuals:
+1. `physics_step`: Runs IAS15 integrator, updates BodyState.pos/vel based on gravity.
+2. `check_collisions`: Detects impacts, triggers pause if collision detected.
+3. `sync_visuals`:
    - Queries BodyState and Ephemeris.
    - Calculates the distorted position.
-   - Writes to Transform.translation.
+   - Converts f64 to f32 and writes to Transform.translation.
 
-#### B. Prediction Loop (Pause/Edit Mode)
-1. input_handling: User drags velocity handle -> Updates BodyState.vel.
-2. predict_trajectory:
+#### B. Prediction Loop (Always Active)
+1. `input_handling`: User drags velocity handle -> Updates BodyState.vel.
+2. `predict_trajectory`:
    - Clones current state.
-   - Runs a fast loop (e.g., 500 ticks).
-   - Calls Ephemeris to get gravity sources at future times $t+n$.
+   - Runs IAS15 loop for N steps into the future.
+   - Calls Ephemeris to get gravity sources at future times t+n.
    - Stores results in TrajectoryPath.
-3. draw_trajectory:
+3. `draw_trajectory`:
    - Iterates TrajectoryPath.
    - Crucial: For every point, looks up where the planet was at that point's time.
    - Applies apply_visual_distortion to the point.
-   - Draws line using Gizmos.
+   - Draws line using Bevy Gizmos.
