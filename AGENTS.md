@@ -1,28 +1,90 @@
-#  Orbital Mechanics & Visualization Tool
+# Orbital Mechanics & Visualization Tool
 
 A Rust + Bevy based Linux desktop app for simulating asteroid deorbiting missions with accurate orbital mechanics and a user-friendly interface.
 
-## Project overview
+## Project Overview
 
 Desktop GUI app, Google Maps style: 2D view of the solar system with zoom/pan, click-and-drag spacecraft positions and velocity vectors, and real-time orbital mechanics simulation.
 Simulation time is adjustable (pause, real-time, fast-forward).
 Visual representation of orbits, trajectories, and celestial bodies with accurate physics.
 
-## Specs and documentation
- - [Architecture Overview](./docs/ARCHITECTURE.md)
- - [Implementation Roadmap](./docs/ROADMAP.md)
- - [Ephemeris & Orbital Elements](./docs/EPHEMERIS.md)
- - [Physics Specification](./docs/PHYSICS.md)
- - [UI Specification](./docs/UI.md)
+## Documentation Structure
+
+### Specifications (_what_ to build)
+ - [Architecture Overview](./docs/ARCHITECTURE.md) - Split-world pattern, ECS components, coordinate systems
+ - [Physics Specification](./docs/PHYSICS.md) - IAS15 integrator, time system, gravity model
+ - [Ephemeris & Orbital Elements](./docs/EPHEMERIS.md) - Kepler solver, J2000 orbital elements
+ - [UI Specification](./docs/UI.md) - Time controls, velocity handle, panels, overlays
+
+### Implementation Guides (_how_ to build)
+ - [Implementation Roadmap](./docs/ROADMAP.md) - High-level phase descriptions
+ - [Implementation Checklist](./docs/CHECKLIST.md) - **Detailed coding tasks with checkboxes**
+
+### Serena Memories (_why_ decisions were made)
+Use Serena's memory system to persist and retrieve design rationale across sessions:
+ - `design-decisions.md` - Core technical decisions with rationale
+
+## Agent Workflow
+
+### Starting a New Session
+
+1. **Read the checklist first:** Open `docs/CHECKLIST.md` to see current progress and next tasks
+2. **Load relevant memories:**
+   ```
+   list_memories        # See available context
+   read_memory design-decisions.md   # Understand why decisions were made
+   ```
+3. **Check current phase:** Identify which phase you're in and what's incomplete
+4. **Work through tasks:** Complete checklist items in order, checking them off as done
+
+### During Implementation
+
+- **Checklist = _what_:** The specific coding tasks to complete
+- **Spec docs = _details_:** Implementation specifics, data structures, algorithms
+- **Memories = _why_:** Design rationale, trade-offs considered, decisions made
+
+### Before Ending a Session
+
+1. **Update checklist:** Mark completed items with `[x]`
+2. **Update memories:** If you made significant decisions, write them to memory:
+   ```
+   write_memory <topic>.md <content>
+   ```
+3. **Note blockers:** If something is blocked, add a note in the checklist
+
+### Cross-Session Continuity
+
+The checklist and memories enable any agent (or the same agent in a new context) to:
+- Pick up exactly where work left off
+- Understand not just _what_ to build but _why_ it's designed that way
+- Avoid re-debating settled decisions
+- Maintain consistency across implementation
 
 ## Code Style
+
  - Rust 2024 edition
- - Bevy ECS architecture
+ - Bevy 0.15 ECS architecture
  - Modular systems and components
  - Test-driven development for core physics and ephemeris calculations
  - Concise inline documentation
+ - f64 for physics, f32 for rendering
 
-## Useful MCP tooling
-Please use **Context7** MCP server for looking up any relevant documentation for software libraries. If some library you need is not documented there, please highlight that to me, so I can add the missing ones.
-Please use **Serena** MCP server for structured code search, generation and editing, as well as for **memory management** during this project. It's like IDE for AI.
-When planning/designing, please rely extensively on the **Sequential Thinking** MCP server to ensure all aspects are covered and thinking is coordinated across sub-agents.
+## MCP Tooling
+
+### Context7
+Use for looking up documentation for external libraries (Bevy, bevy_egui, glam, etc.). If a library isn't documented there, flag it so it can be added.
+
+### Serena
+Primary tool for this project:
+- **Code navigation:** `find_symbol`, `get_symbols_overview`, `find_referencing_symbols`
+- **Code editing:** `replace_symbol_body`, `insert_after_symbol`, `insert_before_symbol`
+- **Memory management:** `list_memories`, `read_memory`, `write_memory`, `edit_memory`
+- **Pattern search:** `search_for_pattern` for finding code across files
+
+IMPORTANT: Never use Serena's `execute_shell_command` tool, it is broken and unsafe. Use MCP's built-in file operations instead, and if you need to launch shell commands, do so manually outside MCP.
+
+### Sequential Thinking
+Use for complex planning or design decisions that require structured reasoning across multiple steps. Especially useful when:
+- Designing new systems or features
+- Debugging complex issues
+- Making architectural decisions
