@@ -1,0 +1,136 @@
+{
+  "generated_at_unix": 1768157657,
+  "start_time": "2000-01-01 12:00",
+  "stop_time": "2200-01-01 12:00",
+  "years": 200,
+  "planet_step": "1 d",
+  "moon_step": "2 h",
+  "files": [
+    {
+      "name": "Mercury",
+      "body_id": 1,
+      "path": "assets/ephemeris/mercury.bin",
+      "start_t0": 0.0,
+      "stop_t": 6311433600.0,
+      "step_seconds": 86400.0,
+      "count": 73050
+    },
+    {
+      "name": "Venus",
+      "body_id": 2,
+      "path": "assets/ephemeris/venus.bin",
+      "start_t0": 0.0,
+      "stop_t": 6311433600.0,
+      "step_seconds": 86400.0,
+      "count": 73050
+    },
+    {
+      "name": "Earth",
+      "body_id": 3,
+      "path": "assets/ephemeris/earth.bin",
+      "start_t0": 0.0,
+      "stop_t": 6311433600.0,
+      "step_seconds": 86400.0,
+      "count": 73050
+    },
+    {
+      "name": "Mars",
+      "body_id": 4,
+      "path": "assets/ephemeris/mars.bin",
+      "start_t0": 0.0,
+      "stop_t": 6311433600.0,
+      "step_seconds": 86400.0,
+      "count": 73050
+    },
+    {
+      "name": "Jupiter",
+      "body_id": 5,
+      "path": "assets/ephemeris/jupiter.bin",
+      "start_t0": 0.0,
+      "stop_t": 6311433600.0,
+      "step_seconds": 86400.0,
+      "count": 73050
+    },
+    {
+      "name": "Saturn",
+      "body_id": 6,
+      "path": "assets/ephemeris/saturn.bin",
+      "start_t0": 0.0,
+      "stop_t": 6311433600.0,
+      "step_seconds": 86400.0,
+      "count": 73050
+    },
+    {
+      "name": "Uranus",
+      "body_id": 7,
+      "path": "assets/ephemeris/uranus.bin",
+      "start_t0": 0.0,
+      "stop_t": 6311433600.0,
+      "step_seconds": 86400.0,
+      "count": 73050
+    },
+    {
+      "name": "Neptune",
+      "body_id": 8,
+      "path": "assets/ephemeris/neptune.bin",
+      "start_t0": 0.0,
+      "stop_t": 6311433600.0,
+      "step_seconds": 86400.0,
+      "count": 73050
+    },
+    {
+      "name": "Moon",
+      "body_id": 9,
+      "path": "assets/ephemeris/moon.bin",
+      "start_t0": 0.0,
+      "stop_t": 3534364800.0,
+      "step_seconds": 7199.99997317791,
+      "count": 105182
+    },
+    {
+      "name": "Io",
+      "body_id": 10,
+      "path": "assets/ephemeris/io.bin",
+      "start_t0": 0.0,
+      "stop_t": 3534364800.0,
+      "step_seconds": 7199.99997317791,
+      "count": 105182
+    },
+    {
+      "name": "Europa",
+      "body_id": 11,
+      "path": "assets/ephemeris/europa.bin",
+      "start_t0": 0.0,
+      "stop_t": 3534364800.0,
+      "step_seconds": 7199.99997317791,
+      "count": 105182
+    },
+    {
+      "name": "Ganymede",
+      "body_id": 12,
+      "path": "assets/ephemeris/ganymede.bin",
+      "start_t0": 0.0,
+      "stop_t": 3534364800.0,
+      "step_seconds": 7199.99997317791,
+      "count": 105182
+    },
+    {
+      "name": "Callisto",
+      "body_id": 13,
+      "path": "assets/ephemeris/callisto.bin",
+      "start_t0": 0.0,
+      "stop_t": 3534364800.0,
+      "step_seconds": 7199.99997317791,
+      "count": 105182
+    },
+    {
+      "name": "Titan",
+      "body_id": 14,
+      "path": "assets/ephemeris/titan.bin",
+      "start_t0": 0.0,
+      "stop_t": 3534364800.0,
+      "step_seconds": 7199.99997317791,
+      "count": 105182
+    }
+  ]
+}

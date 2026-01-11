@@ -7,12 +7,34 @@ We use **Analytic Keplerian Orbits** rather than N-body simulation for planets (
  - **Source:** [NASA JPL Horizons System](https://ssd.jpl.nasa.gov/horizons/)
  - **Simplified Model:** For 2D, we ignore Inclination ($i$) and Longitude of Ascending Node ($\Omega$)
 
-## 2. Reference Epoch
+## 2. Reference Epoch & Simulation Time
 
- - **Epoch:** J2000.0 (January 1, 2000, 12:00 TT)
- - All orbital elements referenced to J2000 ecliptic plane
- - **Simulation start time:** User-configurable, default to current real-world date
- - Time measured as seconds since J2000 epoch
+- **Epoch:** J2000.0 (January 1, 2000, 12:00 TT)
+- All ephemeris data is referenced to the J2000 ecliptic plane.
+- **Simulation time origin:** `t = 0` is J2000.0.
+- Time is measured as **seconds since J2000** (stored as `f64`).
+
+### Time scale / TT vs UTC
+The project treats J2000 seconds as a *uniform* game time axis. We intentionally ignore:
+- leap seconds
+- TT/UTC (or TT/TDB) offsets
+
+This is accurate enough for a game and avoids pulling in heavy time libraries.
+
+### Simulation coverage / constraints
+To keep the runtime ephemeris simple and reproducible, the table-based ephemeris is generated for a fixed window starting at J2000:
+
+- **Coverage:** from `t = 0` (J2000) forward for ~500–600 years.
+- Negative times are intentionally **not supported** by the table ephemeris.
+
+### Frame / origin (important)
+The simulation uses a **heliocentric 2D frame**:
+
+- **Origin:** Sun at `(0, 0)`
+- **Plane:** J2000 ecliptic
+- **Coordinates:** `x,y` in meters
+
+All bodies (planets and major moons) are provided in this same heliocentric frame for simplicity.
 
 ### J2000 Epoch Constants
 ```rust

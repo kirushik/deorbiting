@@ -6,11 +6,11 @@
 |----------|--------|-----------|
 | Precision | f64 physics, f32 render | Orbital accuracy requires f64 for meter-scale solar system |
 | Integrator | IAS15 | Adaptive 15th-order, machine-precision energy conservation |
-| Time base | 1 sim-day = 1 second | Good balance for observing planetary motion |
-| Moons | Parent-relative Kepler | Natural hierarchy: moon_pos = planet_pos + local_orbit |
+| Time base | `f64` seconds since J2000 (approx, uniform; ignore TT/UTC + leap seconds) | Good-enough game time axis; avoids heavy time libs | Good balance for observing planetary motion |
+| Moons | Treat as heliocentric in ephemeris tables (2D), but keep `CelestialBodyId::parent()` for gameplay/organization | Simplest runtime ephemeris usage; avoids mixed frames | Natural hierarchy: moon_pos = planet_pos + local_orbit |
 | Distortion | Nearest planet only | Simple v1, may have visual artifacts at boundaries |
 | Camera | Scroll zoom + drag pan | Standard map controls |
-| Orbit data | Real JPL J2000 epoch | Accuracy with real planetary positions |
+| Orbit data | Table-based ephemeris generated from JPL Horizons (vectors) covering ~200y from J2000 | Much less drift than fixed Kepler elements; still lightweight at runtime | Accuracy with real planetary positions |
 | Bevy version | 0.15 | Latest stable |
 | Collision | Pause + impact effect | Clear feedback for hit/miss scenarios |
 | Velocity UI | Draggable arrow | KSP-style, intuitive |
