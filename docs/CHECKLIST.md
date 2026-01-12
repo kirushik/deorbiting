@@ -102,67 +102,67 @@ A coding-focused, step-by-step checklist for implementing the orbital mechanics 
 ## Phase 1: The Static Universe
 
 ### 1.1 Bevy App Setup (`src/main.rs`)
-- [ ] Create Bevy `App` with default plugins
-- [ ] Add orthographic camera:
+- [x] Create Bevy `App` with default plugins
+- [x] Add orthographic camera:
   ```rust
   Camera3dBundle {
       projection: Projection::Orthographic(ortho),
       ..default()
   }
   ```
-- [ ] Set initial camera position (z=1000 or appropriate)
-- [ ] Add `Ephemeris` resource to app
-- [ ] Add `SimulationTime` resource with current date
+- [x] Set initial camera position (z=1000 or appropriate)
+- [x] Add `Ephemeris` resource to app
+- [x] Add `SimulationTime` resource with current date
 
 ### 1.2 Camera System (`src/camera.rs`)
-- [ ] Create `CameraPlugin`
-- [ ] Implement zoom system:
-  - [ ] Read mouse scroll wheel input
-  - [ ] Apply logarithmic zoom (multiply/divide by factor)
-  - [ ] Clamp to min/max zoom levels
-- [ ] Implement pan system:
-  - [ ] Detect middle mouse or left mouse on background
-  - [ ] Convert screen delta to world delta
-  - [ ] Update camera position
+- [x] Create `CameraPlugin`
+- [x] Implement zoom system:
+  - [x] Read mouse scroll wheel input
+  - [x] Apply logarithmic zoom (multiply/divide by factor)
+  - [x] Clamp to min/max zoom levels
+- [x] Implement pan system:
+  - [x] Detect middle mouse or left mouse on background
+  - [x] Convert screen delta to world delta
+  - [x] Update camera position
 - [ ] Implement focus system:
   - [ ] Detect double-click on entity
   - [ ] Smoothly move camera to center on entity
-- [ ] Define zoom constants (MIN_ZOOM, MAX_ZOOM, ZOOM_SPEED)
+- [x] Define zoom constants (MIN_ZOOM, MAX_ZOOM, ZOOM_SPEED)
 
 ### 1.3 Celestial Body Spawning (`src/render/bodies.rs`)
-- [ ] Create `CelestialBodyPlugin`
-- [ ] Define `CelestialBody` component (radius, visual_scale, name)
-- [ ] Create `spawn_solar_system()` startup system:
-  - [ ] Spawn Sun entity with mesh and material
-  - [ ] Spawn each planet entity
-  - [ ] Register each entity in `Ephemeris` resource
-- [ ] Create sphere meshes for each body:
-  - [ ] Size based on `radius * visual_scale`
-  - [ ] Color approximating real appearance
-- [ ] Spawn moons with parent reference
+- [x] Create `CelestialBodyPlugin`
+- [x] Define `CelestialBody` component (radius, visual_scale, name)
+- [x] Create `spawn_solar_system()` startup system:
+  - [x] Spawn Sun entity with mesh and material
+  - [x] Spawn each planet entity
+  - [x] Register each entity in `Ephemeris` resource
+- [x] Create sphere meshes for each body:
+  - [x] Size based on `radius * visual_scale`
+  - [x] Color approximating real appearance
+- [x] Spawn moons with parent reference
 
 ### 1.4 Position Sync System (`src/render/sync.rs`)
-- [ ] Create system `sync_celestial_positions`:
-  - [ ] Query all entities with `CelestialBody`
-  - [ ] Get position from `Ephemeris::get_position(entity, time)`
-  - [ ] Convert DVec2 (f64) to Vec3 (f32) for Transform
-  - [ ] Apply appropriate z-layer (2.0 for celestial bodies)
-- [ ] Add system to `Update` schedule
+- [x] Create system `sync_celestial_positions`:
+  - [x] Query all entities with `CelestialBody`
+  - [x] Get position from `Ephemeris::get_position(entity, time)`
+  - [x] Convert DVec2 (f64) to Vec3 (f32) for Transform
+  - [x] Apply appropriate z-layer (2.0 for celestial bodies)
+- [x] Add system to `Update` schedule
 
 ### 1.5 Visual Polish (`src/render/background.rs`)
-- [ ] Create starfield background:
-  - [ ] Spawn many small white dots at z=0
-  - [ ] Random positions covering viewport
+- [x] Create starfield background:
+  - [x] Spawn many small white dots at z=0
+  - [x] Random positions covering viewport
   - [ ] Or: use a textured quad
-- [ ] Add simple directional light (from Sun direction)
+- [x] Add simple directional light (from Sun direction)
 - [ ] Create planetary rings for Saturn (flat disc mesh)
   - [ ] Optional: Uranus and Neptune rings
 
 ### 1.6 Time Advancement
-- [ ] Create `advance_time` system:
-  - [ ] Read `SimulationTime.scale` and `paused`
-  - [ ] Add `delta_seconds * scale * SECONDS_PER_DAY` to `current`
-- [ ] Run in `Update` schedule
+- [x] Create `advance_time` system:
+  - [x] Read `SimulationTime.scale` and `paused`
+  - [x] Add `delta_seconds * scale * SECONDS_PER_DAY` to `current`
+- [x] Run in `Update` schedule
 
 **Phase 1 Acceptance:** App runs, shows Sun and planets orbiting correctly, camera zoom/pan works, planets at correct positions for current date.
 

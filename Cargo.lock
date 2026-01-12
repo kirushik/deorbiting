@@ -1884,6 +1884,7 @@ dependencies = [
  "approx",
  "bevy",
  "bevy_egui",
+ "rand",
  "thiserror 2.0.17",
 ]
 
