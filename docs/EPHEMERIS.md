@@ -2,7 +2,7 @@
 
 ## 1. Data Source
 
-We use **Analytic Keplerian Orbits** rather than N-body simulation for planets (too unstable for a game background).
+We use tables exported by JPL Horizons, falling back to **Analytic Keplerian Orbits** (with alignment to the table-provided data at the boundary, to avoid trajectory discontinuities) rather than N-body simulation for planets (too unstable for a game background).
 
  - **Source:** [NASA JPL Horizons System](https://ssd.jpl.nasa.gov/horizons/)
  - **Simplified Model:** For 2D, we ignore Inclination ($i$) and Longitude of Ascending Node ($\Omega$)

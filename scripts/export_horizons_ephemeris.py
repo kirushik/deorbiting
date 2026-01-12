@@ -157,13 +157,19 @@ def _fetch_horizons_vectors_text_chunked(
     start_time: str,
     stop_time: str,
     step_size: str,
-) -> str:
+    *,
+    max_stop_year: int | None,
+) -> tuple[str, str]:
     """
     Fetch Horizons VECTORS output, automatically chunking the requested time range
     if Horizons refuses due to the output line limit.
 
     We keep the step-size fixed (accuracy/cadence choice) and split the time span
     into smaller windows until Horizons returns a normal $$SOE/$$EOE block.
+
+    If `max_stop_year` is not None, we clamp STOP_TIME's year to that value to avoid
+    Horizons hard-failing on unsupported far-future spans. The effective stop time
+    is returned alongside the response text so callers can reflect reality in the manifest.
 
     The returned string is a concatenation of $$SOE/$$EOE blocks (headers removed),
     so downstream parsing can treat it as one longer SOE/EOE section.
@@ -183,33 +189,35 @@ def _fetch_horizons_vectors_text_chunked(
         default source (often DE441 for major bodies) can refuse requests beyond
         a max year for some targets.
 
-        For our game use-case, we clamp the stop year to a conservative limit to
-        avoid hard failure when asking for 2600+ ranges.
+        For our game use-case, we optionally clamp the stop year to avoid hard failure
+        when asking for far-future ranges.
 
-        If you need a higher max year later, adjust `MAX_HORIZONS_YEAR` and/or
-        expose it as a CLI flag.
+        If you need a higher max year later, pass `--max_stop_year` or disable clamping
+        with `--max_stop_year 0`.
         """
-        MAX_HORIZONS_YEAR = 2500
+        if max_stop_year is None:
+            return stop_t
+
         start_year = parse_year(start_t)
         stop_year = parse_year(stop_t)
 
         # If caller asks for an unreasonably high stop year, clamp.
-        if stop_year > MAX_HORIZONS_YEAR:
+        if stop_year > max_stop_year:
             # Ensure stop stays after start.
-            clamped_year = max(start_year, MAX_HORIZONS_YEAR)
+            clamped_year = max(start_year, max_stop_year)
             return with_year(stop_t, clamped_year)
 
         return stop_t
 
-    stop_time = clamp_stop_time_for_horizons(start_time, stop_time)
+    effective_stop_time = clamp_stop_time_for_horizons(start_time, stop_time)
 
     # Initial request
-    url = _build_horizons_url(command, start_time, stop_time, step_size)
+    url = _build_horizons_url(command, start_time, effective_stop_time, step_size)
     text = _http_get_text(url)
 
     # If the response isn't a line-limit error, return it (success or any other error).
     if not _looks_like_horizons_line_limit_error(text):
-        return text
+        return text, effective_stop_time
 
     # If we hit the line limit, recursively bisect the time window by calendar year.
     # This keeps things simple and deterministic.
@@ -218,7 +226,7 @@ def _fetch_horizons_vectors_text_chunked(
     #   "YYYY-MM-DD HH:MM"
     # and the span is within a few centuries.
     start_year = parse_year(start_time)
-    stop_year = parse_year(stop_time)
+    stop_year = parse_year(effective_stop_time)
 
     if stop_year <= start_year:
         # Can't split further; surface the original error.
@@ -227,11 +235,11 @@ def _fetch_horizons_vectors_text_chunked(
     mid_year = (start_year + stop_year) // 2
     mid_time = f"{mid_year}-01-01 12:00"
 
-    left = _fetch_horizons_vectors_text_chunked(
-        command, start_time, mid_time, step_size
+    left, left_stop = _fetch_horizons_vectors_text_chunked(
+        command, start_time, mid_time, step_size, max_stop_year=max_stop_year
     )
-    right = _fetch_horizons_vectors_text_chunked(
-        command, mid_time, stop_time, step_size
+    right, right_stop = _fetch_horizons_vectors_text_chunked(
+        command, mid_time, effective_stop_time, step_size, max_stop_year=max_stop_year
     )
 
     # Merge by splicing SOE/EOE blocks together.
@@ -245,7 +253,10 @@ def _fetch_horizons_vectors_text_chunked(
         return "$$SOE\n" + t[i + len("$$SOE") : j].lstrip("\n") + "\n$$EOE\n"
 
     # Concatenate the two blocks; headers are irrelevant to parsing.
-    return extract_block_or_passthrough(left) + extract_block_or_passthrough(right)
+    # Effective stop time should match the right segment's stop (which is derived from the original
+    # effective stop time), but return it explicitly for correctness.
+    stitched = extract_block_or_passthrough(left) + extract_block_or_passthrough(right)
+    return stitched, right_stop
 
 
 _CSV_LINE_RE = re.compile(
@@ -351,7 +362,7 @@ def _infer_step_seconds(
     return dt_days * 86400.0
 
 
-def export_one(spec: ExportSpec, out_dir: str) -> dict:
+def export_one(spec: ExportSpec, out_dir: str, *, max_stop_year: int | None) -> dict:
     if spec.name == "Sun":
         raise ValueError("Sun is not exported (it is always the origin)")
 
@@ -367,11 +378,12 @@ def export_one(spec: ExportSpec, out_dir: str) -> dict:
 
     # Large spans (e.g. 600 years @ 1d cadence) can exceed Horizons line limits.
     # Auto-chunk by calendar year to keep step-size stable.
-    text = _fetch_horizons_vectors_text_chunked(
+    text, effective_stop_time = _fetch_horizons_vectors_text_chunked(
         command=command,
         start_time=spec.start_time,
         stop_time=spec.stop_time,
         step_size=spec.step_size,
+        max_stop_year=max_stop_year,
     )
 
     # If chunking returned concatenated blocks, just parse each SOE/EOE block and merge.
@@ -401,6 +413,9 @@ def export_one(spec: ExportSpec, out_dir: str) -> dict:
         "name": spec.name,
         "body_id": body_id,
         "path": out_path,
+        "start_time": spec.start_time,
+        "requested_stop_time": spec.stop_time,
+        "effective_stop_time": effective_stop_time,
         "start_t0": start_t0,
         "stop_t": stop_t,
         "step_seconds": step_seconds,
@@ -414,14 +429,25 @@ def main(argv: List[str]) -> int:
     p.add_argument("--years", type=int, default=600)
     p.add_argument("--planet_step", default="1 d")
     p.add_argument("--moon_step", default="2 h")
+    p.add_argument(
+        "--max_stop_year",
+        type=int,
+        default=2500,
+        help=(
+            "Optional clamp on STOP_TIME year to avoid Horizons hard-failing on far-future ranges. "
+            "Set to 0 to disable clamping entirely."
+        ),
+    )
     args = p.parse_args(argv)
 
     # Ensure output directory exists before any per-body export begins.
     os.makedirs(args.out, exist_ok=True)
 
-    # Coverage: [J2000, J2000 + years]
+    # Coverage: [J2000, J2000 + years] (requested).
     start_time = "2000-01-01 12:00"
-    stop_time = f"{2000 + args.years}-01-01 12:00"
+    requested_stop_time = f"{2000 + args.years}-01-01 12:00"
+
+    max_stop_year = None if args.max_stop_year == 0 else args.max_stop_year
 
     planet_names = [
         "Mercury",
@@ -441,7 +467,7 @@ def main(argv: List[str]) -> int:
             ExportSpec(
                 name=name,
                 start_time=start_time,
-                stop_time=stop_time,
+                stop_time=requested_stop_time,
                 step_size=args.planet_step,
             )
         )
@@ -450,7 +476,7 @@ def main(argv: List[str]) -> int:
             ExportSpec(
                 name=name,
                 start_time=start_time,
-                stop_time=stop_time,
+                stop_time=requested_stop_time,
                 step_size=args.moon_step,
             )
         )
@@ -458,16 +484,59 @@ def main(argv: List[str]) -> int:
     manifest = {
         "generated_at_unix": int(time.time()),
         "start_time": start_time,
-        "stop_time": stop_time,
-        "years": args.years,
+        "requested_stop_time": requested_stop_time,
+        "years_requested": args.years,
+        "max_stop_year": args.max_stop_year,
         "planet_step": args.planet_step,
         "moon_step": args.moon_step,
         "files": [],
+        "coverage_summary": {
+            "min_start_t0": None,
+            "max_start_t0": None,
+            "min_stop_t": None,
+            "max_stop_t": None,
+            "effective_stop_time_min": None,
+            "effective_stop_time_max": None,
+        },
     }
 
     for spec in specs:
-        entry = export_one(spec, args.out)
+        entry = export_one(spec, args.out, max_stop_year=max_stop_year)
         manifest["files"].append(entry)
+
+        cov = manifest["coverage_summary"]
+
+        cov["min_start_t0"] = (
+            entry["start_t0"]
+            if cov["min_start_t0"] is None
+            else min(cov["min_start_t0"], entry["start_t0"])
+        )
+        cov["max_start_t0"] = (
+            entry["start_t0"]
+            if cov["max_start_t0"] is None
+            else max(cov["max_start_t0"], entry["start_t0"])
+        )
+        cov["min_stop_t"] = (
+            entry["stop_t"]
+            if cov["min_stop_t"] is None
+            else min(cov["min_stop_t"], entry["stop_t"])
+        )
+        cov["max_stop_t"] = (
+            entry["stop_t"]
+            if cov["max_stop_t"] is None
+            else max(cov["max_stop_t"], entry["stop_t"])
+        )
+
+        cov["effective_stop_time_min"] = (
+            entry["effective_stop_time"]
+            if cov["effective_stop_time_min"] is None
+            else min(cov["effective_stop_time_min"], entry["effective_stop_time"])
+        )
+        cov["effective_stop_time_max"] = (
+            entry["effective_stop_time"]
+            if cov["effective_stop_time_max"] is None
+            else max(cov["effective_stop_time_max"], entry["effective_stop_time"])
+        )
 
     manifest_path = f"{args.out}/manifest.json"
     with open(manifest_path, "w", encoding="utf-8") as f:

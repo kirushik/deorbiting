@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 bevy = "0.15"
 bevy_egui = "0.31"
+thiserror = "2"
 
 [dev-dependencies]
 approx = "0.5"
