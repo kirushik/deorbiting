@@ -2,7 +2,13 @@
 //!
 //! Handles the visual representation of Sun, planets, and moons.
 
-use bevy::{math::DVec2, prelude::*};
+use std::f32::consts::PI;
+
+use bevy::{
+    math::DVec2,
+    prelude::*,
+    render::mesh::{Indices, PrimitiveTopology},
+};
 
 use crate::camera::RENDER_SCALE;
 use crate::ephemeris::{
@@ -113,9 +119,95 @@ fn spawn_solar_system(
             ))
             .id();
 
+        // Add rings to Saturn
+        if id == CelestialBodyId::Saturn {
+            spawn_saturn_rings(&mut commands, &mut meshes, &mut materials, entity, render_radius);
+        }
+
         // Register entity in ephemeris for later position lookups
         ephemeris.register(entity, id);
     }
 
     info!("Spawned {} celestial bodies", all_bodies().len());
+}
+
+/// Spawn Saturn's rings as a child entity.
+fn spawn_saturn_rings(
+    commands: &mut Commands,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    materials: &mut ResMut<Assets<StandardMaterial>>,
+    saturn_entity: Entity,
+    saturn_radius: f32,
+) {
+    // Ring dimensions relative to Saturn's radius
+    let inner_radius = saturn_radius * 1.2;
+    let outer_radius = saturn_radius * 2.3;
+
+    // Create ring mesh (annulus)
+    let ring_mesh = create_ring_mesh(inner_radius, outer_radius, 64);
+    let mesh_handle = meshes.add(ring_mesh);
+
+    // Semi-transparent tan/beige color for the rings
+    let ring_material = materials.add(StandardMaterial {
+        base_color: Color::srgba(0.85, 0.75, 0.55, 0.7),
+        alpha_mode: AlphaMode::Blend,
+        double_sided: true,
+        cull_mode: None,
+        ..default()
+    });
+
+    // Saturn's axial tilt is about 26.7 degrees
+    let tilt_angle = 26.7_f32.to_radians();
+
+    // Spawn rings as child of Saturn
+    commands.entity(saturn_entity).with_children(|parent| {
+        parent.spawn((
+            Mesh3d(mesh_handle),
+            MeshMaterial3d(ring_material),
+            Transform::from_rotation(Quat::from_rotation_x(tilt_angle)),
+        ));
+    });
+
+    info!("Spawned Saturn's rings");
+}
+
+/// Create a ring (annulus) mesh.
+fn create_ring_mesh(inner_radius: f32, outer_radius: f32, segments: u32) -> Mesh {
+    let mut positions = Vec::new();
+    let mut normals = Vec::new();
+    let mut uvs = Vec::new();
+    let mut indices = Vec::new();
+
+    for i in 0..=segments {
+        let angle = (i as f32 / segments as f32) * 2.0 * PI;
+        let (sin, cos) = angle.sin_cos();
+
+        // Inner vertex
+        positions.push([inner_radius * cos, inner_radius * sin, 0.0]);
+        normals.push([0.0, 0.0, 1.0]);
+        uvs.push([i as f32 / segments as f32, 0.0]);
+
+        // Outer vertex
+        positions.push([outer_radius * cos, outer_radius * sin, 0.0]);
+        normals.push([0.0, 0.0, 1.0]);
+        uvs.push([i as f32 / segments as f32, 1.0]);
+
+        if i < segments {
+            let base = i * 2;
+            // First triangle
+            indices.push(base);
+            indices.push(base + 1);
+            indices.push(base + 2);
+            // Second triangle
+            indices.push(base + 1);
+            indices.push(base + 3);
+            indices.push(base + 2);
+        }
+    }
+
+    Mesh::new(PrimitiveTopology::TriangleList, default())
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
+        .with_inserted_indices(Indices::U32(indices))
 }

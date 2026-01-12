@@ -6,6 +6,7 @@ use bevy::{
     input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll},
     prelude::*,
     render::camera::ScalingMode,
+    window::PrimaryWindow,
 };
 
 /// Render scale: 1 render unit = 1e9 meters (1 Gigameter).
@@ -50,11 +51,55 @@ impl Default for CameraState {
 }
 
 /// Resource for smooth camera focus animation.
-#[derive(Resource, Default)]
+#[derive(Resource)]
 pub struct CameraFocus {
+    /// Target position to animate to (if any).
     pub target_position: Option<Vec2>,
-    pub smooth_speed: f32,
+    /// Animation progress (0.0 to 1.0).
+    pub progress: f32,
+    /// Starting position for animation.
+    pub start_position: Vec2,
+    /// Animation duration in seconds.
+    pub duration: f32,
 }
+
+impl Default for CameraFocus {
+    fn default() -> Self {
+        Self {
+            target_position: None,
+            progress: 0.0,
+            start_position: Vec2::ZERO,
+            duration: 0.5,
+        }
+    }
+}
+
+/// Resource for tracking double-clicks.
+#[derive(Resource)]
+pub struct ClickTracker {
+    /// Time of the last click (in seconds since app start).
+    pub last_click_time: f64,
+    /// Screen position of the last click.
+    pub last_click_pos: Vec2,
+}
+
+impl Default for ClickTracker {
+    fn default() -> Self {
+        Self {
+            last_click_time: -1.0,
+            last_click_pos: Vec2::ZERO,
+        }
+    }
+}
+
+/// Maximum time between clicks to count as double-click (seconds).
+const DOUBLE_CLICK_TIME: f64 = 0.3;
+
+/// Maximum distance between clicks to count as double-click (pixels).
+const DOUBLE_CLICK_DIST: f32 = 10.0;
+
+/// Animation smoothing factor.
+const FOCUS_SMOOTH_FACTOR: f32 = 5.0;
 
 /// Plugin providing camera functionality.
 pub struct CameraPlugin;
@@ -63,8 +108,9 @@ impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<CameraState>()
             .init_resource::<CameraFocus>()
+            .init_resource::<ClickTracker>()
             .add_systems(Startup, setup_camera)
-            .add_systems(Update, (camera_zoom, camera_pan));
+            .add_systems(Update, (camera_zoom, camera_pan, detect_double_click, animate_focus));
     }
 }
 
@@ -111,14 +157,14 @@ fn camera_zoom(
     camera_state.zoom = ortho.scale;
 }
 
-/// Handle middle mouse button drag for panning.
+/// Handle mouse drag for panning (middle or left mouse button).
 fn camera_pan(
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     mouse_motion: Res<AccumulatedMouseMotion>,
     mut camera_query: Query<(&mut Transform, &Projection), With<MainCamera>>,
 ) {
-    // Pan with middle mouse button
-    if !mouse_buttons.pressed(MouseButton::Middle) {
+    // Pan with middle mouse button OR left mouse button
+    if !mouse_buttons.pressed(MouseButton::Middle) && !mouse_buttons.pressed(MouseButton::Left) {
         return;
     }
 
@@ -137,4 +183,90 @@ fn camera_pan(
 
     transform.translation.x -= delta.x;
     transform.translation.y += delta.y; // Invert Y for natural feel
+}
+
+/// Detect double-clicks on celestial bodies and initiate focus animation.
+fn detect_double_click(
+    mouse_buttons: Res<ButtonInput<MouseButton>>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
+    camera_query: Query<(&Camera, &GlobalTransform, &Transform), With<MainCamera>>,
+    mut click_tracker: ResMut<ClickTracker>,
+    mut focus: ResMut<CameraFocus>,
+    time: Res<Time>,
+) {
+    // Only trigger on left mouse button just pressed
+    if !mouse_buttons.just_pressed(MouseButton::Left) {
+        return;
+    }
+
+    let Ok(window) = window_query.get_single() else {
+        return;
+    };
+
+    let Some(cursor_pos) = window.cursor_position() else {
+        return;
+    };
+
+    let Ok((camera, camera_global_transform, camera_transform)) = camera_query.get_single() else {
+        return;
+    };
+
+    let current_time = time.elapsed_secs_f64();
+
+    // Check if this is a double-click
+    let time_since_last = current_time - click_tracker.last_click_time;
+    let dist_from_last = (cursor_pos - click_tracker.last_click_pos).length();
+
+    if time_since_last < DOUBLE_CLICK_TIME && dist_from_last < DOUBLE_CLICK_DIST {
+        // Double-click detected! Convert screen position to world position
+        if let Ok(world_pos) = camera.viewport_to_world_2d(camera_global_transform, cursor_pos) {
+            // Start focus animation
+            focus.target_position = Some(world_pos);
+            focus.start_position = camera_transform.translation.truncate();
+            focus.progress = 0.0;
+
+            info!("Focusing on position: {:?}", world_pos);
+        }
+
+        // Reset tracker to prevent triple-click
+        click_tracker.last_click_time = -1.0;
+    } else {
+        // Update click tracker for next potential double-click
+        click_tracker.last_click_time = current_time;
+        click_tracker.last_click_pos = cursor_pos;
+    }
+}
+
+/// Animate camera focus towards target position.
+fn animate_focus(
+    mut camera_query: Query<&mut Transform, With<MainCamera>>,
+    mut focus: ResMut<CameraFocus>,
+    time: Res<Time>,
+) {
+    let Some(target) = focus.target_position else {
+        return;
+    };
+
+    let Ok(mut transform) = camera_query.get_single_mut() else {
+        return;
+    };
+
+    // Update animation progress
+    focus.progress += time.delta_secs() * FOCUS_SMOOTH_FACTOR;
+
+    if focus.progress >= 1.0 {
+        // Animation complete
+        transform.translation.x = target.x;
+        transform.translation.y = target.y;
+        focus.target_position = None;
+        focus.progress = 0.0;
+    } else {
+        // Smooth interpolation using ease-out quad
+        let t = focus.progress;
+        let eased = 1.0 - (1.0 - t) * (1.0 - t);
+
+        let current = focus.start_position.lerp(target, eased);
+        transform.translation.x = current.x;
+        transform.translation.y = current.y;
+    }
 }

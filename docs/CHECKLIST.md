@@ -124,9 +124,9 @@ A coding-focused, step-by-step checklist for implementing the orbital mechanics 
   - [x] Detect middle mouse or left mouse on background
   - [x] Convert screen delta to world delta
   - [x] Update camera position
-- [ ] Implement focus system:
-  - [ ] Detect double-click on entity
-  - [ ] Smoothly move camera to center on entity
+- [x] Implement focus system:
+  - [x] Detect double-click on any position
+  - [x] Smoothly animate camera to center on clicked position
 - [x] Define zoom constants (MIN_ZOOM, MAX_ZOOM, ZOOM_SPEED)
 
 ### 1.3 Celestial Body Spawning (`src/render/bodies.rs`)
@@ -155,7 +155,7 @@ A coding-focused, step-by-step checklist for implementing the orbital mechanics 
   - [x] Random positions covering viewport
   - [ ] Or: use a textured quad
 - [x] Add simple directional light (from Sun direction)
-- [ ] Create planetary rings for Saturn (flat disc mesh)
+- [x] Create planetary rings for Saturn (flat annulus mesh)
   - [ ] Optional: Uranus and Neptune rings
 
 ### 1.6 Time Advancement
@@ -164,14 +164,33 @@ A coding-focused, step-by-step checklist for implementing the orbital mechanics 
   - [x] Add `delta_seconds * scale * SECONDS_PER_DAY` to `current`
 - [x] Run in `Update` schedule
 
-**Phase 1 Acceptance:** App runs, shows Sun and planets orbiting correctly, camera zoom/pan works, planets at correct positions for current date.
+### 1.7 Phase 1 Extensions (Visual Polish for "Google Maps" UX)
+- [x] Keyboard shortcuts (`src/input.rs`):
+  - [x] Space: toggle pause
+  - [x] +/-: zoom in/out
+  - [x] [/]: decrease/increase time scale
+  - [x] R: reset simulation time
+- [x] Orbit path ellipses (`src/render/orbits.rs`):
+  - [x] Draw dashed elliptical paths for planetary orbits
+  - [x] Use Bevy Gizmos for line rendering
+  - [x] Configurable visibility and alpha
+- [x] Hover highlighting (`src/render/highlight.rs`):
+  - [x] Detect mouse hover over celestial bodies
+  - [x] Draw cyan highlight ring around hovered body
+- [x] Body labels (`src/render/labels.rs`):
+  - [x] Render planet/moon names using bevy_egui
+  - [x] Position labels in screen space near bodies
+  - [x] Fade out when zoomed too far
+- [x] Left-click pan on background (in addition to middle mouse)
+
+**Phase 1 Acceptance:** App runs, shows Sun and planets orbiting correctly, camera zoom/pan works, planets at correct positions for current date. Orbit paths visible, hover highlighting works, body labels shown.
 
 ---
 
 ## Phase 2: Split-World & GUI
 
 ### 2.1 bevy_egui Setup
-- [ ] Add `EguiPlugin` to app
+- [x] Add `EguiPlugin` to app
 - [ ] Create `UiPlugin` module (`src/ui/mod.rs`)
 
 ### 2.2 Time Controls Panel (`src/ui/time_controls.rs`)

@@ -5,12 +5,18 @@
 
 mod background;
 mod bodies;
+mod highlight;
+mod labels;
+mod orbits;
 mod sync;
 
 use bevy::prelude::*;
 
 use self::background::BackgroundPlugin;
 use self::bodies::CelestialBodyPlugin;
+use self::highlight::HighlightPlugin;
+use self::labels::LabelPlugin;
+use self::orbits::OrbitPathPlugin;
 use self::sync::sync_celestial_positions;
 
 // Re-export for use in other modules
@@ -22,8 +28,14 @@ pub struct RenderPlugin;
 
 impl Plugin for RenderPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins((CelestialBodyPlugin, BackgroundPlugin))
-            .add_systems(Update, sync_celestial_positions);
+        app.add_plugins((
+            CelestialBodyPlugin,
+            BackgroundPlugin,
+            OrbitPathPlugin,
+            HighlightPlugin,
+            LabelPlugin,
+        ))
+        .add_systems(Update, sync_celestial_positions);
     }
 }
 
