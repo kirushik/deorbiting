@@ -89,10 +89,10 @@ impl CelestialBodyId {
 #[derive(Clone, Debug)]
 pub struct CelestialBodyData {
     pub id: CelestialBodyId,
-    pub mass: f64,           // kg
-    pub radius: f64,         // meters
+    pub mass: f64,   // kg
+    pub radius: f64, // meters
     pub orbit: Option<KeplerOrbit>,
-    pub visual_scale: f32,   // Multiplier for rendering size (temporary, see TODO above)
+    pub visual_scale: f32, // Multiplier for rendering size (temporary, see TODO above)
 }
 
 impl CelestialBodyData {
@@ -237,11 +237,10 @@ pub fn get_body_data(id: CelestialBodyId) -> CelestialBodyData {
             mass: 7.342e22,
             radius: 1.737e6,
             orbit: Some(KeplerOrbit::from_elements(
-                3.844e8,             // 384,400 km
-                0.0549,
-                318.15,              // argument of periapsis
-                134.96,              // mean anomaly at J2000
-                13.1764,             // mean motion (deg/day) - 27.32 day period
+                3.844e8, // 384,400 km
+                0.0549, 318.15,  // argument of periapsis
+                134.96,  // mean anomaly at J2000
+                13.1764, // mean motion (deg/day) - 27.32 day period
             )),
             visual_scale: 250.0,
         },
@@ -251,11 +250,8 @@ pub fn get_body_data(id: CelestialBodyId) -> CelestialBodyData {
             mass: 8.932e22,
             radius: 1.822e6,
             orbit: Some(KeplerOrbit::from_elements(
-                4.218e8,             // 421,800 km
-                0.0041,
-                84.13,
-                342.02,
-                203.49,              // 1.77 day period -> deg/day
+                4.218e8, // 421,800 km
+                0.0041, 84.13, 342.02, 203.49, // 1.77 day period -> deg/day
             )),
             visual_scale: 300.0,
         },
@@ -265,11 +261,8 @@ pub fn get_body_data(id: CelestialBodyId) -> CelestialBodyData {
             mass: 4.800e22,
             radius: 1.561e6,
             orbit: Some(KeplerOrbit::from_elements(
-                6.711e8,             // 671,100 km
-                0.0094,
-                88.97,
-                171.02,
-                101.37,              // 3.55 day period
+                6.711e8, // 671,100 km
+                0.0094, 88.97, 171.02, 101.37, // 3.55 day period
             )),
             visual_scale: 300.0,
         },
@@ -279,11 +272,8 @@ pub fn get_body_data(id: CelestialBodyId) -> CelestialBodyData {
             mass: 1.482e23,
             radius: 2.634e6,
             orbit: Some(KeplerOrbit::from_elements(
-                1.070e9,             // 1,070,400 km
-                0.0011,
-                192.42,
-                317.54,
-                50.32,               // 7.15 day period
+                1.070e9, // 1,070,400 km
+                0.0011, 192.42, 317.54, 50.32, // 7.15 day period
             )),
             visual_scale: 280.0,
         },
@@ -293,11 +283,8 @@ pub fn get_body_data(id: CelestialBodyId) -> CelestialBodyData {
             mass: 1.076e23,
             radius: 2.410e6,
             orbit: Some(KeplerOrbit::from_elements(
-                1.883e9,             // 1,882,700 km
-                0.0074,
-                52.64,
-                181.41,
-                21.57,               // 16.69 day period
+                1.883e9, // 1,882,700 km
+                0.0074, 52.64, 181.41, 21.57, // 16.69 day period
             )),
             visual_scale: 280.0,
         },
@@ -307,11 +294,8 @@ pub fn get_body_data(id: CelestialBodyId) -> CelestialBodyData {
             mass: 1.345e23,
             radius: 2.575e6,
             orbit: Some(KeplerOrbit::from_elements(
-                1.222e9,             // 1,221,870 km
-                0.0288,
-                180.53,
-                163.31,
-                22.58,               // 15.95 day period
+                1.222e9, // 1,221,870 km
+                0.0288, 180.53, 163.31, 22.58, // 15.95 day period
             )),
             visual_scale: 280.0,
         },
@@ -362,7 +346,10 @@ mod tests {
     fn test_moon_parents() {
         assert_eq!(CelestialBodyId::Moon.parent(), Some(CelestialBodyId::Earth));
         assert_eq!(CelestialBodyId::Io.parent(), Some(CelestialBodyId::Jupiter));
-        assert_eq!(CelestialBodyId::Titan.parent(), Some(CelestialBodyId::Saturn));
+        assert_eq!(
+            CelestialBodyId::Titan.parent(),
+            Some(CelestialBodyId::Saturn)
+        );
         assert_eq!(CelestialBodyId::Earth.parent(), None);
     }
 
