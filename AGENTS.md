@@ -43,6 +43,13 @@ Use Serena's memory system to persist and retrieve design rationale across sessi
 - **Spec docs = _details_:** Implementation specifics, data structures, algorithms
 - **Memories = _why_:** Design rationale, trade-offs considered, decisions made
 
+### Running code snippets
+
+When you need to test something in the running project, don't just run `cargo run` naively. It's a GUI app, which is hard for agents to control.
+Instead, leverage the `cargo run --example` feature: create a small example in the `examples/` folder and run only what you need, with a console output.
+Feel free to create multiple example files for different test cases; treat the more useful ones as mini-integration tests, and keep them around for future use.
+This might also be a better alternative to running one-off Python scripts for testing calculations.
+
 ### Before Ending a Session
 
 1. **Update checklist:** Mark completed items with `[x]`
