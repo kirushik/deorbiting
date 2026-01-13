@@ -191,18 +191,18 @@ A coding-focused, step-by-step checklist for implementing the orbital mechanics 
 
 ### 2.1 bevy_egui Setup
 - [x] Add `EguiPlugin` to app
-- [ ] Create `UiPlugin` module (`src/ui/mod.rs`)
+- [x] Create `UiPlugin` module (`src/ui/mod.rs`)
 
 ### 2.2 Time Controls Panel (`src/ui/time_controls.rs`)
-- [ ] Create bottom panel with `egui::TopBottomPanel::bottom`
-- [ ] Add play/pause button (toggle `SimulationTime.paused`)
-- [ ] Add time scale buttons (1x, 10x, 100x, 1000x)
-- [ ] Display current simulation date/time formatted
-- [ ] Add reset button (store initial time for reset)
-- [ ] Style with semi-transparent dark background
+- [x] Create bottom panel with `egui::TopBottomPanel::bottom`
+- [x] Add play/pause button (toggle `SimulationTime.paused`)
+- [x] Add time scale buttons (1x, 10x, 100x, 1000x)
+- [x] Display current simulation date/time formatted
+- [x] Add reset button (store initial time for reset)
+- [x] Style with semi-transparent dark background
 
 ### 2.3 Visual Distortion (`src/distortion.rs`)
-- [ ] Implement `apply_visual_distortion()` function:
+- [x] Implement `apply_visual_distortion()` function:
   ```rust
   pub fn apply_visual_distortion(
       obj_pos: DVec2,
@@ -211,24 +211,24 @@ A coding-focused, step-by-step checklist for implementing the orbital mechanics 
       visual_scale: f32,
   ) -> DVec2
   ```
-- [ ] Create `find_nearest_planet()` helper
-- [ ] Integrate into `sync_visuals` system (for non-planet objects)
+- [x] Create `find_nearest_planet()` helper
+- [ ] Integrate into `sync_visuals` system (for non-planet objects) - Phase 3
 
 ### 2.4 Info Panel (`src/ui/info_panel.rs`)
-- [ ] Create right side panel with `egui::SidePanel::right`
-- [ ] Add collapse/expand button
-- [ ] Display selected body name
-- [ ] Display position (X, Y)
-- [ ] Display velocity magnitude
-- [ ] Add km/AU unit toggle
-- [ ] Create `SelectedBody` resource to track selection
+- [x] Create right side panel with `egui::SidePanel::right`
+- [x] Add collapse/expand button
+- [x] Display selected body name
+- [x] Display position (X, Y)
+- [ ] Display velocity magnitude - Phase 3 (requires asteroid with BodyState)
+- [x] Add km/AU unit toggle
+- [x] Create `SelectedBody` resource to track selection
 
 ### 2.5 Body Selection
-- [ ] Implement mouse picking:
-  - [ ] Convert screen coords to world coords
-  - [ ] Find nearest body within click radius
-  - [ ] Update `SelectedBody` resource
-- [ ] Add visual highlight for selected body (glow/ring)
+- [x] Implement mouse picking:
+  - [x] Convert screen coords to world coords
+  - [x] Find nearest body within click radius
+  - [x] Update `SelectedBody` resource
+- [x] Add visual highlight for selected body (glow/ring)
 
 **Phase 2 Acceptance:** Time controls work, can pause/play/change speed, info panel shows selected body data, visual distortion ready (no asteroid yet to test).
 

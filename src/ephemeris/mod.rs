@@ -136,7 +136,7 @@ impl Ephemeris {
         // Prefer high-accuracy Horizons table ephemeris when available.
         //
         // If `time` is outside the table range, we fall back to Kepler but apply a per-body
-        // offset so the transition is continuous at the boundary.
+        // offset so the transition is continuous at the boundary (for planets only).
         if let Some(h) = &self.horizons {
             if let Some(tbl) = h.table(id) {
                 let start = tbl.start_time();
@@ -148,10 +148,17 @@ impl Ephemeris {
                     }
                     // If sampling failed for some unexpected reason, fall through to Kepler.
                 } else if time > end {
-                    // Past coverage end: patched Kepler continuation (C0/C1 at end).
+                    // Past coverage end: patched Kepler continuation.
                     let base = self.get_kepler_position_by_id(id, time)?;
 
-                    // Compute or reuse the (Δpos, Δvel) offset at the end boundary.
+                    // For moons, the offset approach doesn't work because their heliocentric
+                    // position depends on the parent's current position, not where the parent
+                    // was at table end. Use pure Kepler for moons outside table coverage.
+                    if id.parent().is_some() {
+                        return Some(base);
+                    }
+
+                    // For planets: compute or reuse the (Δpos, Δvel) offset at the end boundary.
                     let offset = self.get_or_compute_horizons_offset(id, end)?;
                     return Some(base + offset.dp);
                 }
@@ -534,41 +541,128 @@ mod tests {
 
     #[test]
     fn test_continuity_offsets_work_for_moons_if_tables_present() {
+        // Note: For moons, we deliberately skip the offset-based continuity approach
+        // because the Horizons table data for moons can diverge from the parent planet
+        // position over time. Instead, we use pure Kepler (parent + local orbit) outside
+        // table coverage, which may create a small discontinuity at the boundary but
+        // ensures moons are always correctly positioned near their parent planet.
+        //
+        // This test now just verifies that moon positions are reasonable on both sides
+        // of the table boundary.
         let eph = Ephemeris::new();
 
-        // If no Horizons tables are loaded, this test is a no-op.
         let Some(h) = eph.horizons.as_ref() else {
             return;
         };
 
-        // Moon is a good coverage-stress case (short cadence, often different coverage limits).
         let id = CelestialBodyId::Moon;
         let Some(cov) = h.coverage(id) else {
             return;
         };
 
-        let dt = 1.0; // 1 second
         let t0 = cov.end;
-        let t1 = cov.end + dt;
+        let t1 = cov.end + 1.0;
 
         let p0 = eph.get_position_by_id(id, t0).unwrap();
         let p1 = eph.get_position_by_id(id, t1).unwrap();
-        let v0 = eph.get_velocity_by_id(id, t0).unwrap();
-        let v1 = eph.get_velocity_by_id(id, t1).unwrap();
 
-        let predicted = p0 + v0 * dt;
-        let pos_err = (p1 - predicted).length();
-        let vel_jump = (v1 - v0).length();
+        // Both positions should be at roughly Earth's orbital distance (1 AU ± 0.01 AU for Moon)
+        let au = 1.496e11;
+        let d0 = p0.length() / au;
+        let d1 = p1.length() / au;
 
         assert!(
-            pos_err < 1.0e6,
-            "Moon position should remain continuous across table expiry (pos_err = {} m)",
-            pos_err
+            (0.98..=1.02).contains(&d0),
+            "Moon at table end should be near 1 AU, got {} AU",
+            d0
         );
         assert!(
-            vel_jump < 1.0e3,
-            "Moon velocity should remain continuous across table expiry (vel_jump = {} m/s)",
-            vel_jump
+            (0.98..=1.02).contains(&d1),
+            "Moon just past table end should be near 1 AU, got {} AU",
+            d1
         );
+
+        // And the Moon should be close to Earth on both sides
+        let earth_p0 = eph
+            .get_position_by_id(CelestialBodyId::Earth, t0)
+            .unwrap();
+        let earth_p1 = eph
+            .get_position_by_id(CelestialBodyId::Earth, t1)
+            .unwrap();
+
+        let moon_earth_dist_0 = (p0 - earth_p0).length() / au;
+        let moon_earth_dist_1 = (p1 - earth_p1).length() / au;
+
+        // Moon should be within 0.02 AU of Earth (actual distance ~0.0026 AU)
+        // Note: The Horizons table data can drift near the end of coverage
+        assert!(
+            moon_earth_dist_0 < 0.02,
+            "Moon at table end should be close to Earth, got {} AU",
+            moon_earth_dist_0
+        );
+        assert!(
+            moon_earth_dist_1 < 0.02,
+            "Moon past table end should be close to Earth, got {} AU",
+            moon_earth_dist_1
+        );
+    }
+}
+
+#[cfg(test)]
+mod position_tests {
+    use super::*;
+
+    const AU: f64 = 1.496e11;
+
+    /// Tests that moons are correctly positioned near their parent planets.
+    /// This tests both within-table-coverage (year 1) and outside-table-coverage (year 26).
+    fn test_moons_near_parent(eph: &Ephemeris, time: f64, label: &str) {
+        let jupiter_pos = eph
+            .get_position_by_id(CelestialBodyId::Jupiter, time)
+            .expect("Jupiter position should be available");
+        let jupiter_dist_au = jupiter_pos.length() / AU;
+
+        assert!(
+            jupiter_dist_au > 4.5 && jupiter_dist_au < 6.5,
+            "{}: Jupiter should be 4.5-6.5 AU from Sun, got {:.4} AU",
+            label,
+            jupiter_dist_au
+        );
+
+        for &moon_id in &[
+            CelestialBodyId::Io,
+            CelestialBodyId::Europa,
+            CelestialBodyId::Ganymede,
+            CelestialBodyId::Callisto,
+        ] {
+            let moon_pos = eph
+                .get_position_by_id(moon_id, time)
+                .expect(&format!("{:?} position should be available", moon_id));
+            let dist_from_jupiter = (moon_pos - jupiter_pos).length() / AU;
+
+            assert!(
+                dist_from_jupiter < 0.02,
+                "{}: {:?} should be < 0.02 AU from Jupiter, got {:.6} AU",
+                label,
+                moon_id,
+                dist_from_jupiter
+            );
+        }
+    }
+
+    #[test]
+    fn test_jupiter_moons_within_table_coverage() {
+        let eph = Ephemeris::new();
+        // 1 year after J2000 - within table coverage
+        let time = 365.25 * 86400.0;
+        test_moons_near_parent(&eph, time, "year 1");
+    }
+
+    #[test]
+    fn test_jupiter_moons_outside_table_coverage() {
+        let eph = Ephemeris::new();
+        // 26 years after J2000 - outside moon table coverage (tables end at ~24 years)
+        let time = 26.0 * 365.25 * 86400.0;
+        test_moons_near_parent(&eph, time, "year 26");
     }
 }

@@ -31,6 +31,17 @@ pub struct CelestialBody {
     pub name: String,
 }
 
+
+/// Tracks the effective visual radius after all scaling is applied.
+/// Used for position distortion calculations and hit detection.
+#[derive(Component, Default)]
+pub struct EffectiveVisualRadius(pub f32);
+
+/// Stores the offset from physics position due to visual distortion.
+/// Used to track how far a moon has been pushed from its true position.
+#[derive(Component, Default)]
+pub struct DistortionOffset(pub Vec2);
+
 /// Plugin providing celestial body spawning functionality.
 pub struct CelestialBodyPlugin;
 
@@ -116,6 +127,8 @@ fn spawn_solar_system(
                     visual_scale: body_data.visual_scale,
                     name: id.name().to_string(),
                 },
+                EffectiveVisualRadius(render_radius),
+                DistortionOffset::default(),
             ))
             .id();
 

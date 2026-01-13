@@ -16,19 +16,23 @@
 use bevy::prelude::*;
 
 use crate::camera::RENDER_SCALE;
-use crate::ephemeris::{CelestialBodyId, Ephemeris, all_bodies};
+use crate::ephemeris::{all_bodies, CelestialBodyId, Ephemeris};
 use crate::render::z_layers;
 use crate::types::SimulationTime;
+
+use super::bodies::{CelestialBody, EffectiveVisualRadius};
+use super::scaling::MARGIN_FRACTION;
 
 /// Plugin providing orbit path visualization.
 pub struct OrbitPathPlugin;
 
 impl Plugin for OrbitPathPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<OrbitPathSettings>()
-            .add_systems(Update, draw_orbit_paths);
+        app.init_resource::<OrbitPathSettings>();
+        // Systems are added by RenderPlugin with proper ordering
     }
 }
+
 
 /// Settings for orbit path rendering.
 #[derive(Resource)]
@@ -89,7 +93,7 @@ fn orbit_color(id: CelestialBodyId, alpha: f32) -> Color {
 /// Draw orbit paths for planets as aligned idealized Kepler ellipses.
 ///
 /// We use the ephemeris position "now" to align the ellipse so the planet lies on the path.
-fn draw_orbit_paths(
+pub fn draw_orbit_paths(
     mut gizmos: Gizmos,
     settings: Res<OrbitPathSettings>,
     ephemeris: Res<Ephemeris>,
@@ -226,3 +230,163 @@ fn angle_distance(a: f64, b: f64) -> f64 {
 // Orbit rendering intentionally uses an idealized Keplerian ellipse (from baked elements),
 // aligned to pass through the current ephemeris position. This provides clean, stable visuals
 // while ensuring the planet is always on its drawn path at the current time.
+
+/// Draw moon orbit paths centered on their parent planet's current position.
+///
+/// Moon orbits are scaled radially to match the visual distortion applied to moons,
+/// ensuring the orbit path passes through the moon's distorted position.
+pub fn draw_moon_orbit_paths(
+    mut gizmos: Gizmos,
+    settings: Res<OrbitPathSettings>,
+    bodies: Query<(&Transform, &CelestialBody, &EffectiveVisualRadius)>,
+) {
+    if !settings.visible {
+        return;
+    }
+
+    let segments = settings.segments.max(64);
+
+    // Collect parent positions and radii
+    let mut parent_data: std::collections::HashMap<CelestialBodyId, (Vec2, f32)> =
+        std::collections::HashMap::new();
+
+    for (transform, body, eff_radius) in bodies.iter() {
+        if body.id.parent().is_none() && body.id != CelestialBodyId::Sun {
+            // This is a planet
+            parent_data.insert(
+                body.id,
+                (transform.translation.truncate(), eff_radius.0),
+            );
+        }
+    }
+
+    // Draw orbits for each moon
+    for &id in CelestialBodyId::MOONS {
+        let Some(parent_id) = id.parent() else {
+            continue;
+        };
+
+        let Some(&(parent_pos, parent_radius)) = parent_data.get(&parent_id) else {
+            continue;
+        };
+
+        let color = orbit_color(id, settings.alpha * 0.7); // Slightly dimmer for moon orbits
+        if color == Color::NONE {
+            continue;
+        }
+
+        // Find this moon's current distorted position
+        let Some((moon_transform, _, moon_eff_radius)) = bodies
+            .iter()
+            .find(|(_, b, _)| b.id == id)
+        else {
+            continue;
+        };
+
+        let moon_pos = moon_transform.translation.truncate();
+        let moon_direction = (moon_pos - parent_pos).normalize_or_zero();
+        let moon_distance = (moon_pos - parent_pos).length();
+
+        // Get moon's orbital parameters for shape
+        let (a_local, e_base, omega_base) = all_bodies()
+            .into_iter()
+            .find(|b| b.id == id)
+            .and_then(|b| {
+                b.orbit
+                    .as_ref()
+                    .map(|o| (o.semi_major_axis, o.eccentricity, o.argument_of_periapsis))
+            })
+            .unwrap_or_else(|| (moon_distance as f64 / RENDER_SCALE, 0.0, 0.0));
+
+        // Convert orbital semi-major axis to render units
+        let a_render = (a_local * RENDER_SCALE) as f32;
+
+        // Calculate scale factor to match distorted position
+        // The orbit should be scaled so the moon's current position lies on it
+        let scale_factor = if a_render > 0.001 {
+            moon_distance / a_render
+        } else {
+            1.0
+        };
+
+        // Ensure orbit clears the parent's visual radius
+        let min_orbit_radius = parent_radius * (1.0 + MARGIN_FRACTION) + moon_eff_radius.0;
+        let actual_scale = scale_factor.max(min_orbit_radius / a_render);
+
+        let mut e = e_base * settings.eccentricity_scale;
+        e = e.clamp(0.0, 0.999_999);
+
+        // Semi-latus rectum (in local orbital units, before scaling)
+        let p_local = a_local * (1.0 - e * e);
+
+        // Align the orbit so the moon's current position lies on it
+        let moon_angle = moon_direction.y.atan2(moon_direction.x) as f64;
+        let omega_aligned = if e > 1e-9 {
+            // For eccentric orbits, solve for the argument of periapsis
+            let r_local = moon_distance as f64 / (actual_scale as f64 * RENDER_SCALE);
+            let cos_nu = ((p_local / r_local) - 1.0) / e;
+            let cos_nu = cos_nu.clamp(-1.0, 1.0);
+            let nu = cos_nu.acos();
+
+            let omega1 = moon_angle - nu;
+            let omega2 = moon_angle + nu;
+            if angle_distance(omega1, omega_base) < angle_distance(omega2, omega_base) {
+                omega1
+            } else {
+                omega2
+            }
+        } else {
+            omega_base
+        };
+
+        // Draw the scaled orbit ellipse centered on parent
+        let mut first: Option<Vec3> = None;
+        let mut prev: Option<Vec3> = None;
+
+        for i in 0..=segments {
+            let nu = (i as f64 / segments as f64) * std::f64::consts::TAU;
+            let r_local = if e > 0.0 {
+                p_local / (1.0 + e * nu.cos())
+            } else {
+                a_local
+            };
+            let angle = nu + omega_aligned;
+
+            // Convert to render coordinates, apply scale, center on parent
+            let x = (r_local * angle.cos() * RENDER_SCALE) as f32 * actual_scale;
+            let y = (r_local * angle.sin() * RENDER_SCALE) as f32 * actual_scale;
+
+            let pt = Vec3::new(
+                parent_pos.x + x,
+                parent_pos.y + y,
+                z_layers::TRAJECTORY,
+            );
+
+            if first.is_none() {
+                first = Some(pt);
+            }
+            if let Some(p0) = prev {
+                let on = settings.dash_on.max(1);
+                let off = settings.dash_off;
+                let period = on + off;
+                let draw = if period == 0 { true } else { (i % period) < on };
+
+                if draw {
+                    gizmos.line(p0, pt, color);
+                }
+            }
+            prev = Some(pt);
+        }
+
+        // Close the loop
+        if let (Some(last), Some(first)) = (prev, first) {
+            let on = settings.dash_on.max(1);
+            let off = settings.dash_off;
+            let period = on + off;
+            let draw = if period == 0 { true } else { (0 % period) < on };
+            if draw {
+                gizmos.line(last, first, color);
+            }
+        }
+    }
+}

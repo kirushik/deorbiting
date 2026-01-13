@@ -4,10 +4,11 @@
 //! trajectory lines, and background elements.
 
 mod background;
-mod bodies;
-mod highlight;
+pub mod bodies;
+pub mod highlight;
 mod labels;
 mod orbits;
+pub mod scaling;
 mod sync;
 
 use bevy::prelude::*;
@@ -16,12 +17,16 @@ use self::background::BackgroundPlugin;
 use self::bodies::CelestialBodyPlugin;
 use self::highlight::HighlightPlugin;
 use self::labels::LabelPlugin;
-use self::orbits::OrbitPathPlugin;
+use self::orbits::{draw_moon_orbit_paths, draw_orbit_paths, OrbitPathPlugin};
+use self::scaling::{
+    apply_moon_position_distortion, compute_hierarchical_scales, ScalingPlugin,
+};
 use self::sync::sync_celestial_positions;
 
 // Re-export for use in other modules
-#[allow(unused_imports)]
-pub use self::bodies::CelestialBody;
+pub use self::bodies::{CelestialBody, DistortionOffset, EffectiveVisualRadius};
+pub use self::highlight::{HoveredBody, SelectedBody};
+pub use self::scaling::ScalingSettings;
 
 /// Plugin aggregating all rendering functionality.
 pub struct RenderPlugin;
@@ -34,8 +39,23 @@ impl Plugin for RenderPlugin {
             OrbitPathPlugin,
             HighlightPlugin,
             LabelPlugin,
+            ScalingPlugin,
         ))
-        .add_systems(Update, sync_celestial_positions);
+        // Add all position-related systems with explicit ordering:
+        // 1. sync_celestial_positions - sets positions from physics
+        // 2. compute_hierarchical_scales - calculates sizes (needs positions for parent lookup)
+        // 3. apply_moon_position_distortion - pushes moons outward (needs scales)
+        // 4. draw_orbit_paths & draw_moon_orbit_paths - draw orbits (needs final positions)
+        .add_systems(
+            Update,
+            (
+                sync_celestial_positions,
+                compute_hierarchical_scales,
+                apply_moon_position_distortion,
+                (draw_orbit_paths, draw_moon_orbit_paths),
+            )
+                .chain(),
+        );
     }
 }
 

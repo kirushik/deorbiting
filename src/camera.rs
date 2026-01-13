@@ -137,10 +137,18 @@ fn camera_zoom(
     mouse_scroll: Res<AccumulatedMouseScroll>,
     mut camera_query: Query<&mut Projection, With<MainCamera>>,
     mut camera_state: ResMut<CameraState>,
+    mut contexts: bevy_egui::EguiContexts,
 ) {
     // Skip if no scroll input
     if mouse_scroll.delta.y == 0.0 {
         return;
+    }
+
+    // Skip zoom if egui wants the pointer (e.g., hovering over UI panel)
+    if let Some(ctx) = contexts.try_ctx_mut() {
+        if ctx.wants_pointer_input() {
+            return;
+        }
     }
 
     let Ok(mut projection) = camera_query.get_single_mut() else {
@@ -162,10 +170,18 @@ fn camera_pan(
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     mouse_motion: Res<AccumulatedMouseMotion>,
     mut camera_query: Query<(&mut Transform, &Projection), With<MainCamera>>,
+    mut contexts: bevy_egui::EguiContexts,
 ) {
     // Pan with middle mouse button OR left mouse button
     if !mouse_buttons.pressed(MouseButton::Middle) && !mouse_buttons.pressed(MouseButton::Left) {
         return;
+    }
+
+    // Skip pan if egui wants the pointer (e.g., interacting with UI panel)
+    if let Some(ctx) = contexts.try_ctx_mut() {
+        if ctx.wants_pointer_input() {
+            return;
+        }
     }
 
     let Ok((mut transform, projection)) = camera_query.get_single_mut() else {

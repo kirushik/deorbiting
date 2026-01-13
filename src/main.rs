@@ -7,11 +7,13 @@ use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
 
 mod camera;
+mod distortion;
 mod ephemeris;
 mod input;
 mod render;
 mod time;
 mod types;
+mod ui;
 
 use camera::CameraPlugin;
 use ephemeris::Ephemeris;
@@ -19,6 +21,7 @@ use input::InputPlugin;
 use render::RenderPlugin;
 use time::TimePlugin;
 use types::SimulationTime;
+use ui::UiPlugin;
 
 fn main() {
     App::new()
@@ -28,6 +31,6 @@ fn main() {
         .insert_resource(Ephemeris::default())
         .insert_resource(SimulationTime::default())
         // Add simulation plugins
-        .add_plugins((CameraPlugin, TimePlugin, RenderPlugin, InputPlugin))
+        .add_plugins((CameraPlugin, TimePlugin, RenderPlugin, InputPlugin, UiPlugin))
         .run();
 }
