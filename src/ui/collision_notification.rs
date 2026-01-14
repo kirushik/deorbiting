@@ -1,43 +1,58 @@
 //! Collision notification overlay.
 //!
-//! Shows a notification when an asteroid collides with a celestial body.
-//! The notification auto-dismisses when the simulation is resumed.
+//! Shows notifications when asteroids collide with celestial bodies.
+//! Uses a queue-based system to handle multiple collisions properly:
+//! - Each collision gets its own notification
+//! - Notifications are shown in order (FIFO)
+//! - Dismissing advances to the next notification
+//! - Resuming simulation clears the current notification
 
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
 
-use crate::collision::CollisionState;
+use crate::collision::{CollisionEvent, CollisionState};
 use crate::types::SimulationTime;
 
+/// Resource tracking the currently displayed collision notification.
+///
+/// This is separate from CollisionState to clearly distinguish between
+/// "pending notifications" (in queue) and "currently displayed" (here).
+#[derive(Resource, Default)]
+pub struct ActiveNotification {
+    /// The collision event currently being displayed, if any.
+    pub current: Option<CollisionEvent>,
+}
+
 /// System that renders collision notifications.
+///
+/// Pulls notifications from the CollisionState queue and displays them
+/// one at a time. Notifications are cleared when:
+/// - The user clicks "Dismiss" (advances to next notification)
+/// - The simulation is resumed (clears current notification)
 pub fn collision_notification(
     mut contexts: EguiContexts,
-    collision_state: Res<CollisionState>,
+    mut collision_state: ResMut<CollisionState>,
+    mut active: ResMut<ActiveNotification>,
     sim_time: Res<SimulationTime>,
-    mut dismissed: Local<bool>,
 ) {
     let Some(ctx) = contexts.try_ctx_mut() else {
         return;
     };
 
-    // Reset dismissed state when simulation resumes
+    // If simulation resumed, clear current notification
     if !sim_time.paused {
-        *dismissed = false;
+        active.current = None;
     }
 
-    // Don't show if dismissed or no collision
-    if *dismissed {
-        return;
+    // If no current notification and we're paused, try to pop one from queue
+    if active.current.is_none() && sim_time.paused {
+        active.current = collision_state.pop_notification();
     }
 
-    let Some(collision) = &collision_state.last_collision else {
+    // Nothing to display
+    let Some(collision) = active.current.clone() else {
         return;
     };
-
-    // Only show notification while paused (i.e., right after collision)
-    if !sim_time.paused {
-        return;
-    }
 
     // Show notification as a centered window
     egui::Window::new("Impact Detected!")
@@ -51,11 +66,8 @@ pub fn collision_notification(
         )
         .show(ctx, |ui| {
             ui.vertical_centered(|ui| {
-                // Impact icon and title
-                ui.label(
-                    egui::RichText::new("\u{1F4A5}")
-                        .size(32.0),
-                );
+                // Impact icon
+                ui.label(egui::RichText::new("\u{1F4A5}").size(32.0));
 
                 ui.add_space(8.0);
 
@@ -76,6 +88,20 @@ pub fn collision_notification(
                     collision.impact_speed_km_s()
                 ));
 
+                // Show if more notifications are pending
+                if collision_state.has_pending() {
+                    ui.add_space(8.0);
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "({} more collision{})",
+                            collision_state.pending_notifications.len(),
+                            if collision_state.pending_notifications.len() == 1 { "" } else { "s" }
+                        ))
+                        .weak()
+                        .small(),
+                    );
+                }
+
                 ui.add_space(16.0);
 
                 // Instructions
@@ -87,9 +113,9 @@ pub fn collision_notification(
 
                 ui.add_space(8.0);
 
-                // Dismiss button
+                // Dismiss button - clears current notification, next frame will pop another if any
                 if ui.button("Dismiss").clicked() {
-                    *dismissed = true;
+                    active.current = None;
                 }
             });
         });

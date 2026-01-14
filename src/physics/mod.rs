@@ -16,6 +16,7 @@ pub use gravity::compute_acceleration;
 pub use integrator::{IAS15Config, IAS15State};
 
 use crate::asteroid::Asteroid;
+use crate::collision::CollisionState;
 use crate::ephemeris::Ephemeris;
 use crate::types::{BodyState, SimulationTime, SECONDS_PER_DAY};
 
@@ -65,6 +66,9 @@ impl IntegratorStates {
 /// Runs in FixedUpdate to maintain consistent physics timesteps.
 /// For each asteroid with a BodyState, advances the IAS15 integrator
 /// to cover the elapsed simulation time.
+///
+/// Entities marked as colliding are skipped to prevent them from moving
+/// after a collision is detected but before the deferred despawn executes.
 fn physics_step(
     mut asteroids: Query<(Entity, &mut BodyState), With<Asteroid>>,
     mut integrator_states: ResMut<IntegratorStates>,
@@ -72,6 +76,7 @@ fn physics_step(
     sim_time: Res<SimulationTime>,
     config: Res<IAS15Config>,
     time: Res<Time>,
+    collision_state: Res<CollisionState>,
 ) {
     // Skip if simulation is paused
     if sim_time.paused {
@@ -88,6 +93,11 @@ fn physics_step(
     }
 
     for (entity, mut body_state) in asteroids.iter_mut() {
+        // Skip entities that are colliding (awaiting despawn)
+        if collision_state.is_colliding(entity) {
+            continue;
+        }
+
         // Get or create integrator state for this asteroid
         let ias15 = integrator_states.states.entry(entity).or_insert_with(|| {
             // Compute initial acceleration at current position

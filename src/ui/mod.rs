@@ -15,10 +15,12 @@ pub struct UiPlugin;
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<UiState>().add_systems(
-            Update,
-            (time_controls_panel, info_panel, collision_notification).chain(),
-        );
+        app.init_resource::<UiState>()
+            .init_resource::<ActiveNotification>()
+            .add_systems(
+                Update,
+                (time_controls_panel, info_panel, collision_notification).chain(),
+            );
     }
 }
 

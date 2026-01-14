@@ -11,6 +11,7 @@ use bevy::math::DVec2;
 use crate::camera::RENDER_SCALE;
 use crate::collision::CollisionState;
 use crate::ephemeris::Ephemeris;
+use crate::ui::ActiveNotification;
 use crate::physics::IntegratorStates;
 use crate::render::z_layers;
 use crate::types::{BodyState, SimulationTime, AU_TO_METERS, G};
@@ -237,6 +238,7 @@ pub fn handle_reset(
     mut sim_time: ResMut<SimulationTime>,
     mut collision_state: ResMut<CollisionState>,
     mut integrator_states: ResMut<IntegratorStates>,
+    mut active_notification: ResMut<ActiveNotification>,
     asteroids: Query<Entity, With<Asteroid>>,
     ephemeris: Res<Ephemeris>,
 ) {
@@ -262,8 +264,9 @@ pub fn handle_reset(
     // Reset simulation time
     sim_time.reset();
 
-    // Clear collision state
+    // Clear collision state and active notification
     collision_state.clear();
+    active_notification.current = None;
 
     // Spawn fresh initial asteroid (use initial time, not current)
     spawn_test_asteroid(
