@@ -4,24 +4,35 @@ use bevy::math::DVec2;
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
 
-use crate::camera::{CameraFocus, RENDER_SCALE};
+use crate::asteroid::{spawn_asteroid_at_position, Asteroid, AsteroidCounter, AsteroidName};
+use crate::camera::{CameraFocus, MainCamera, RENDER_SCALE};
+use crate::input::DragState;
 use crate::ephemeris::{CelestialBodyId, Ephemeris};
+use crate::physics::IntegratorStates;
 use crate::render::{CelestialBody, HoveredBody, SelectedBody};
-use crate::types::{SimulationTime, AU_TO_METERS};
+use crate::types::{BodyState, SelectableBody, SimulationTime, AU_TO_METERS};
 
 use super::{DisplayUnits, UiState};
 
 /// System that renders the info panel.
+#[allow(clippy::too_many_arguments)]
 pub fn info_panel(
+    mut commands: Commands,
     mut contexts: EguiContexts,
     mut selected: ResMut<SelectedBody>,
     mut hovered: ResMut<HoveredBody>,
     mut ui_state: ResMut<UiState>,
     mut camera_focus: ResMut<CameraFocus>,
-    camera_query: Query<&Transform, With<crate::camera::MainCamera>>,
-    bodies: Query<(Entity, &CelestialBody)>,
+    mut asteroid_counter: ResMut<AsteroidCounter>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut integrator_states: ResMut<IntegratorStates>,
+    camera_query: Query<(&Transform, &Camera, &GlobalTransform), With<MainCamera>>,
+    celestial_bodies: Query<(Entity, &CelestialBody)>,
+    asteroids: Query<(Entity, &AsteroidName, &BodyState), With<Asteroid>>,
     ephemeris: Res<Ephemeris>,
     sim_time: Res<SimulationTime>,
+    drag_state: Res<DragState>,
 ) {
     let Some(ctx) = contexts.try_ctx_mut() else {
         return;
@@ -34,7 +45,7 @@ pub fn info_panel(
     if ui_state.info_panel_open {
         egui::SidePanel::right("info_panel")
             .resizable(false)
-            .default_width(200.0)
+            .default_width(220.0)
             .frame(panel_frame)
             .show(ctx, |ui| {
                 // Header with collapse button
@@ -52,50 +63,54 @@ pub fn info_panel(
                 ui.separator();
 
                 // Get current camera position for focus animation
-                let camera_pos = camera_query
-                    .get_single()
-                    .map(|t| Vec2::new(t.translation.x, t.translation.y))
-                    .unwrap_or(Vec2::ZERO);
+                let (camera_transform, camera, camera_global) = camera_query.get_single().unwrap();
+                let camera_pos = Vec2::new(camera_transform.translation.x, camera_transform.translation.y);
 
-                // Body list section
+                // Celestial body list section
                 render_body_list(
                     ui,
-                    &bodies,
+                    &celestial_bodies,
                     &mut selected,
                     &mut hovered,
                     &ephemeris,
                     sim_time.current,
                     &mut camera_focus,
                     camera_pos,
+                    &drag_state,
+                );
+
+                ui.separator();
+
+                // Asteroid section
+                render_asteroid_section(
+                    ui,
+                    &mut commands,
+                    &asteroids,
+                    &mut selected,
+                    &mut hovered,
+                    &mut asteroid_counter,
+                    &mut meshes,
+                    &mut materials,
+                    &mut integrator_states,
+                    &mut camera_focus,
+                    camera,
+                    camera_global,
+                    camera_pos,
+                    &drag_state,
                 );
 
                 ui.separator();
 
                 // Selected body info
-                if let Some(entity) = selected.entity {
-                    if let Ok((_, body)) = bodies.get(entity) {
-                        ui.heading(&body.name);
-                        ui.add_space(4.0);
-                        render_body_info(
-                            ui,
-                            body,
-                            &ephemeris,
-                            sim_time.current,
-                            ui_state.display_units,
-                        );
-
-                        ui.add_space(8.0);
-
-                        // Unit toggle
-                        ui.horizontal(|ui| {
-                            ui.label("Units:");
-                            ui.selectable_value(&mut ui_state.display_units, DisplayUnits::Km, "km");
-                            ui.selectable_value(&mut ui_state.display_units, DisplayUnits::Au, "AU");
-                        });
-                    }
-                } else {
-                    ui.label("Select a body from the list above.");
-                }
+                render_selected_info(
+                    ui,
+                    &selected,
+                    &celestial_bodies,
+                    &asteroids,
+                    &ephemeris,
+                    sim_time.current,
+                    &mut ui_state,
+                );
             });
     } else {
         // Collapsed state - show expand button
@@ -127,6 +142,7 @@ fn render_body_list(
     time: f64,
     camera_focus: &mut ResMut<CameraFocus>,
     camera_pos: Vec2,
+    drag_state: &Res<DragState>,
 ) {
     ui.label("Bodies:");
 
@@ -158,7 +174,7 @@ fn render_body_list(
         // Sun
         if let Some((entity, body)) = sun_entity {
             render_body_button(
-                ui, entity, body, selected, hovered, ephemeris, time, camera_focus, camera_pos,
+                ui, entity, body, selected, hovered, ephemeris, time, camera_focus, camera_pos, drag_state,
             );
         }
 
@@ -176,6 +192,7 @@ fn render_body_list(
                 time,
                 camera_focus,
                 camera_pos,
+                drag_state,
             );
 
             // Find and display moons of this planet
@@ -194,6 +211,7 @@ fn render_body_list(
                             time,
                             camera_focus,
                             camera_pos,
+                            drag_state,
                         );
                     });
                 }
@@ -202,7 +220,7 @@ fn render_body_list(
     });
 }
 
-/// Render a single body button with hover, click, and double-click behavior.
+/// Render a single celestial body button with hover, click, and double-click behavior.
 /// Single click selects the body, double-click centers the camera on it.
 fn render_body_button(
     ui: &mut egui::Ui,
@@ -214,22 +232,29 @@ fn render_body_button(
     time: f64,
     camera_focus: &mut ResMut<CameraFocus>,
     camera_pos: Vec2,
+    drag_state: &Res<DragState>,
 ) {
-    let is_selected = selected.entity == Some(entity);
+    let selectable = SelectableBody::Celestial(entity);
+    let is_selected = selected.body == Some(selectable);
 
     // Create button with selection highlight
     let button = egui::Button::new(&body.name).selected(is_selected);
 
     let response = ui.add(button);
 
+    // Don't change hover/selection while dragging an asteroid
+    if drag_state.dragging.is_some() {
+        return;
+    }
+
     // Handle hover - set the hovered body in the render system
     if response.hovered() {
-        hovered.entity = Some(entity);
+        hovered.body = Some(selectable);
     }
 
     // Handle click - select the body
     if response.clicked() {
-        selected.entity = Some(entity);
+        selected.body = Some(selectable);
     }
 
     // Handle double-click - center camera on body
@@ -315,4 +340,190 @@ fn format_position(ui: &mut egui::Ui, pos: DVec2, units: DisplayUnits) {
             ui.label(format!("  Y: {:.4} AU", pos.y / AU_TO_METERS));
         }
     }
+}
+
+/// Render the asteroid section with spawn button, list, and edit controls.
+#[allow(clippy::too_many_arguments)]
+fn render_asteroid_section(
+    ui: &mut egui::Ui,
+    commands: &mut Commands,
+    asteroids: &Query<(Entity, &AsteroidName, &BodyState), With<Asteroid>>,
+    selected: &mut ResMut<SelectedBody>,
+    hovered: &mut ResMut<HoveredBody>,
+    counter: &mut ResMut<AsteroidCounter>,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    materials: &mut ResMut<Assets<StandardMaterial>>,
+    integrator_states: &mut ResMut<IntegratorStates>,
+    camera_focus: &mut ResMut<CameraFocus>,
+    camera: &Camera,
+    camera_global: &GlobalTransform,
+    camera_pos: Vec2,
+    drag_state: &Res<DragState>,
+) {
+    ui.collapsing("Asteroids", |ui| {
+        // Spawn button - spawn at center of current view
+        if ui.button("+ Spawn Asteroid").clicked() {
+            // Get center of viewport in world coordinates
+            let viewport_size = camera.logical_viewport_size().unwrap_or(Vec2::new(800.0, 600.0));
+            let center_screen = viewport_size / 2.0;
+
+            if let Ok(world_pos) = camera.viewport_to_world_2d(camera_global, center_screen) {
+                // Convert render position back to physics position
+                let physics_pos = DVec2::new(
+                    (world_pos.x as f64) / RENDER_SCALE,
+                    (world_pos.y as f64) / RENDER_SCALE,
+                );
+
+                spawn_asteroid_at_position(
+                    commands,
+                    meshes,
+                    materials,
+                    counter,
+                    physics_pos,
+                    DVec2::ZERO, // Start with zero velocity
+                );
+            }
+        }
+
+        ui.add_space(4.0);
+
+        // List asteroids
+        let mut asteroid_list: Vec<_> = asteroids.iter().collect();
+        asteroid_list.sort_by(|a, b| a.1 .0.cmp(&b.1 .0)); // Sort by name
+
+        for (entity, name, body_state) in asteroid_list {
+            let selectable = SelectableBody::Asteroid(entity);
+            let is_selected = selected.body == Some(selectable);
+
+            let button = egui::Button::new(&name.0).selected(is_selected);
+            let response = ui.add(button);
+
+            // Don't change hover/selection while dragging an asteroid
+            if drag_state.dragging.is_none() {
+                if response.hovered() {
+                    hovered.body = Some(selectable);
+                }
+
+                if response.clicked() {
+                    selected.body = Some(selectable);
+                }
+
+                // Double-click to focus
+                if response.double_clicked() {
+                    let render_pos = Vec2::new(
+                        (body_state.pos.x * RENDER_SCALE) as f32,
+                        (body_state.pos.y * RENDER_SCALE) as f32,
+                    );
+                    camera_focus.target_position = Some(render_pos);
+                    camera_focus.start_position = camera_pos;
+                    camera_focus.progress = 0.0;
+                }
+            }
+        }
+
+        // Edit controls for selected asteroid
+        if let Some(SelectableBody::Asteroid(entity)) = selected.body {
+            if asteroids.get(entity).is_ok() {
+                ui.add_space(8.0);
+                ui.separator();
+                ui.label("Selected Asteroid:");
+
+                // Delete button
+                if ui.button("Delete Asteroid").clicked() {
+                    commands.entity(entity).despawn();
+                    integrator_states.remove(entity);
+                    selected.body = None;
+                    if hovered.body == Some(SelectableBody::Asteroid(entity)) {
+                        hovered.body = None;
+                    }
+                }
+            }
+        }
+    });
+}
+
+/// Render information about the currently selected body.
+fn render_selected_info(
+    ui: &mut egui::Ui,
+    selected: &ResMut<SelectedBody>,
+    celestial_bodies: &Query<(Entity, &CelestialBody)>,
+    asteroids: &Query<(Entity, &AsteroidName, &BodyState), With<Asteroid>>,
+    ephemeris: &Ephemeris,
+    time: f64,
+    ui_state: &mut ResMut<UiState>,
+) {
+    match selected.body {
+        Some(SelectableBody::Celestial(entity)) => {
+            if let Ok((_, body)) = celestial_bodies.get(entity) {
+                ui.heading(&body.name);
+                ui.add_space(4.0);
+                render_body_info(ui, body, ephemeris, time, ui_state.display_units);
+
+                ui.add_space(8.0);
+
+                // Unit toggle
+                ui.horizontal(|ui| {
+                    ui.label("Units:");
+                    ui.selectable_value(&mut ui_state.display_units, DisplayUnits::Km, "km");
+                    ui.selectable_value(&mut ui_state.display_units, DisplayUnits::Au, "AU");
+                });
+            }
+        }
+        Some(SelectableBody::Asteroid(entity)) => {
+            if let Ok((_, name, body_state)) = asteroids.get(entity) {
+                ui.heading(&name.0);
+                ui.add_space(4.0);
+                render_asteroid_info(ui, body_state, ui_state.display_units);
+
+                ui.add_space(8.0);
+
+                // Unit toggle
+                ui.horizontal(|ui| {
+                    ui.label("Units:");
+                    ui.selectable_value(&mut ui_state.display_units, DisplayUnits::Km, "km");
+                    ui.selectable_value(&mut ui_state.display_units, DisplayUnits::Au, "AU");
+                });
+            }
+        }
+        None => {
+            ui.label("Select a body from the list above.");
+        }
+    }
+}
+
+/// Render info for a selected asteroid.
+fn render_asteroid_info(ui: &mut egui::Ui, body_state: &BodyState, units: DisplayUnits) {
+    ui.label("Type: Asteroid");
+
+    ui.add_space(8.0);
+
+    // Position
+    ui.label("Position:");
+    format_position(ui, body_state.pos, units);
+
+    ui.add_space(8.0);
+
+    // Velocity
+    ui.label("Velocity:");
+    let vel_km_s = body_state.vel_km_per_s();
+    ui.label(format!("  {:.2} km/s", vel_km_s.length()));
+
+    ui.add_space(8.0);
+
+    // Distance from Sun
+    let dist_from_sun = body_state.pos.length();
+    ui.label("Distance from Sun:");
+    match units {
+        DisplayUnits::Km => {
+            ui.label(format!("  {:.2} M km", dist_from_sun / 1e9));
+        }
+        DisplayUnits::Au => {
+            ui.label(format!("  {:.4} AU", dist_from_sun / AU_TO_METERS));
+        }
+    }
+
+    ui.add_space(8.0);
+
+    // Mass
+    ui.label(format!("Mass: {:.2e} kg", body_state.mass));
 }

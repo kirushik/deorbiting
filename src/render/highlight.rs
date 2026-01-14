@@ -1,4 +1,4 @@
-//! Hover and selection highlighting for celestial bodies.
+//! Hover and selection highlighting for celestial bodies and asteroids.
 //!
 //! Provides visual feedback when the mouse hovers over or selects interactive elements.
 
@@ -6,9 +6,12 @@ use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevy_egui::EguiContexts;
 
+use crate::asteroid::{Asteroid, AsteroidVisual};
 use crate::camera::MainCamera;
+use crate::input::DragState;
 use crate::render::bodies::CelestialBody;
 use crate::render::z_layers;
+use crate::types::SelectableBody;
 
 /// Plugin providing hover and selection highlighting.
 pub struct HighlightPlugin;
@@ -27,33 +30,37 @@ impl Plugin for HighlightPlugin {
 /// Resource tracking the currently hovered body.
 #[derive(Resource, Default)]
 pub struct HoveredBody {
-    /// Entity of the currently hovered body, if any.
-    pub entity: Option<Entity>,
+    /// The currently hovered body, if any.
+    pub body: Option<SelectableBody>,
 }
 
 /// Resource tracking the currently selected body.
 #[derive(Resource, Default)]
 pub struct SelectedBody {
-    /// Entity of the currently selected body, if any.
-    pub entity: Option<Entity>,
+    /// The currently selected body, if any.
+    pub body: Option<SelectableBody>,
 }
 
 /// Find the body under the cursor, if any.
+///
+/// Checks both celestial bodies and asteroids, returning the closest one.
 fn find_body_at_cursor(
     window: &Window,
     camera: &Camera,
     camera_transform: &GlobalTransform,
-    bodies: &Query<(Entity, &Transform, &CelestialBody)>,
-) -> Option<Entity> {
+    celestial_bodies: &Query<(Entity, &Transform, &CelestialBody)>,
+    asteroids: &Query<(Entity, &Transform, &AsteroidVisual), With<Asteroid>>,
+) -> Option<SelectableBody> {
     let cursor_pos = window.cursor_position()?;
 
     // Convert cursor position to world coordinates
     let world_pos = camera.viewport_to_world_2d(camera_transform, cursor_pos).ok()?;
 
-    // Find the closest body under the cursor
-    let mut closest: Option<(Entity, f32)> = None;
+    // Find the closest body under the cursor (checking both types)
+    let mut closest: Option<(SelectableBody, f32)> = None;
 
-    for (entity, transform, body) in bodies.iter() {
+    // Check celestial bodies
+    for (entity, transform, body) in celestial_bodies.iter() {
         let body_pos = transform.translation.truncate();
         let dist = (world_pos - body_pos).length();
 
@@ -64,26 +71,48 @@ fn find_body_at_cursor(
 
         if dist < hit_radius {
             if closest.is_none_or(|(_, d)| dist < d) {
-                closest = Some((entity, dist));
+                closest = Some((SelectableBody::Celestial(entity), dist));
             }
         }
     }
 
-    closest.map(|(e, _)| e)
+    // Check asteroids
+    for (entity, transform, visual) in asteroids.iter() {
+        let asteroid_pos = transform.translation.truncate();
+        let dist = (world_pos - asteroid_pos).length();
+
+        // Use asteroid visual radius for hit detection
+        let hit_radius = visual.render_radius.max(2.0) * 2.0;
+
+        if dist < hit_radius {
+            if closest.is_none_or(|(_, d)| dist < d) {
+                closest = Some((SelectableBody::Asteroid(entity), dist));
+            }
+        }
+    }
+
+    closest.map(|(body, _)| body)
 }
 
-/// Detect which celestial body the mouse is hovering over.
+/// Detect which body (celestial or asteroid) the mouse is hovering over.
 fn detect_hover(
     window_query: Query<&Window, With<PrimaryWindow>>,
     camera_query: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
-    bodies: Query<(Entity, &Transform, &CelestialBody)>,
+    celestial_bodies: Query<(Entity, &Transform, &CelestialBody)>,
+    asteroids: Query<(Entity, &Transform, &AsteroidVisual), With<Asteroid>>,
     mut hovered: ResMut<HoveredBody>,
     mut contexts: EguiContexts,
+    drag_state: Res<DragState>,
 ) {
+    // Don't detect hover while dragging an asteroid
+    if drag_state.dragging.is_some() {
+        return;
+    }
+
     // Don't detect hover if egui wants the pointer
     if let Some(ctx) = contexts.try_ctx_mut() {
         if ctx.wants_pointer_input() {
-            hovered.entity = None;
+            hovered.body = None;
             return;
         }
     }
@@ -96,18 +125,25 @@ fn detect_hover(
         return;
     };
 
-    hovered.entity = find_body_at_cursor(window, camera, camera_transform, &bodies);
+    hovered.body = find_body_at_cursor(window, camera, camera_transform, &celestial_bodies, &asteroids);
 }
 
-/// Detect clicks on celestial bodies to select them.
+/// Detect clicks on bodies (celestial or asteroid) to select them.
 fn detect_selection(
     mouse: Res<ButtonInput<MouseButton>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     camera_query: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
-    bodies: Query<(Entity, &Transform, &CelestialBody)>,
+    celestial_bodies: Query<(Entity, &Transform, &CelestialBody)>,
+    asteroids: Query<(Entity, &Transform, &AsteroidVisual), With<Asteroid>>,
     mut selected: ResMut<SelectedBody>,
     mut contexts: EguiContexts,
+    drag_state: Res<DragState>,
 ) {
+    // Don't change selection while dragging an asteroid
+    if drag_state.dragging.is_some() {
+        return;
+    }
+
     // Only process on left click
     if !mouse.just_pressed(MouseButton::Left) {
         return;
@@ -129,7 +165,7 @@ fn detect_selection(
     };
 
     // Find body at cursor and select it (or deselect if clicking empty space)
-    selected.entity = find_body_at_cursor(window, camera, camera_transform, &bodies);
+    selected.body = find_body_at_cursor(window, camera, camera_transform, &celestial_bodies, &asteroids);
 }
 
 /// Draw highlight ring around hovered body.
@@ -137,55 +173,72 @@ fn draw_hover_highlight(
     mut gizmos: Gizmos,
     hovered: Res<HoveredBody>,
     selected: Res<SelectedBody>,
-    bodies: Query<(&Transform, &CelestialBody)>,
+    celestial_bodies: Query<(&Transform, &CelestialBody)>,
+    asteroids: Query<(&Transform, &AsteroidVisual), With<Asteroid>>,
 ) {
-    let Some(entity) = hovered.entity else {
+    let Some(hovered_body) = hovered.body else {
         return;
     };
 
     // Don't draw hover highlight if this body is already selected
     // (selection highlight takes precedence)
-    if selected.entity == Some(entity) {
+    if selected.body == Some(hovered_body) {
         return;
     }
 
-    let Ok((transform, body)) = bodies.get(entity) else {
-        return;
-    };
+    // Cyan color for hover
+    let color = Color::srgba(0.0, 1.0, 1.0, 0.8);
 
-    draw_highlight_ring(&mut gizmos, transform, body, Color::srgba(0.0, 1.0, 1.0, 0.8)); // Cyan
+    match hovered_body {
+        SelectableBody::Celestial(entity) => {
+            if let Ok((transform, body)) = celestial_bodies.get(entity) {
+                let radius = (body.radius * crate::camera::RENDER_SCALE) as f32 * body.visual_scale;
+                draw_highlight_ring_at(&mut gizmos, transform.translation.truncate(), radius, color);
+            }
+        }
+        SelectableBody::Asteroid(entity) => {
+            if let Ok((transform, visual)) = asteroids.get(entity) {
+                draw_highlight_ring_at(&mut gizmos, transform.translation.truncate(), visual.render_radius, color);
+            }
+        }
+    }
 }
 
 /// Draw highlight ring around selected body.
 fn draw_selection_highlight(
     mut gizmos: Gizmos,
     selected: Res<SelectedBody>,
-    bodies: Query<(&Transform, &CelestialBody)>,
+    celestial_bodies: Query<(&Transform, &CelestialBody)>,
+    asteroids: Query<(&Transform, &AsteroidVisual), With<Asteroid>>,
 ) {
-    let Some(entity) = selected.entity else {
-        return;
-    };
-
-    let Ok((transform, body)) = bodies.get(entity) else {
+    let Some(selected_body) = selected.body else {
         return;
     };
 
     // Gold/yellow for selection (more prominent than hover)
-    draw_highlight_ring(&mut gizmos, transform, body, Color::srgba(1.0, 0.85, 0.0, 1.0));
+    let color = Color::srgba(1.0, 0.85, 0.0, 1.0);
+
+    match selected_body {
+        SelectableBody::Celestial(entity) => {
+            if let Ok((transform, body)) = celestial_bodies.get(entity) {
+                let radius = (body.radius * crate::camera::RENDER_SCALE) as f32 * body.visual_scale;
+                draw_highlight_ring_at(&mut gizmos, transform.translation.truncate(), radius, color);
+            }
+        }
+        SelectableBody::Asteroid(entity) => {
+            if let Ok((transform, visual)) = asteroids.get(entity) {
+                draw_highlight_ring_at(&mut gizmos, transform.translation.truncate(), visual.render_radius, color);
+            }
+        }
+    }
 }
 
-/// Draw a highlight ring around a body.
-fn draw_highlight_ring(gizmos: &mut Gizmos, transform: &Transform, body: &CelestialBody, color: Color) {
-    // Calculate highlight ring radius
-    let base_radius = (body.radius * crate::camera::RENDER_SCALE) as f32 * body.visual_scale;
+/// Draw a highlight ring at a position with a given radius.
+fn draw_highlight_ring_at(gizmos: &mut Gizmos, center_2d: Vec2, base_radius: f32, color: Color) {
     let ring_radius = base_radius.max(1.0) * 1.5;
 
-    // Draw ring at UI layer (above celestial bodies)
-    let center = Vec3::new(
-        transform.translation.x,
-        transform.translation.y,
-        z_layers::UI_HANDLES,
-    );
+    // Draw ring at UI layer (above celestial bodies and asteroids)
+    let center = Vec3::new(center_2d.x, center_2d.y, z_layers::UI_HANDLES);
 
     // Draw circle using line segments
     let segments = 32;

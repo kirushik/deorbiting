@@ -9,6 +9,8 @@ use bevy::{
     window::PrimaryWindow,
 };
 
+use crate::input::DragState;
+
 /// Render scale: 1 render unit = 1e9 meters (1 Gigameter).
 /// This maps the solar system to manageable f32 coordinates.
 /// - 1 AU = ~149.6 render units
@@ -165,15 +167,15 @@ fn camera_zoom(
     camera_state.zoom = ortho.scale;
 }
 
-/// Handle mouse drag for panning (middle or left mouse button).
+/// Handle mouse drag for panning (middle mouse button only).
 fn camera_pan(
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     mouse_motion: Res<AccumulatedMouseMotion>,
     mut camera_query: Query<(&mut Transform, &Projection), With<MainCamera>>,
     mut contexts: bevy_egui::EguiContexts,
 ) {
-    // Pan with middle mouse button OR left mouse button
-    if !mouse_buttons.pressed(MouseButton::Middle) && !mouse_buttons.pressed(MouseButton::Left) {
+    // Pan with middle mouse button only (left-click is for selection/drag)
+    if !mouse_buttons.pressed(MouseButton::Middle) {
         return;
     }
 
@@ -209,7 +211,13 @@ fn detect_double_click(
     mut click_tracker: ResMut<ClickTracker>,
     mut focus: ResMut<CameraFocus>,
     time: Res<Time>,
+    drag_state: Res<DragState>,
 ) {
+    // Skip double-click detection during asteroid drag
+    if drag_state.dragging.is_some() {
+        return;
+    }
+
     // Only trigger on left mouse button just pressed
     if !mouse_buttons.just_pressed(MouseButton::Left) {
         return;

@@ -12,11 +12,8 @@
 | Camera | Scroll zoom + drag pan | Standard map controls |
 | Orbit data | Table-based ephemeris generated from JPL Horizons (vectors) covering ~200y from J2000 | Much less drift than fixed Kepler elements; still lightweight at runtime | Accuracy with real planetary positions |
 | Bevy version | 0.15 | Latest stable |
-| Collision | Pause + impact effect | Clear feedback for hit/miss scenarios |
-| Velocity UI | Draggable arrow | KSP-style, intuitive |
-| Display units | km/AU toggleable | User flexibility |
-| Prediction | Always visible | User awareness of trajectory |
-| Game mode | Sandbox + preset scenarios | Flexibility with guided experiences |
+| Collision | Pause + destroy asteroid + notification | Clear feedback; simulation continues after play |
+| Reset behavior | Full reset: clear all asteroids, respawn initial | Asteroid positions are time-dependent; keeping user-spawned asteroids at reset would be inconsistent | Flexibility with guided experiences |
 
 ## Documentation Structure
 

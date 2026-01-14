@@ -3,10 +3,15 @@
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
 
+use crate::asteroid::ResetEvent;
 use crate::types::{j2000_seconds_to_date_string, SimulationTime};
 
 /// System that renders the time controls panel.
-pub fn time_controls_panel(mut contexts: EguiContexts, mut sim_time: ResMut<SimulationTime>) {
+pub fn time_controls_panel(
+    mut contexts: EguiContexts,
+    mut sim_time: ResMut<SimulationTime>,
+    mut reset_events: EventWriter<ResetEvent>,
+) {
     let Some(ctx) = contexts.try_ctx_mut() else {
         return;
     };
@@ -62,10 +67,10 @@ pub fn time_controls_panel(mut contexts: EguiContexts, mut sim_time: ResMut<Simu
                 // Reset button
                 if ui
                     .button("\u{21BA}")
-                    .on_hover_text("Reset to initial time (R)")
+                    .on_hover_text("Reset simulation (R)")
                     .clicked()
                 {
-                    sim_time.reset();
+                    reset_events.send(ResetEvent);
                 }
             });
         });

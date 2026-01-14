@@ -61,6 +61,27 @@ impl BodyState {
     }
 }
 
+/// Represents a selectable body in the simulation (either celestial or asteroid).
+///
+/// Used by the selection and hover systems to track which body is selected
+/// or hovered, regardless of whether it's a celestial body or an asteroid.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SelectableBody {
+    /// A celestial body from the ephemeris (Sun, planets, moons)
+    Celestial(Entity),
+    /// A simulated asteroid
+    Asteroid(Entity),
+}
+
+impl SelectableBody {
+    /// Get the underlying entity regardless of type.
+    pub fn entity(&self) -> Entity {
+        match self {
+            SelectableBody::Celestial(e) | SelectableBody::Asteroid(e) => *e,
+        }
+    }
+}
+
 /// Simulation time resource tracking the current simulation state.
 #[derive(Resource, Clone, Debug)]
 pub struct SimulationTime {

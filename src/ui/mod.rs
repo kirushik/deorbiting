@@ -1,10 +1,12 @@
 //! UI module providing egui-based interface panels.
 
+mod collision_notification;
 mod info_panel;
 mod time_controls;
 
 use bevy::prelude::*;
 
+pub use collision_notification::*;
 pub use info_panel::*;
 pub use time_controls::*;
 
@@ -15,7 +17,7 @@ impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<UiState>().add_systems(
             Update,
-            (time_controls_panel, info_panel).chain(),
+            (time_controls_panel, info_panel, collision_notification).chain(),
         );
     }
 }

@@ -21,10 +21,10 @@ use self::orbits::{draw_moon_orbit_paths, draw_orbit_paths, OrbitPathPlugin};
 use self::scaling::{
     apply_moon_position_distortion, compute_hierarchical_scales, ScalingPlugin,
 };
-use self::sync::sync_celestial_positions;
+use self::sync::{sync_asteroid_positions, sync_celestial_positions};
 
 // Re-export for use in other modules
-pub use self::bodies::{CelestialBody, DistortionOffset, EffectiveVisualRadius};
+pub use self::bodies::CelestialBody;
 pub use self::highlight::{HoveredBody, SelectedBody};
 pub use self::scaling::ScalingSettings;
 
@@ -42,13 +42,15 @@ impl Plugin for RenderPlugin {
             ScalingPlugin,
         ))
         // Add all position-related systems with explicit ordering:
-        // 1. sync_celestial_positions - sets positions from physics
-        // 2. compute_hierarchical_scales - calculates sizes (needs positions for parent lookup)
-        // 3. apply_moon_position_distortion - pushes moons outward (needs scales)
-        // 4. draw_orbit_paths & draw_moon_orbit_paths - draw orbits (needs final positions)
+        // 1. sync_asteroid_positions - sets asteroid positions from BodyState (with distortion)
+        // 2. sync_celestial_positions - sets celestial body positions from ephemeris
+        // 3. compute_hierarchical_scales - calculates sizes (needs positions for parent lookup)
+        // 4. apply_moon_position_distortion - pushes moons outward (needs scales)
+        // 5. draw_orbit_paths & draw_moon_orbit_paths - draw orbits (needs final positions)
         .add_systems(
             Update,
             (
+                sync_asteroid_positions,
                 sync_celestial_positions,
                 compute_hierarchical_scales,
                 apply_moon_position_distortion,
