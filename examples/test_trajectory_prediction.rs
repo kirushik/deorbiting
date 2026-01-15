@@ -11,8 +11,9 @@ use bevy::math::DVec2;
 const AU_TO_METERS: f64 = 1.495978707e11;
 const SECONDS_PER_DAY: f64 = 86400.0;
 
-/// Sun's standard gravitational parameter (GM)
-const SUN_GM: f64 = 1.32712440018e20; // m³/s²
+/// Sun's standard gravitational parameter (GM) - m³/s²
+/// Source: IAU 2015 nominal solar mass parameter
+const GM_SUN: f64 = 1.32712440018e20;
 
 /// Compute acceleration at a position from Sun only.
 fn compute_acceleration(pos: DVec2) -> DVec2 {
@@ -21,7 +22,7 @@ fn compute_acceleration(pos: DVec2) -> DVec2 {
         return DVec2::ZERO;
     }
     let r = r_sq.sqrt();
-    -pos * (SUN_GM / (r_sq * r))
+    -pos * (GM_SUN / (r_sq * r))
 }
 
 /// Velocity Verlet integrator state (simplified from IAS15State)
@@ -116,7 +117,7 @@ fn test_circular_orbit_prediction() {
 
     let distance = 1.0 * AU_TO_METERS;
     let initial_pos = DVec2::new(distance, 0.0);
-    let v_circular = (SUN_GM / distance).sqrt();
+    let v_circular = (GM_SUN / distance).sqrt();
     let initial_vel = DVec2::new(0.0, v_circular);
 
     // Predict for 1 year
@@ -157,7 +158,7 @@ fn test_prediction_point_count() {
 
     let distance = 1.0 * AU_TO_METERS;
     let initial_pos = DVec2::new(distance, 0.0);
-    let v_circular = (SUN_GM / distance).sqrt();
+    let v_circular = (GM_SUN / distance).sqrt();
     let initial_vel = DVec2::new(0.0, v_circular);
 
     // Predict for 1 year with different intervals
@@ -198,11 +199,11 @@ fn test_eccentric_orbit_prediction() {
     let aphelion = a * (1.0 + eccentricity);
 
     let initial_pos = DVec2::new(perihelion, 0.0);
-    let v_perihelion = (SUN_GM * (2.0 / perihelion - 1.0 / a)).sqrt();
+    let v_perihelion = (GM_SUN * (2.0 / perihelion - 1.0 / a)).sqrt();
     let initial_vel = DVec2::new(0.0, v_perihelion);
 
     // Expected period
-    let period = 2.0 * std::f64::consts::PI * (a.powi(3) / SUN_GM).sqrt();
+    let period = 2.0 * std::f64::consts::PI * (a.powi(3) / GM_SUN).sqrt();
 
     println!("  Perihelion: {:.4} AU", perihelion / AU_TO_METERS);
     println!("  Aphelion: {:.4} AU", aphelion / AU_TO_METERS);

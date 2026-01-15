@@ -29,12 +29,34 @@ use std::sync::RwLock;
 /// At 50x, Earth's danger zone is ~320,000 km (about the Moon's orbital distance).
 pub const COLLISION_MULTIPLIER: f64 = 50.0;
 
+/// Total number of gravity sources in the solar system model.
+/// 1 Sun + 8 Planets + 6 Moons = 15 bodies
+pub const GRAVITY_SOURCE_COUNT: usize = 15;
+
+/// A gravity source: position and GM (standard gravitational parameter).
+/// GM = G * mass, in m³/s². Use directly: a = GM/r²
+pub type GravitySource = (DVec2, f64);
+
+/// A gravity source with its ID: (body_id, position, GM).
+pub type GravitySourceWithId = (CelestialBodyId, DVec2, f64);
+
+/// Fixed-size array of gravity sources (no heap allocation).
+pub type GravitySources = [GravitySource; GRAVITY_SOURCE_COUNT];
+
+/// Fixed-size array of gravity sources with IDs (no heap allocation).
+pub type GravitySourcesWithId = [GravitySourceWithId; GRAVITY_SOURCE_COUNT];
+
 /// A constant (Δpos, Δvel) offset applied to a base ephemeris state.
 #[derive(Clone, Copy, Debug, Default)]
 struct StateOffset2 {
     dp: DVec2,
     dv: DVec2,
 }
+
+/// Pre-computed GM values for all bodies in standard order.
+/// Order: Sun, Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune,
+///        Moon, Io, Europa, Ganymede, Callisto, Titan.
+type GmCache = [f64; GRAVITY_SOURCE_COUNT];
 
 /// Resource providing ephemeris data for all celestial bodies.
 #[derive(Resource)]
@@ -59,6 +81,9 @@ pub struct Ephemeris {
     /// This is cached via a thread-safe lock so `get_position_by_id` / `get_velocity_by_id` can
     /// remain `&self` while still satisfying Bevy `Resource` bounds.
     horizons_fallback_offsets: RwLock<HashMap<CelestialBodyId, StateOffset2>>,
+
+    /// Pre-computed GM values for all bodies (computed once at startup).
+    gm_cache: GmCache,
 }
 
 impl Default for Ephemeris {
@@ -66,6 +91,25 @@ impl Default for Ephemeris {
         Self::new()
     }
 }
+
+/// Standard body order for gravity sources array.
+const BODY_ORDER: [CelestialBodyId; GRAVITY_SOURCE_COUNT] = [
+    CelestialBodyId::Sun,
+    CelestialBodyId::Mercury,
+    CelestialBodyId::Venus,
+    CelestialBodyId::Earth,
+    CelestialBodyId::Mars,
+    CelestialBodyId::Jupiter,
+    CelestialBodyId::Saturn,
+    CelestialBodyId::Uranus,
+    CelestialBodyId::Neptune,
+    CelestialBodyId::Moon,
+    CelestialBodyId::Io,
+    CelestialBodyId::Europa,
+    CelestialBodyId::Ganymede,
+    CelestialBodyId::Callisto,
+    CelestialBodyId::Titan,
+];
 
 impl Ephemeris {
     /// Create a new ephemeris with all celestial body data loaded.
@@ -81,12 +125,21 @@ impl Ephemeris {
 
         let horizons = horizons_tables::HorizonsTables::load_from_assets_dir().ok();
 
+        // Pre-compute GM values for all bodies (computed once, used forever)
+        let mut gm_cache = [0.0; GRAVITY_SOURCE_COUNT];
+        for (i, &id) in BODY_ORDER.iter().enumerate() {
+            if let Some(data) = body_data.get(&id) {
+                gm_cache[i] = G * data.mass;
+            }
+        }
+
         Self {
             entity_to_id: HashMap::new(),
             id_to_entity: HashMap::new(),
             body_data,
             horizons,
             horizons_fallback_offsets: RwLock::new(HashMap::new()),
+            gm_cache,
         }
     }
 
@@ -232,38 +285,52 @@ impl Ephemeris {
     /// GM is the standard gravitational parameter in m³/s².
     /// Use directly in acceleration formula: a = GM/r² (no need to multiply by G).
     ///
+    /// This function returns a fixed-size array to avoid heap allocations.
+    /// Uses pre-computed GM cache and batched position queries for performance.
+    ///
     /// # Arguments
     /// * `time` - Time in seconds since J2000 epoch
     ///
     /// # Returns
-    /// Vector of (position in meters, GM in m³/s²) pairs for all massive bodies.
-    pub fn get_gravity_sources(&self, time: f64) -> Vec<(DVec2, f64)> {
-        let mut sources = Vec::new();
+    /// Fixed array of (position in meters, GM in m³/s²) pairs for all massive bodies.
+    pub fn get_gravity_sources(&self, time: f64) -> GravitySources {
+        let mut result: GravitySources = [(DVec2::ZERO, 0.0); GRAVITY_SOURCE_COUNT];
 
-        // Sun
-        if let Some(sun_data) = self.body_data.get(&CelestialBodyId::Sun) {
-            sources.push((DVec2::ZERO, G * sun_data.mass));
-        }
+        // Sun is always at origin (index 0)
+        result[0] = (DVec2::ZERO, self.gm_cache[0]);
 
-        // Planets
-        for &id in CelestialBodyId::PLANETS {
-            if let (Some(pos), Some(data)) =
-                (self.get_position_by_id(id, time), self.body_data.get(&id))
-            {
-                sources.push((pos, G * data.mass));
+        // Try batched table sampling for bodies 1-14 (planets and moons)
+        if let Some(h) = &self.horizons {
+            let positions = h.sample_all_positions(time);
+            for i in 0..14 {
+                let body_idx = i + 1; // Skip Sun
+                if let Some(pos) = positions[i] {
+                    result[body_idx] = (pos, self.gm_cache[body_idx]);
+                } else {
+                    // Fallback to individual query (outside table range or missing table)
+                    let id = BODY_ORDER[body_idx];
+                    let pos = self.get_position_by_id(id, time).unwrap_or(DVec2::ZERO);
+                    result[body_idx] = (pos, self.gm_cache[body_idx]);
+                }
+            }
+        } else {
+            // No tables: use Kepler for all bodies
+            for i in 1..GRAVITY_SOURCE_COUNT {
+                let id = BODY_ORDER[i];
+                let pos = self.get_position_by_id(id, time).unwrap_or(DVec2::ZERO);
+                result[i] = (pos, self.gm_cache[i]);
             }
         }
 
-        // Moons (significant for close encounters)
-        for &id in CelestialBodyId::MOONS {
-            if let (Some(pos), Some(data)) =
-                (self.get_position_by_id(id, time), self.body_data.get(&id))
-            {
-                sources.push((pos, G * data.mass));
-            }
-        }
+        result
+    }
 
-        sources
+    /// Helper to get a single gravity source for a body.
+    #[inline]
+    fn gravity_source_for(&self, id: CelestialBodyId, time: f64) -> GravitySource {
+        let pos = self.get_position_by_id(id, time).unwrap_or(DVec2::ZERO);
+        let gm = self.body_data.get(&id).map(|d| G * d.mass).unwrap_or(0.0);
+        (pos, gm)
     }
 
     /// Get all gravity sources with their IDs at a given time.
@@ -271,38 +338,47 @@ impl Ephemeris {
     /// Similar to `get_gravity_sources`, but includes the body ID for each source.
     /// Useful for determining which body's gravity dominates at a position.
     ///
+    /// This function returns a fixed-size array to avoid heap allocations.
+    ///
     /// # Arguments
     /// * `time` - Time in seconds since J2000 epoch
     ///
     /// # Returns
-    /// Vector of (body_id, position in meters, GM in m³/s²) tuples.
-    pub fn get_gravity_sources_with_id(&self, time: f64) -> Vec<(CelestialBodyId, DVec2, f64)> {
-        let mut sources = Vec::new();
+    /// Fixed array of (body_id, position in meters, GM in m³/s²) tuples.
+    pub fn get_gravity_sources_with_id(&self, time: f64) -> GravitySourcesWithId {
+        // Build the fixed array with IDs
+        [
+            // 0: Sun (always at origin)
+            self.gravity_source_with_id_for(CelestialBodyId::Sun, time),
+            // 1-8: Planets
+            self.gravity_source_with_id_for(CelestialBodyId::Mercury, time),
+            self.gravity_source_with_id_for(CelestialBodyId::Venus, time),
+            self.gravity_source_with_id_for(CelestialBodyId::Earth, time),
+            self.gravity_source_with_id_for(CelestialBodyId::Mars, time),
+            self.gravity_source_with_id_for(CelestialBodyId::Jupiter, time),
+            self.gravity_source_with_id_for(CelestialBodyId::Saturn, time),
+            self.gravity_source_with_id_for(CelestialBodyId::Uranus, time),
+            self.gravity_source_with_id_for(CelestialBodyId::Neptune, time),
+            // 9-14: Moons
+            self.gravity_source_with_id_for(CelestialBodyId::Moon, time),
+            self.gravity_source_with_id_for(CelestialBodyId::Io, time),
+            self.gravity_source_with_id_for(CelestialBodyId::Europa, time),
+            self.gravity_source_with_id_for(CelestialBodyId::Ganymede, time),
+            self.gravity_source_with_id_for(CelestialBodyId::Callisto, time),
+            self.gravity_source_with_id_for(CelestialBodyId::Titan, time),
+        ]
+    }
 
-        // Sun
-        if let Some(sun_data) = self.body_data.get(&CelestialBodyId::Sun) {
-            sources.push((CelestialBodyId::Sun, DVec2::ZERO, G * sun_data.mass));
-        }
-
-        // Planets
-        for &id in CelestialBodyId::PLANETS {
-            if let (Some(pos), Some(data)) =
-                (self.get_position_by_id(id, time), self.body_data.get(&id))
-            {
-                sources.push((id, pos, G * data.mass));
-            }
-        }
-
-        // Moons (significant for close encounters)
-        for &id in CelestialBodyId::MOONS {
-            if let (Some(pos), Some(data)) =
-                (self.get_position_by_id(id, time), self.body_data.get(&id))
-            {
-                sources.push((id, pos, G * data.mass));
-            }
-        }
-
-        sources
+    /// Helper to get a single gravity source with ID for a body.
+    #[inline]
+    fn gravity_source_with_id_for(&self, id: CelestialBodyId, time: f64) -> GravitySourceWithId {
+        let pos = if id == CelestialBodyId::Sun {
+            DVec2::ZERO
+        } else {
+            self.get_position_by_id(id, time).unwrap_or(DVec2::ZERO)
+        };
+        let gm = self.body_data.get(&id).map(|d| G * d.mass).unwrap_or(0.0);
+        (id, pos, gm)
     }
 
     /// Check if a position collides with any celestial body.

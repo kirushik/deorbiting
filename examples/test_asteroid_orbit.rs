@@ -16,8 +16,9 @@ const G: f64 = 6.67430e-11;
 const AU_TO_METERS: f64 = 1.495978707e11;
 const SECONDS_PER_DAY: f64 = 86400.0;
 
-/// Sun's standard gravitational parameter (GM)
-const SUN_GM: f64 = 1.32712440018e20; // m³/s²
+/// Sun's standard gravitational parameter (GM) - m³/s²
+/// Source: IAU 2015 nominal solar mass parameter
+const GM_SUN: f64 = 1.32712440018e20;
 
 /// Compute acceleration at a position from Sun only.
 fn compute_acceleration_sun_only(pos: DVec2) -> DVec2 {
@@ -26,7 +27,7 @@ fn compute_acceleration_sun_only(pos: DVec2) -> DVec2 {
         return DVec2::ZERO;
     }
     let r = r_sq.sqrt();
-    -pos * (SUN_GM / (r_sq * r))
+    -pos * (GM_SUN / (r_sq * r))
 }
 
 /// Simple Velocity Verlet step.
@@ -70,13 +71,13 @@ fn test_circular_orbit(distance_au: f64) {
     let mut pos = DVec2::new(distance, 0.0);
 
     // Circular orbit velocity: v = sqrt(GM/r)
-    let v_circular = (SUN_GM / distance).sqrt();
+    let v_circular = (GM_SUN / distance).sqrt();
     let mut vel = DVec2::new(0.0, v_circular);
 
     let mut acc = compute_acceleration_sun_only(pos);
 
     // Expected orbital period: T = 2π * sqrt(r³/GM)
-    let period = 2.0 * std::f64::consts::PI * (distance.powi(3) / SUN_GM).sqrt();
+    let period = 2.0 * std::f64::consts::PI * (distance.powi(3) / GM_SUN).sqrt();
     let period_days = period / SECONDS_PER_DAY;
 
     println!("  Initial: r = {:.4} AU, v = {:.2} km/s", distance / AU_TO_METERS, v_circular / 1000.0);
@@ -88,7 +89,7 @@ fn test_circular_orbit(distance_au: f64) {
     let total_steps = (period / dt) as usize + steps_per_day;
 
     // Initial energy
-    let e0 = 0.5 * vel.length_squared() - SUN_GM / pos.length();
+    let e0 = 0.5 * vel.length_squared() - GM_SUN / pos.length();
 
     let mut t = 0.0;
     let mut min_r = distance;
@@ -109,7 +110,7 @@ fn test_circular_orbit(distance_au: f64) {
     }
 
     // Final energy
-    let ef = 0.5 * vel.length_squared() - SUN_GM / pos.length();
+    let ef = 0.5 * vel.length_squared() - GM_SUN / pos.length();
     let energy_error = (ef - e0).abs() / e0.abs();
 
     // Check orbital stability
@@ -135,13 +136,13 @@ fn test_elliptical_orbit(perihelion_au: f64, eccentricity: f64) {
     let mut pos = DVec2::new(r_p, 0.0);
 
     // Velocity at perihelion: v² = GM * (2/r - 1/a)
-    let v_perihelion = ((SUN_GM) * (2.0 / r_p - 1.0 / a)).sqrt();
+    let v_perihelion = ((GM_SUN) * (2.0 / r_p - 1.0 / a)).sqrt();
     let mut vel = DVec2::new(0.0, v_perihelion);
 
     let mut acc = compute_acceleration_sun_only(pos);
 
     // Expected orbital period
-    let period = 2.0 * std::f64::consts::PI * (a.powi(3) / SUN_GM).sqrt();
+    let period = 2.0 * std::f64::consts::PI * (a.powi(3) / GM_SUN).sqrt();
     let period_days = period / SECONDS_PER_DAY;
 
     println!("  Perihelion: {:.4} AU, Aphelion: {:.4} AU", r_p / AU_TO_METERS, r_a / AU_TO_METERS);
@@ -154,7 +155,7 @@ fn test_elliptical_orbit(perihelion_au: f64, eccentricity: f64) {
     let total_steps = (period / dt) as usize + steps_per_day;
 
     // Initial energy
-    let e0 = 0.5 * vel.length_squared() - SUN_GM / pos.length();
+    let e0 = 0.5 * vel.length_squared() - GM_SUN / pos.length();
 
     let mut t = 0.0;
     let mut min_r = r_p;
@@ -175,7 +176,7 @@ fn test_elliptical_orbit(perihelion_au: f64, eccentricity: f64) {
     }
 
     // Final energy
-    let ef = 0.5 * vel.length_squared() - SUN_GM / pos.length();
+    let ef = 0.5 * vel.length_squared() - GM_SUN / pos.length();
     let energy_error = (ef - e0).abs() / e0.abs();
 
     // Check orbital bounds

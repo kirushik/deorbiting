@@ -10,9 +10,9 @@ use bevy::prelude::*;
 use crate::asteroid::Asteroid;
 use crate::camera::{CameraState, RENDER_SCALE};
 use crate::distortion::distort_position;
-use crate::ephemeris::{CelestialBodyId, Ephemeris};
+use crate::ephemeris::{CelestialBodyId, Ephemeris, GravitySourcesWithId};
 use crate::input::DragState;
-use crate::physics::compute_acceleration;
+use crate::physics::{compute_acceleration, compute_adaptive_dt, PredictionConfig};
 use crate::render::z_layers;
 use crate::render::SelectedBody;
 use crate::types::{BodyState, InputSystemSet, SelectableBody, SimulationTime};
@@ -104,7 +104,7 @@ pub struct PredictionState {
 /// Track selection and time changes to trigger prediction recalculation.
 fn track_selection_changes(
     selected: Res<SelectedBody>,
-    sim_time: Res<SimulationTime>,
+    _sim_time: Res<SimulationTime>,
     mut state: ResMut<PredictionState>,
 ) {
     let current_entity = match selected.body {
@@ -118,11 +118,13 @@ fn track_selection_changes(
         state.last_selected = current_entity;
     }
 
-    // Check for significant time change (> 1 day of simulation time)
-    const TIME_THRESHOLD: f64 = 86400.0; // 1 day in seconds
-    if (sim_time.current - state.last_sim_time).abs() > TIME_THRESHOLD {
-        state.needs_update = true;
-    }
+    // Note: We intentionally do NOT trigger prediction updates based on elapsed
+    // simulation time. Frame-based updates (every update_interval frames) are
+    // sufficient. Time-based triggers caused once-per-day stutters because the
+    // prediction is expensive (up to 50k integration steps).
+    //
+    // The trajectory visualization doesn't need to be perfectly synchronized with
+    // simulation time - the frame-based update interval handles that smoothly.
 }
 
 /// Run condition: should we run prediction this frame?
@@ -140,12 +142,18 @@ fn should_run_prediction(
 /// Returns None if the Sun dominates (the default case), or Some(body_id)
 /// if a planet or moon's gravity is stronger at that point.
 fn find_dominant_body(pos: DVec2, time: f64, ephemeris: &Ephemeris) -> Option<CelestialBodyId> {
-    let sources = ephemeris.get_gravity_sources_with_id(time);
+    find_dominant_body_from_sources(pos, &ephemeris.get_gravity_sources_with_id(time))
+}
 
+/// Find dominant body from pre-fetched gravity sources with IDs.
+///
+/// More efficient when sources have already been fetched for other calculations.
+#[inline]
+fn find_dominant_body_from_sources(pos: DVec2, sources: &GravitySourcesWithId) -> Option<CelestialBodyId> {
     let mut max_acc = 0.0_f64;
     let mut dominant = CelestialBodyId::Sun;
 
-    for (id, body_pos, gm) in sources {
+    for &(id, body_pos, gm) in sources {
         let delta = body_pos - pos;
         let r_sq = delta.length_squared();
 
@@ -243,15 +251,11 @@ fn predict_trajectory(
     state.last_sim_time = sim_time.current;
 }
 
-/// Predict trajectory using Velocity Verlet integrator.
+/// Predict trajectory using Velocity Verlet integrator with adaptive timestep.
 ///
-/// Velocity Verlet is O(1) per step and provides sufficient accuracy for
-/// trajectory visualization (typically < 0.5% error for circular orbits).
-/// The actual simulation uses IAS15 for high precision, but displayed
-/// trajectories use this faster method for responsive UI.
-///
-/// Timestep adapts to zoom level: finer steps when zoomed in (for smooth curves),
-/// coarser steps when zoomed out (for performance).
+/// Uses the same physics-based adaptive timestep as live simulation, ensuring
+/// predicted trajectories match actual behavior. Zoom level only affects
+/// point storage density (visual smoothness), not integration accuracy.
 fn predict_with_verlet(
     body_state: &BodyState,
     ephemeris: &Ephemeris,
@@ -261,47 +265,60 @@ fn predict_with_verlet(
     is_dragging: bool,
     zoom: f32,
 ) {
-    // Zoom-adaptive timestep: dt scales with sqrt(zoom)
-    // - zoom 0.001 (close-up): dt ≈ 23 minutes for smooth curves
-    // - zoom 1.0 (medium): dt = 12 hours (baseline)
-    // - zoom 100 (far): dt ≈ 5 days (coarse but acceptable)
-    let base_dt = 43200.0; // 12 hours in seconds
-    let zoom_scale = (zoom as f64).sqrt().clamp(0.03, 4.0);
-    
-    let (dt, max_steps, point_interval) = if is_dragging {
-        // During drag: even coarser steps for responsiveness
-        let drag_dt = base_dt * zoom_scale * 4.0; // 4x coarser during drag
-        let drag_dt = drag_dt.clamp(3600.0, 86400.0 * 4.0); // 1 hour to 4 days
-        (drag_dt, 1000, 2)
+    // Use physics-based adaptive timestep with config appropriate for prediction
+    let config = if is_dragging {
+        PredictionConfig::for_dragging()
     } else {
-        // Normal: zoom-adaptive fine steps
-        let normal_dt = base_dt * zoom_scale;
-        let normal_dt = normal_dt.clamp(900.0, 86400.0 * 2.0); // 15 min to 2 days
-        // Adjust max_steps to maintain ~5 year coverage
-        let coverage = 5.0 * 365.25 * 86400.0; // 5 years in seconds
-        let steps = (coverage / normal_dt) as usize;
-        let steps = steps.clamp(1000, 8000); // Keep reasonable bounds
-        // Adjust point_interval to keep ~1000 rendered points
-        let interval = (steps / 1000).max(1);
-        (normal_dt, steps, interval)
+        PredictionConfig::default()
     };
+
+    // Zoom only affects point storage density (visual smoothness)
+    // - Low zoom (zoomed in): store more points for smooth curves
+    // - High zoom (zoomed out): store fewer points
+    let zoom_scale = (zoom as f64).sqrt().clamp(0.1, 10.0);
+    let base_point_interval = if is_dragging { 4 } else { 2 };
+    let point_interval = ((base_point_interval as f64 * zoom_scale) as usize).max(1);
 
     let mut pos = body_state.pos;
     let mut vel = body_state.vel;
     let mut sim_t = start_time;
     let end_t = start_time + settings.max_time;
 
-    for step in 0..max_steps {
-        if sim_t >= end_t {
-            break;
-        }
+    // Initialize with first acceleration and timestep
+    let mut acc = compute_acceleration(pos, sim_t, ephemeris);
+    let mut dt = config.initial_dt;
 
+    let mut step = 0;
+    let max_steps = if is_dragging { 1000 } else { settings.max_steps };
+
+    while step < max_steps && sim_t < end_t {
         // Velocity Verlet integration
-        let acc = compute_acceleration(pos, sim_t, ephemeris);
-        pos = pos + vel * dt + acc * (0.5 * dt * dt);
-        let acc_new = compute_acceleration(pos, sim_t + dt, ephemeris);
-        vel = vel + (acc + acc_new) * (0.5 * dt);
+        // Step 1: Position update
+        let pos_new = pos + vel * dt + acc * (0.5 * dt * dt);
+
+        // Step 2: Compute new acceleration
+        let acc_new = compute_acceleration(pos_new, sim_t + dt, ephemeris);
+
+        // Step 3: Velocity update
+        let vel_new = vel + (acc + acc_new) * (0.5 * dt);
+
+        // Compute adaptive timestep using unified logic
+        let dt_new = compute_adaptive_dt(
+            acc,
+            acc_new,
+            dt,
+            config.min_dt,
+            config.max_dt,
+            config.epsilon,
+        );
+
+        // Update state
+        pos = pos_new;
+        vel = vel_new;
+        acc = acc_new;
         sim_t += dt;
+        dt = dt_new;
+        step += 1;
 
         // Store points at interval with dominant body info
         if step % point_interval == 0 {

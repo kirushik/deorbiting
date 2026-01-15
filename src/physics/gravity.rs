@@ -6,6 +6,9 @@
 use bevy::math::DVec2;
 
 use crate::ephemeris::Ephemeris;
+use crate::types::GM_SUN;
+
+use crate::ephemeris::GravitySources;
 
 /// Compute gravitational acceleration at a given position and time.
 ///
@@ -19,12 +22,27 @@ use crate::ephemeris::Ephemeris;
 ///
 /// # Returns
 /// Acceleration vector in m/s²
+#[inline]
 pub fn compute_acceleration(pos: DVec2, time: f64, ephemeris: &Ephemeris) -> DVec2 {
+    compute_acceleration_from_sources(pos, &ephemeris.get_gravity_sources(time))
+}
+
+/// Compute gravitational acceleration from pre-fetched gravity sources.
+///
+/// This is more efficient when multiple calculations need the same sources
+/// (e.g., in trajectory prediction loops where positions are sampled at the same time).
+///
+/// # Arguments
+/// * `pos` - Position in meters from solar system barycenter
+/// * `sources` - Pre-fetched array of (position, GM) pairs
+///
+/// # Returns
+/// Acceleration vector in m/s²
+#[inline]
+pub fn compute_acceleration_from_sources(pos: DVec2, sources: &GravitySources) -> DVec2 {
     let mut acc = DVec2::ZERO;
 
-    // ephemeris.get_gravity_sources returns (position, GM) pairs
-    // where GM is already G * mass (standard gravitational parameter)
-    for (body_pos, gm) in ephemeris.get_gravity_sources(time) {
+    for &(body_pos, gm) in sources {
         let delta = body_pos - pos;
         let r_squared = delta.length_squared();
 
@@ -75,8 +93,7 @@ pub fn find_closest_body(pos: DVec2, time: f64, ephemeris: &Ephemeris) -> Option
                 // Approximate body velocity from orbital mechanics (circular orbit assumption)
                 // v = sqrt(GM_sun / r)
                 let r = body_pos.length();
-                let gm_sun = 1.32712440018e20;
-                let v_mag = (gm_sun / r).sqrt();
+                let v_mag = (GM_SUN / r).sqrt();
                 let angle = body_pos.y.atan2(body_pos.x);
                 let body_velocity = DVec2::new(-angle.sin(), angle.cos()) * v_mag;
 
@@ -107,7 +124,7 @@ pub fn find_closest_body(pos: DVec2, time: f64, ephemeris: &Ephemeris) -> Option
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::AU_TO_METERS;
+    use crate::types::{AU_TO_METERS, GM_SUN};
 
     #[test]
     fn test_acceleration_at_earth_distance() {
@@ -123,7 +140,7 @@ mod tests {
         assert!(acc.x < 0.0, "Acceleration should be toward Sun");
 
         // Expected magnitude: GM_sun / r² ≈ 5.93e-3 m/s²
-        let expected_mag = 1.32712440018e20 / (AU_TO_METERS * AU_TO_METERS);
+        let expected_mag = GM_SUN / (AU_TO_METERS * AU_TO_METERS);
         let actual_mag = acc.length();
 
         // Allow 1% error due to other bodies' influence
@@ -173,8 +190,7 @@ mod tests {
 
         // Sun-only acceleration (approximately)
         let sun_dist = asteroid_pos.length();
-        let sun_gm = 1.32712440018e20;
-        let sun_acc_mag = sun_gm / (sun_dist * sun_dist);
+        let sun_acc_mag = GM_SUN / (sun_dist * sun_dist);
 
         // Jupiter acceleration
         let jupiter_gm = 6.67430e-11 * 1.898e27; // G * M_jupiter

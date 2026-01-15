@@ -8,9 +8,12 @@ bevy = "0.15"
 bevy_egui = "0.31"
 thiserror = "2"
 rand = "0.8"
+wide = "0.7"
 
 [dev-dependencies]
 approx = "0.5"
+particular = { version = "0.7", features = ["parallel"] }
+rayon = "1.10"
 
 [lints.clippy]
 type_complexity = "allow"

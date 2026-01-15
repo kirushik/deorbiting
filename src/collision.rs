@@ -14,11 +14,9 @@ use std::collections::{HashSet, VecDeque};
 use bevy::prelude::*;
 use bevy::math::DVec2;
 
-use crate::asteroid::{Asteroid, AsteroidName};
-use crate::ephemeris::{data::CelestialBodyId, Ephemeris};
-use crate::physics::IntegratorStates;
+use crate::ephemeris::data::CelestialBodyId;
 use crate::render::SelectedBody;
-use crate::types::{BodyState, SelectableBody, SimulationTime, SECONDS_PER_DAY};
+use crate::types::{SelectableBody, SimulationTime, SECONDS_PER_DAY};
 
 /// Event fired when an asteroid collides with a celestial body.
 ///
@@ -93,90 +91,75 @@ impl CollisionState {
     }
 }
 
-/// Check for collisions between asteroids and celestial bodies.
+/// Handle the response to a detected collision.
 ///
-/// This system runs after physics integration. When a collision is detected:
-/// 1. The asteroid is marked as colliding (immediate physics exclusion)
-/// 2. A notification is queued
-/// 3. The asteroid is despawned
-/// 4. The simulation is paused
+/// This function is called by the physics integration loop when a collision
+/// is detected. It:
+/// 1. Creates and logs the collision event
+/// 2. Marks the entity as colliding (immediate physics exclusion)
+/// 3. Queues the asteroid for despawning
+/// 4. Clears selection if the asteroid was selected
+/// 5. Fires the collision event for UI listeners
+/// 6. Pauses the simulation
 ///
-/// Each asteroid collision is handled independently. After the user resumes
-/// the simulation, it continues with the remaining asteroids.
-pub fn check_collisions(
-    mut commands: Commands,
-    asteroids: Query<(Entity, &AsteroidName, &BodyState), With<Asteroid>>,
-    ephemeris: Res<Ephemeris>,
-    mut sim_time: ResMut<SimulationTime>,
-    mut collision_events: EventWriter<CollisionEvent>,
-    mut collision_state: ResMut<CollisionState>,
-    mut integrator_states: ResMut<IntegratorStates>,
-    mut selected: ResMut<SelectedBody>,
-) {
-    // Skip if already paused (avoid repeated collision events while paused)
-    if sim_time.paused {
-        return;
+/// Returns the created collision event.
+#[allow(clippy::too_many_arguments)]
+pub fn handle_collision_response(
+    commands: &mut Commands,
+    collision_state: &mut CollisionState,
+    collision_events: &mut EventWriter<CollisionEvent>,
+    selected: &mut SelectedBody,
+    sim_time: &mut SimulationTime,
+    entity: Entity,
+    asteroid_name: &str,
+    body_hit: CelestialBodyId,
+    impact_position: DVec2,
+    impact_velocity: DVec2,
+    time: f64,
+) -> CollisionEvent {
+    let event = CollisionEvent {
+        asteroid_name: asteroid_name.to_string(),
+        body_hit,
+        impact_position,
+        impact_velocity,
+        time,
+    };
+
+    info!(
+        "IMPACT! {} hit {:?} at {:.2} km/s",
+        asteroid_name,
+        body_hit,
+        event.impact_speed_km_s(),
+    );
+
+    // Mark as colliding FIRST (provides immediate physics exclusion)
+    collision_state.push_collision(entity, event.clone());
+
+    // Destroy the asteroid (deferred until end of frame)
+    commands.entity(entity).despawn();
+
+    // Clear selection if this asteroid was selected
+    if selected.body == Some(SelectableBody::Asteroid(entity)) {
+        selected.body = None;
     }
 
-    // Collect collisions first to avoid borrow conflicts
-    let mut collisions = Vec::new();
+    // Fire event for any other listeners
+    collision_events.send(event.clone());
 
-    for (entity, name, body_state) in asteroids.iter() {
-        // Skip if already marked as colliding (prevents re-detection before despawn)
-        if collision_state.is_colliding(entity) {
-            continue;
-        }
+    // Pause simulation
+    sim_time.paused = true;
 
-        // Check collision using ephemeris
-        if let Some(body_hit) = ephemeris.check_collision(body_state.pos, sim_time.current) {
-            collisions.push((entity, name.0.clone(), body_state.clone(), body_hit));
-        }
-    }
-
-    // Process all collisions
-    for (entity, asteroid_name, body_state, body_hit) in collisions {
-        // Create collision event
-        let event = CollisionEvent {
-            asteroid_name: asteroid_name.clone(),
-            body_hit,
-            impact_position: body_state.pos,
-            impact_velocity: body_state.vel,
-            time: sim_time.current,
-        };
-
-        info!(
-            "IMPACT! {} hit {:?} at {:.2} km/s",
-            asteroid_name,
-            body_hit,
-            event.impact_speed_km_s(),
-        );
-
-        // Add to collision state FIRST (provides immediate physics exclusion)
-        collision_state.push_collision(entity, event.clone());
-
-        // Destroy the asteroid (deferred until end of frame)
-        commands.entity(entity).despawn();
-        integrator_states.remove(entity);
-
-        // Clear selection if this asteroid was selected
-        if selected.body == Some(SelectableBody::Asteroid(entity)) {
-            selected.body = None;
-        }
-
-        // Fire event for any other listeners
-        collision_events.send(event);
-
-        // Pause simulation (will pause on first collision, additional collisions
-        // in the same frame are still processed and destroyed)
-        sim_time.paused = true;
-    }
+    event
 }
 
 /// Plugin providing collision detection for asteroids.
 ///
-/// Note: Actual collision detection is now performed inside `physics_step`
-/// to ensure correct timing (asteroid and celestial body positions synchronized).
-/// This plugin only registers the event type and collision state resource.
+/// Collision detection is performed inside `physics_step` at each integration
+/// sub-step to ensure correct timing (asteroid and celestial body positions
+/// synchronized). When a collision is detected, physics calls
+/// `handle_collision_response` to process the impact.
+///
+/// This plugin registers the event type and collision state resource.
 pub struct CollisionPlugin;
 
 impl Plugin for CollisionPlugin {

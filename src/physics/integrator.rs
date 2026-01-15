@@ -114,13 +114,26 @@ impl IAS15State {
         // Step 3: Velocity update (using average of old and new acceleration)
         let vel_new = self.vel + (self.acc + acc_new) * (0.5 * dt);
 
-        // Estimate error for adaptive timestep
-        // Use change in acceleration as error indicator
-        let acc_change = (acc_new - self.acc).length();
-        let acc_scale = self.acc.length().max(acc_new.length()).max(1e-10);
-        let relative_error = acc_change / acc_scale;
+        // Improved error estimation based on local truncation error
+        // 
+        // For Velocity Verlet, local truncation error is O(dt³) and proportional to
+        // the third derivative of position (jerk rate). We estimate this using the
+        // second central difference of acceleration:
+        //
+        //   d²a/dt² ≈ (acc_new - 2*acc + acc_prev) / dt²
+        //
+        // The position error scales as:
+        //   δx ≈ (1/12) * dt² * |acc_new - 2*acc + acc_prev|
+        //
+        // We normalize by position magnitude to get dimensionless error.
+        let acc_second_diff = acc_new - self.acc * 2.0 + self.acc_prev;
+        let position_error = (1.0 / 12.0) * dt * dt * acc_second_diff.length();
+        
+        // Normalize by characteristic length scale (position magnitude or minimum threshold)
+        let pos_scale = pos_new.length().max(1e6); // Min 1000 km to avoid issues near origin
+        let relative_error = position_error / pos_scale;
 
-        // Compute new timestep
+        // Compute new timestep based on error
         let dt_new = self.compute_new_timestep(relative_error, config);
 
         // Accept step
@@ -135,20 +148,113 @@ impl IAS15State {
     }
 
     /// Compute new timestep based on error estimate.
+    ///
+    /// For Velocity Verlet, local truncation error is O(dt³), so to maintain
+    /// constant error, we adjust dt by (epsilon/error)^(1/3).
     fn compute_new_timestep(&self, error: f64, config: &IAS15Config) -> f64 {
         if error < 1e-15 {
-            // Error essentially zero - increase timestep
+            // Error essentially zero - increase timestep gradually
             return (self.dt * 1.5).min(config.max_dt);
         }
 
-        // For Verlet, error ~ dt², so dt_new = dt * (epsilon/error)^(1/2)
-        let ratio = (config.epsilon / error).powf(0.5);
+        // For Verlet, local truncation error ~ dt³
+        // To achieve target error epsilon: dt_new = dt * (epsilon/error)^(1/3)
+        let ratio = (config.epsilon / error).powf(1.0 / 3.0);
 
-        // Apply safety factor
+        // Apply conservative clamping to prevent extreme changes
         let ratio_clamped = ratio.clamp(0.5, 2.0);
 
         (self.dt * ratio_clamped).clamp(config.min_dt, config.max_dt)
     }
+
+}
+
+/// Configuration for trajectory prediction.
+///
+/// Uses looser tolerances than live physics for faster computation
+/// while maintaining visual accuracy.
+#[derive(Clone, Debug)]
+pub struct PredictionConfig {
+    /// Initial timestep in seconds.
+    pub initial_dt: f64,
+    /// Minimum allowed timestep in seconds.
+    pub min_dt: f64,
+    /// Maximum allowed timestep in seconds.
+    pub max_dt: f64,
+    /// Error tolerance (looser than live physics).
+    pub epsilon: f64,
+}
+
+impl Default for PredictionConfig {
+    fn default() -> Self {
+        Self {
+            initial_dt: 3600.0,     // 1 hour
+            min_dt: 600.0,          // 10 minutes (coarser than live physics)
+            max_dt: 86400.0 * 2.0,  // 2 days (coarser than live physics)
+            epsilon: 1e-6,          // Looser tolerance for faster prediction
+        }
+    }
+}
+
+impl PredictionConfig {
+    /// Create config for interactive dragging (coarser for responsiveness).
+    pub fn for_dragging() -> Self {
+        Self {
+            initial_dt: 7200.0,     // 2 hours
+            min_dt: 3600.0,         // 1 hour minimum
+            max_dt: 86400.0 * 4.0,  // 4 days
+            epsilon: 1e-4,          // Very loose for fast feedback
+        }
+    }
+}
+
+/// Compute adaptive timestep based on acceleration change.
+///
+/// This is the unified timestep logic used by both live physics and prediction.
+/// Uses the relative change in acceleration as an error proxy.
+///
+/// For Velocity Verlet with local truncation error O(dt³), we adjust dt by
+/// (epsilon/error)^(1/3) to maintain target error.
+///
+/// # Arguments
+/// * `acc_old` - Acceleration at start of step
+/// * `acc_new` - Acceleration at end of step
+/// * `current_dt` - Current timestep
+/// * `min_dt` - Minimum allowed timestep
+/// * `max_dt` - Maximum allowed timestep
+/// * `epsilon` - Error tolerance
+///
+/// # Returns
+/// The new timestep value.
+pub fn compute_adaptive_dt(
+    acc_old: DVec2,
+    acc_new: DVec2,
+    current_dt: f64,
+    min_dt: f64,
+    max_dt: f64,
+    epsilon: f64,
+) -> f64 {
+    // Estimate error from acceleration change
+    // This approximates the jerk-related error term in Velocity Verlet
+    let acc_change = (acc_new - acc_old).length();
+    
+    // Normalize by acceleration scale to get dimensionless error
+    let acc_scale = acc_old.length().max(acc_new.length()).max(1e-10);
+    let relative_error = acc_change / acc_scale;
+
+    if relative_error < 1e-15 {
+        // Error essentially zero - increase timestep gradually
+        return (current_dt * 1.5).min(max_dt);
+    }
+
+    // For Verlet, local truncation error ~ dt³
+    // To achieve target error epsilon: dt_new = dt * (epsilon/error)^(1/3)
+    let ratio = (epsilon / relative_error).powf(1.0 / 3.0);
+
+    // Clamp ratio to prevent extreme changes
+    let ratio_clamped = ratio.clamp(0.5, 2.0);
+
+    (current_dt * ratio_clamped).clamp(min_dt, max_dt)
 }
 
 // =============================================================================

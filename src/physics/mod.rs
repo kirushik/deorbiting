@@ -12,14 +12,14 @@ use std::collections::HashMap;
 use bevy::prelude::*;
 use bevy::math::DVec2;
 
-pub use gravity::{compute_acceleration, find_closest_body, ClosestBodyInfo};
-pub use integrator::{IAS15Config, IAS15State};
+pub use gravity::{compute_acceleration, compute_acceleration_from_sources, find_closest_body, ClosestBodyInfo};
+pub use integrator::{IAS15Config, IAS15State, PredictionConfig, compute_adaptive_dt};
 
 use crate::asteroid::{Asteroid, AsteroidName};
-use crate::collision::{CollisionEvent, CollisionState};
+use crate::collision::{CollisionEvent, CollisionState, handle_collision_response};
 use crate::ephemeris::Ephemeris;
 use crate::render::SelectedBody;
-use crate::types::{BodyState, SelectableBody, SimulationTime, SECONDS_PER_DAY};
+use crate::types::{BodyState, SimulationTime, SECONDS_PER_DAY};
 
 /// Plugin providing physics simulation for asteroids.
 ///
@@ -122,12 +122,16 @@ fn physics_step(
         });
 
         // Track simulation time for this integration batch
-        let mut sim_t = sim_time.current;
-        let mut remaining = target_dt;
+        // Use elapsed time from zero to avoid float accumulation errors
+        // sim_t = start_time + elapsed (single addition to large value)
+        let start_time = sim_time.current;
+        let mut elapsed = 0.0;
         let mut collided = false;
 
         // Run IAS15 steps until we've covered the target time delta
-        while remaining > 0.0 {
+        while elapsed < target_dt {
+            // Compute current simulation time precisely
+            let sim_t = start_time + elapsed;
             // Check proximity to celestial bodies and cap timestep to avoid skipping
             if let Some(closest) = find_closest_body(ias15.pos, sim_t, &ephemeris) {
                 // Calculate relative velocity (asteroid velocity minus body velocity)
@@ -157,48 +161,31 @@ fn physics_step(
             // Take one IAS15 step
             ias15.step(acc_fn, &config);
 
-            // Advance tracking
+            // Advance elapsed time (single accumulation from zero)
             let step_taken = ias15.dt_last_done;
-            remaining -= step_taken;
-            sim_t += step_taken;
+            elapsed += step_taken;
 
             // Check collision at the correct simulation time (after step)
             // This ensures asteroid position and celestial body positions are synchronized
-            if let Some(body_hit) = ephemeris.check_collision(ias15.pos, sim_t) {
-                let event = CollisionEvent {
-                    asteroid_name: name.0.clone(),
+            let sim_t_after_step = start_time + elapsed;
+            if let Some(body_hit) = ephemeris.check_collision(ias15.pos, sim_t_after_step) {
+                // Delegate collision handling to the collision module
+                handle_collision_response(
+                    &mut commands,
+                    &mut collision_state,
+                    &mut collision_events,
+                    &mut selected,
+                    &mut sim_time,
+                    entity,
+                    &name.0,
                     body_hit,
-                    impact_position: ias15.pos,
-                    impact_velocity: ias15.vel,
-                    time: sim_t,
-                };
-
-                info!(
-                    "IMPACT! {} hit {:?} at {:.2} km/s",
-                    name.0,
-                    body_hit,
-                    event.impact_speed_km_s(),
+                    ias15.pos,
+                    ias15.vel,
+                    sim_t_after_step,
                 );
-
-                // Mark as colliding and queue notification
-                collision_state.push_collision(entity, event.clone());
-
-                // Despawn asteroid (deferred command)
-                commands.entity(entity).despawn();
 
                 // Track for deferred integrator state removal
                 collided_entities.push(entity);
-
-                // Clear selection if this was selected
-                if selected.body == Some(SelectableBody::Asteroid(entity)) {
-                    selected.body = None;
-                }
-
-                // Fire event
-                collision_events.send(event);
-
-                // Pause simulation
-                sim_time.paused = true;
 
                 collided = true;
                 break;

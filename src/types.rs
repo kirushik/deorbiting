@@ -20,6 +20,14 @@ pub enum InputSystemSet {
 /// Gravitational constant (m³·kg⁻¹·s⁻²)
 pub const G: f64 = 6.67430e-11;
 
+/// Sun's mass in kilograms
+pub const SUN_MASS: f64 = 1.989e30;
+
+/// Sun's standard gravitational parameter GM (m³/s²)
+/// This is G * Sun_mass, pre-computed for efficiency.
+/// Source: IAU 2015 nominal solar mass parameter
+pub const GM_SUN: f64 = 1.32712440018e20;
+
 /// Astronomical unit in meters
 pub const AU_TO_METERS: f64 = 1.495978707e11;
 

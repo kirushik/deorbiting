@@ -1,6 +1,10 @@
 use crate::ephemeris::data::CelestialBodyId;
 use crate::ephemeris::table::{EphemerisTable, EphemerisTableError, State2};
+use bevy::math::DVec2;
 use std::collections::HashMap;
+
+/// Number of bodies with tables (excludes Sun which is at origin).
+const TABLE_BODY_COUNT: usize = 14;
 
 /// Time range covered by a loaded ephemeris table.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -112,5 +116,43 @@ impl HorizonsTables {
         t: f64,
     ) -> Option<Result<State2, EphemerisTableError>> {
         self.tables.get(&id).map(|tbl| tbl.sample(t))
+    }
+
+    /// Sample positions for all bodies at once, with better cache locality.
+    ///
+    /// Returns positions for bodies in standard order:
+    /// Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune,
+    /// Moon, Io, Europa, Ganymede, Callisto, Titan.
+    ///
+    /// Bodies without tables or outside table range return None.
+    pub fn sample_all_positions(&self, t: f64) -> [Option<DVec2>; TABLE_BODY_COUNT] {
+        const BODY_ORDER: [CelestialBodyId; TABLE_BODY_COUNT] = [
+            CelestialBodyId::Mercury,
+            CelestialBodyId::Venus,
+            CelestialBodyId::Earth,
+            CelestialBodyId::Mars,
+            CelestialBodyId::Jupiter,
+            CelestialBodyId::Saturn,
+            CelestialBodyId::Uranus,
+            CelestialBodyId::Neptune,
+            CelestialBodyId::Moon,
+            CelestialBodyId::Io,
+            CelestialBodyId::Europa,
+            CelestialBodyId::Ganymede,
+            CelestialBodyId::Callisto,
+            CelestialBodyId::Titan,
+        ];
+
+        let mut result = [None; TABLE_BODY_COUNT];
+
+        for (i, &id) in BODY_ORDER.iter().enumerate() {
+            if let Some(tbl) = self.tables.get(&id) {
+                if let Ok(pos) = tbl.sample_position(t) {
+                    result[i] = Some(pos);
+                }
+            }
+        }
+
+        result
     }
 }
