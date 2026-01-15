@@ -4,6 +4,7 @@ use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
 
 use crate::asteroid::ResetEvent;
+use crate::prediction::PredictionSettings;
 use crate::types::{j2000_seconds_to_date_string, SimulationTime};
 
 /// System that renders the time controls panel.
@@ -11,6 +12,7 @@ pub fn time_controls_panel(
     mut contexts: EguiContexts,
     mut sim_time: ResMut<SimulationTime>,
     mut reset_events: EventWriter<ResetEvent>,
+    mut prediction_settings: ResMut<PredictionSettings>,
 ) {
     let Some(ctx) = contexts.try_ctx_mut() else {
         return;
@@ -60,6 +62,25 @@ pub fn time_controls_panel(
                     {
                         sim_time.scale = *scale;
                     }
+                }
+
+                ui.separator();
+
+                // Prediction horizon slider
+                ui.label("Prediction:");
+                let years = (prediction_settings.max_time / (365.25 * 24.0 * 3600.0)) as f32;
+                let mut years_slider = years;
+                if ui
+                    .add(
+                        egui::Slider::new(&mut years_slider, 1.0..=10.0)
+                            .suffix(" yr")
+                            .fixed_decimals(0),
+                    )
+                    .changed()
+                {
+                    prediction_settings.max_time =
+                        years_slider as f64 * 365.25 * 24.0 * 3600.0;
+                    prediction_settings.max_steps = (years_slider as usize) * 10_000;
                 }
 
                 ui.separator();

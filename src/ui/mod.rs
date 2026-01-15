@@ -1,11 +1,14 @@
 //! UI module providing egui-based interface panels.
 
+mod asteroid_placement;
 mod collision_notification;
 mod info_panel;
 mod time_controls;
+pub mod velocity_handle;
 
 use bevy::prelude::*;
 
+pub use asteroid_placement::*;
 pub use collision_notification::*;
 pub use info_panel::*;
 pub use time_controls::*;
@@ -17,10 +20,34 @@ impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<UiState>()
             .init_resource::<ActiveNotification>()
+            .init_resource::<AsteroidPlacementMode>()
+            .add_event::<TogglePlacementModeEvent>()
             .add_systems(
                 Update,
-                (time_controls_panel, info_panel, collision_notification).chain(),
+                (
+                    time_controls_panel,
+                    info_panel,
+                    collision_notification,
+                    handle_toggle_placement_event,
+                    handle_asteroid_placement,
+                    update_placement_cursor,
+                ),
             );
+    }
+}
+
+/// System to handle toggle placement mode events.
+fn handle_toggle_placement_event(
+    mut events: EventReader<TogglePlacementModeEvent>,
+    mut placement_mode: ResMut<AsteroidPlacementMode>,
+) {
+    for _ in events.read() {
+        placement_mode.active = !placement_mode.active;
+        if placement_mode.active {
+            info!("Asteroid placement mode activated - click to place asteroid");
+        } else {
+            info!("Asteroid placement mode deactivated");
+        }
     }
 }
 
@@ -51,3 +78,17 @@ pub enum DisplayUnits {
     /// Astronomical Units / AU/day
     Au,
 }
+
+/// Resource tracking asteroid placement mode.
+///
+/// When active, the next click on the viewport will spawn an asteroid
+/// at that location with a velocity calculated to intercept Earth.
+#[derive(Resource, Default)]
+pub struct AsteroidPlacementMode {
+    /// Whether placement mode is active.
+    pub active: bool,
+}
+
+/// Event to toggle asteroid placement mode.
+#[derive(Event)]
+pub struct TogglePlacementModeEvent;

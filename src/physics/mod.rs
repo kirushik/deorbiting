@@ -12,26 +12,31 @@ use std::collections::HashMap;
 use bevy::prelude::*;
 use bevy::math::DVec2;
 
-pub use gravity::compute_acceleration;
+pub use gravity::{compute_acceleration, find_closest_body, ClosestBodyInfo};
 pub use integrator::{IAS15Config, IAS15State};
 
-use crate::asteroid::Asteroid;
-use crate::collision::CollisionState;
+use crate::asteroid::{Asteroid, AsteroidName};
+use crate::collision::{CollisionEvent, CollisionState};
 use crate::ephemeris::Ephemeris;
-use crate::types::{BodyState, SimulationTime, SECONDS_PER_DAY};
+use crate::render::SelectedBody;
+use crate::types::{BodyState, SelectableBody, SimulationTime, SECONDS_PER_DAY};
 
 /// Plugin providing physics simulation for asteroids.
 ///
 /// Adds systems for:
 /// - Physics integration (IAS15) in FixedUpdate
 /// - Integrator state management
+/// System set for physics simulation, used for ordering with collision detection.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PhysicsSet;
+
 pub struct PhysicsPlugin;
 
 impl Plugin for PhysicsPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(IAS15Config::default())
             .insert_resource(IntegratorStates::default())
-            .add_systems(FixedUpdate, physics_step);
+            .add_systems(FixedUpdate, physics_step.in_set(PhysicsSet));
     }
 }
 
@@ -67,16 +72,24 @@ impl IntegratorStates {
 /// For each asteroid with a BodyState, advances the IAS15 integrator
 /// to cover the elapsed simulation time.
 ///
+/// Collision detection is performed inside the integration loop at each step
+/// to ensure the correct simulation time is used (asteroid and celestial body
+/// positions are synchronized).
+///
 /// Entities marked as colliding are skipped to prevent them from moving
 /// after a collision is detected but before the deferred despawn executes.
+#[allow(clippy::too_many_arguments)]
 fn physics_step(
-    mut asteroids: Query<(Entity, &mut BodyState), With<Asteroid>>,
+    mut commands: Commands,
+    mut asteroids: Query<(Entity, &AsteroidName, &mut BodyState), With<Asteroid>>,
     mut integrator_states: ResMut<IntegratorStates>,
     ephemeris: Res<Ephemeris>,
-    sim_time: Res<SimulationTime>,
+    mut sim_time: ResMut<SimulationTime>,
     config: Res<IAS15Config>,
     time: Res<Time>,
-    collision_state: Res<CollisionState>,
+    mut collision_state: ResMut<CollisionState>,
+    mut collision_events: EventWriter<CollisionEvent>,
+    mut selected: ResMut<SelectedBody>,
 ) {
     // Skip if simulation is paused
     if sim_time.paused {
@@ -92,7 +105,10 @@ fn physics_step(
         return;
     }
 
-    for (entity, mut body_state) in asteroids.iter_mut() {
+    // Track entities that collided (for deferred integrator state removal)
+    let mut collided_entities = Vec::new();
+
+    for (entity, name, mut body_state) in asteroids.iter_mut() {
         // Skip entities that are colliding (awaiting despawn)
         if collision_state.is_colliding(entity) {
             continue;
@@ -108,9 +124,29 @@ fn physics_step(
         // Track simulation time for this integration batch
         let mut sim_t = sim_time.current;
         let mut remaining = target_dt;
+        let mut collided = false;
 
         // Run IAS15 steps until we've covered the target time delta
         while remaining > 0.0 {
+            // Check proximity to celestial bodies and cap timestep to avoid skipping
+            if let Some(closest) = find_closest_body(ias15.pos, sim_t, &ephemeris) {
+                // Calculate relative velocity (asteroid velocity minus body velocity)
+                let rel_vel = (ias15.vel - closest.body_velocity).length();
+
+                if rel_vel > 0.0 {
+                    // Cap timestep so we move at most 10% of the distance to the body
+                    // This ensures we won't skip over collision detection
+                    let safety_factor = 0.1;
+                    let max_dt_proximity = closest.distance * safety_factor / rel_vel;
+
+                    // Apply the cap (don't go below min_dt)
+                    let capped_dt = ias15.dt.min(max_dt_proximity).max(config.min_dt);
+                    if capped_dt < ias15.dt {
+                        ias15.dt = capped_dt;
+                    }
+                }
+            }
+
             // Create acceleration function that queries ephemeris at the current sim time
             // plus the relative offset within the step
             let current_sim_t = sim_t;
@@ -126,6 +162,48 @@ fn physics_step(
             remaining -= step_taken;
             sim_t += step_taken;
 
+            // Check collision at the correct simulation time (after step)
+            // This ensures asteroid position and celestial body positions are synchronized
+            if let Some(body_hit) = ephemeris.check_collision(ias15.pos, sim_t) {
+                let event = CollisionEvent {
+                    asteroid_name: name.0.clone(),
+                    body_hit,
+                    impact_position: ias15.pos,
+                    impact_velocity: ias15.vel,
+                    time: sim_t,
+                };
+
+                info!(
+                    "IMPACT! {} hit {:?} at {:.2} km/s",
+                    name.0,
+                    body_hit,
+                    event.impact_speed_km_s(),
+                );
+
+                // Mark as colliding and queue notification
+                collision_state.push_collision(entity, event.clone());
+
+                // Despawn asteroid (deferred command)
+                commands.entity(entity).despawn();
+
+                // Track for deferred integrator state removal
+                collided_entities.push(entity);
+
+                // Clear selection if this was selected
+                if selected.body == Some(SelectableBody::Asteroid(entity)) {
+                    selected.body = None;
+                }
+
+                // Fire event
+                collision_events.send(event);
+
+                // Pause simulation
+                sim_time.paused = true;
+
+                collided = true;
+                break;
+            }
+
             // Safety: prevent infinite loops if step size is too small
             if step_taken < 1e-10 {
                 warn!("IAS15 step size critically small, breaking integration loop");
@@ -133,9 +211,16 @@ fn physics_step(
             }
         }
 
-        // Update BodyState with final integrated position and velocity
-        body_state.pos = ias15.pos;
-        body_state.vel = ias15.vel;
+        // Update BodyState with final integrated position and velocity (if not collided)
+        if !collided {
+            body_state.pos = ias15.pos;
+            body_state.vel = ias15.vel;
+        }
+    }
+
+    // Clean up integrator states for collided entities (deferred to avoid borrow conflict)
+    for entity in collided_entities {
+        integrator_states.remove(entity);
     }
 }
 

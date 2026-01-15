@@ -13,6 +13,7 @@ mod distortion;
 mod ephemeris;
 mod input;
 mod physics;
+mod prediction;
 mod render;
 mod time;
 mod types;
@@ -24,9 +25,11 @@ use collision::CollisionPlugin;
 use ephemeris::Ephemeris;
 use input::InputPlugin;
 use physics::PhysicsPlugin;
+use prediction::PredictionPlugin;
 use render::RenderPlugin;
 use time::TimePlugin;
 use types::SimulationTime;
+use ui::velocity_handle::VelocityHandlePlugin;
 use ui::UiPlugin;
 
 fn main() {
@@ -48,6 +51,8 @@ fn main() {
             UiPlugin,
             PhysicsPlugin,
             CollisionPlugin,
+            PredictionPlugin,
+            VelocityHandlePlugin,
         ))
         // Spawn initial asteroid for testing
         .add_systems(Startup, spawn_initial_asteroid)

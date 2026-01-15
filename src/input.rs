@@ -11,8 +11,10 @@ use bevy_egui::EguiContexts;
 use crate::asteroid::{Asteroid, ResetEvent};
 use crate::camera::{MainCamera, RENDER_SCALE, MIN_ZOOM, MAX_ZOOM, ZOOM_SPEED};
 use crate::physics::IntegratorStates;
+use crate::prediction::{mark_prediction_dirty, PredictionState};
 use crate::render::SelectedBody;
-use crate::types::{BodyState, SelectableBody, SimulationTime};
+use crate::types::{BodyState, InputSystemSet, SelectableBody, SimulationTime};
+use crate::ui::velocity_handle::VelocityDragState;
 
 /// Resource tracking asteroid drag state.
 #[derive(Resource, Default)]
@@ -29,7 +31,18 @@ pub struct InputPlugin;
 impl Plugin for InputPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<DragState>()
-            .add_systems(Update, (keyboard_shortcuts, handle_asteroid_drag));
+            // Configure system ordering: velocity drag runs before position drag
+            .configure_sets(
+                Update,
+                InputSystemSet::PositionDrag.after(InputSystemSet::VelocityDrag),
+            )
+            .add_systems(
+                Update,
+                (
+                    keyboard_shortcuts,
+                    handle_asteroid_drag.in_set(InputSystemSet::PositionDrag),
+                ),
+            );
     }
 }
 
@@ -85,6 +98,7 @@ fn keyboard_shortcuts(
 }
 
 /// Handle mouse dragging of asteroids when simulation is paused.
+#[allow(clippy::too_many_arguments)]
 fn handle_asteroid_drag(
     mouse: Res<ButtonInput<MouseButton>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
@@ -94,11 +108,18 @@ fn handle_asteroid_drag(
     sim_time: Res<SimulationTime>,
     mut drag_state: ResMut<DragState>,
     mut integrator_states: ResMut<IntegratorStates>,
+    mut prediction_state: ResMut<PredictionState>,
+    velocity_drag_state: Res<VelocityDragState>,
     mut contexts: EguiContexts,
 ) {
     // Only allow dragging when paused
     if !sim_time.paused {
         drag_state.dragging = None;
+        return;
+    }
+
+    // Don't start position drag if velocity drag is active
+    if velocity_drag_state.dragging {
         return;
     }
 
@@ -146,8 +167,15 @@ fn handle_asteroid_drag(
     if mouse.pressed(MouseButton::Left) {
         if let Some(entity) = drag_state.dragging {
             if let Ok(mut body_state) = asteroids.get_mut(entity) {
+                let old_pos = body_state.pos;
                 // Update position with offset
                 body_state.pos = physics_pos + drag_state.drag_offset;
+
+                // Real-time preview: update trajectory as position changes
+                if (body_state.pos - old_pos).length() > 1e6 {
+                    // Only update if position changed significantly (> 1000 km)
+                    mark_prediction_dirty(&mut prediction_state);
+                }
             }
         }
     }
@@ -155,14 +183,12 @@ fn handle_asteroid_drag(
     // End drag on mouse release
     if mouse.just_released(MouseButton::Left) {
         if let Some(entity) = drag_state.dragging {
-            if let Ok(mut body_state) = asteroids.get_mut(entity) {
-                // Reset velocity to zero
-                body_state.vel = DVec2::ZERO;
-
-                // Reinitialize integrator state for this entity
+            if asteroids.contains(entity) {
+                // Reinitialize integrator state for new position (velocity preserved)
                 integrator_states.remove(entity);
-
-                info!("Asteroid moved, velocity reset to zero");
+                // Trigger trajectory recalculation
+                mark_prediction_dirty(&mut prediction_state);
+                info!("Asteroid repositioned, velocity preserved");
             }
             drag_state.dragging = None;
         }

@@ -174,3 +174,60 @@ fn predict_trajectory(
     TrajectoryPath { points }
 }
 ```
+
+## 5. Collision Detection & Close Approach Handling
+
+### The Challenge
+
+At orbital velocities (30-60 km/s), an asteroid can move 200,000+ km in a single hour.
+Earth's physical radius is only 6,371 km. With naive fixed timesteps, asteroids
+frequently "skip over" planets without detection.
+
+### Solution: Multi-Layer Approach
+
+We use three complementary techniques, informed by research on adaptive N-body
+integrators ([Pham & Rein 2024](https://arxiv.org/abs/2401.02849),
+[REBOUND documentation](https://rebound.readthedocs.io/en/latest/integrators/)):
+
+#### 1. Danger Zone (Collision Multiplier)
+
+Instead of using physical radii, we detect collision when an asteroid enters
+a "danger zone" - a sphere of influence around each body:
+
+```rust
+const COLLISION_MULTIPLIER: f64 = 50.0;  // 50x physical radius
+
+// Earth: 6,371 km × 50 = 318,550 km danger zone
+// (approximately the Moon's orbital distance)
+```
+
+**Rationale**: For a planetary defense simulator, any asteroid passing within
+320,000 km of Earth would require intervention. This makes gameplay achievable
+while representing realistic threat thresholds.
+
+#### 2. Proximity-Based Timestep Adaptation
+
+Before each integration step, we check the distance to the nearest celestial
+body and cap the timestep to ensure we don't skip over the danger zone:
+
+```rust
+// Cap timestep based on proximity
+let safety_factor = 0.1;  // Move at most 10% of distance per step
+let max_dt_proximity = closest_distance / relative_velocity * safety_factor;
+ias15.dt = ias15.dt.min(max_dt_proximity);
+```
+
+This is a simplified version of the close-encounter handling in professional
+codes like REBOUND's IAS15 and Mercury6's hybrid integrator.
+
+#### 3. Visual Feedback (Danger Zone Rings)
+
+Red rings around planets show the collision detection boundary, making it
+clear to players where impacts will register.
+
+### Implementation Notes
+
+- The Sun uses a 2x multiplier (already huge)
+- Moons use a 10x multiplier (smaller bodies)
+- Timestep adaptation activates automatically when approaching any body
+- The minimum timestep (60 seconds) prevents excessive slowdown

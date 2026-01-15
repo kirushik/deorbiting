@@ -3,6 +3,18 @@
 use bevy::prelude::*;
 use bevy::math::DVec2;
 
+/// System set for ordering input-related systems.
+///
+/// Velocity drag must run before position drag to prevent conflicts
+/// when the user clicks near the velocity arrow tip.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub enum InputSystemSet {
+    /// Velocity handle drag processing (runs first)
+    VelocityDrag,
+    /// Position drag processing (runs after velocity drag)
+    PositionDrag,
+}
+
 /// Physical constants (SI units)
 
 /// Gravitational constant (m³·kg⁻¹·s⁻²)

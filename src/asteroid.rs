@@ -10,11 +10,12 @@ use bevy::math::DVec2;
 
 use crate::camera::RENDER_SCALE;
 use crate::collision::CollisionState;
-use crate::ephemeris::Ephemeris;
-use crate::ui::ActiveNotification;
+use crate::ephemeris::{CelestialBodyId, Ephemeris};
 use crate::physics::IntegratorStates;
+use crate::prediction::TrajectoryPath;
 use crate::render::z_layers;
 use crate::types::{BodyState, SimulationTime, AU_TO_METERS, G};
+use crate::ui::ActiveNotification;
 
 /// Event to trigger a full simulation reset.
 ///
@@ -109,6 +110,7 @@ pub fn spawn_asteroid(
             Asteroid,
             AsteroidName(name),
             BodyState { pos, vel, mass },
+            TrajectoryPath::default(),
             visual,
             Mesh3d(mesh),
             MeshMaterial3d(material),
@@ -151,17 +153,117 @@ pub fn spawn_asteroid_at_position(
     spawn_asteroid(commands, meshes, materials, name, pos, vel, mass)
 }
 
-/// Spawn a test asteroid near Earth in a roughly circular orbit.
+/// Calculate position and velocity for an Earth intercept trajectory.
 ///
-/// Places the asteroid at 1.01 AU from the Sun (just outside Earth's orbit)
-/// with the appropriate velocity for a circular orbit.
+/// Places the asteroid on a retrograde orbit at Earth's distance but 45 degrees
+/// ahead. This creates a collision in approximately 23 days, providing fast
+/// feedback for testing collision detection.
+///
+/// # Arguments
+/// * `ephemeris` - Ephemeris resource for computing Earth's position
+/// * `time` - Current simulation time (seconds since J2000)
+///
+/// # Returns
+/// Tuple of (position, velocity) in meters and m/s
+pub fn calculate_earth_intercept(ephemeris: &Ephemeris, time: f64) -> (DVec2, DVec2) {
+    // Get Earth's current position
+    let earth_pos = ephemeris
+        .get_position_by_id(CelestialBodyId::Earth, time)
+        .unwrap_or(DVec2::new(AU_TO_METERS, 0.0));
+
+    // Earth's orbital parameters
+    let earth_r = earth_pos.length();
+    let earth_angle = earth_pos.y.atan2(earth_pos.x);
+
+    // Place asteroid 45 degrees ahead of Earth at same orbital radius
+    // This gives ~23 days to collision - fast feedback for testing
+    let offset_angle = std::f64::consts::PI / 4.0; // 45 degrees ahead
+    let asteroid_angle = earth_angle + offset_angle;
+    let asteroid_r = earth_r; // Same radius as Earth
+
+    let asteroid_pos = DVec2::new(
+        asteroid_r * asteroid_angle.cos(),
+        asteroid_r * asteroid_angle.sin(),
+    );
+
+    // Calculate retrograde circular velocity at this radius
+    // GM_sun from standard gravitational parameter
+    let gm_sun = G * 1.989e30;
+    let v_circular = (gm_sun / asteroid_r).sqrt();
+
+    // Tangent direction (perpendicular to radius, prograde direction)
+    let tangent = DVec2::new(-asteroid_angle.sin(), asteroid_angle.cos());
+
+    // Retrograde velocity (opposite to prograde)
+    let vel = -tangent * v_circular;
+
+    (asteroid_pos, vel)
+}
+
+/// Calculate velocity for an asteroid at a given position to intercept Earth.
+///
+/// Strategy: Use a retrograde orbit that crosses Earth's orbital radius.
+/// If spawn is outside Earth's orbit, use slightly faster than circular to fall inward.
+/// If spawn is inside Earth's orbit, use slightly slower to drift outward.
+/// The retrograde direction ensures head-on collision geometry.
+///
+/// # Arguments
+/// * `pos` - The asteroid's spawn position in meters
+/// * `ephemeris` - Ephemeris resource for computing Earth's position
+/// * `time` - Current simulation time (seconds since J2000)
+///
+/// # Returns
+/// Velocity vector in m/s
+pub fn calculate_velocity_for_earth_intercept(
+    pos: DVec2,
+    ephemeris: &Ephemeris,
+    time: f64,
+) -> DVec2 {
+    let asteroid_r = pos.length();
+    let asteroid_angle = pos.y.atan2(pos.x);
+
+    // Get Earth's position to determine relative geometry
+    let earth_pos = ephemeris
+        .get_position_by_id(CelestialBodyId::Earth, time)
+        .unwrap_or(DVec2::new(AU_TO_METERS, 0.0));
+    let earth_r = earth_pos.length();
+
+    // GM_sun from standard gravitational parameter
+    let gm_sun = G * 1.989e30;
+
+    // Calculate circular velocity at this radius
+    let v_circular = (gm_sun / asteroid_r).sqrt();
+
+    // Tangent direction (perpendicular to radius, prograde direction)
+    let tangent = DVec2::new(-asteroid_angle.sin(), asteroid_angle.cos());
+
+    // Adjust velocity to create orbit that crosses Earth's radius
+    let velocity_factor = if asteroid_r > earth_r * 1.1 {
+        // Outside Earth orbit: speed up slightly to fall inward (elliptical)
+        1.1
+    } else if asteroid_r < earth_r * 0.9 {
+        // Inside Earth orbit: slow down slightly to rise outward
+        0.9
+    } else {
+        // Near Earth's orbital radius: circular retrograde works well
+        1.0
+    };
+
+    // Retrograde velocity with adjustment
+    -tangent * v_circular * velocity_factor
+}
+
+/// Spawn a test asteroid on a collision course with Earth.
+///
+/// Places the asteroid at ~1.5 AU from the Sun and calculates velocity
+/// to intercept Earth in approximately 6 months.
 ///
 /// # Arguments
 /// * `commands` - Bevy commands for entity spawning
 /// * `meshes` - Asset storage for meshes
 /// * `materials` - Asset storage for materials
 /// * `counter` - Counter resource for generating unique names
-/// * `ephemeris` - Ephemeris resource for computing orbital velocity
+/// * `ephemeris` - Ephemeris resource for computing orbital positions
 /// * `time` - Current simulation time (seconds since J2000)
 ///
 /// # Returns
@@ -174,26 +276,14 @@ pub fn spawn_test_asteroid(
     ephemeris: &Ephemeris,
     time: f64,
 ) -> Entity {
-    // Position: 1.01 AU from Sun (just outside Earth's orbit)
-    let distance = 1.01 * AU_TO_METERS;
-    let pos = DVec2::new(distance, 0.0);
-
-    // Get Sun's GM from ephemeris (first gravity source)
-    // Fallback to Sun mass * G if not available
-    let sun_gm = ephemeris
-        .get_gravity_sources(time)
-        .first()
-        .map(|(_, gm)| *gm)
-        .unwrap_or(G * 1.989e30);
-
-    // Circular orbit velocity: v = sqrt(GM/r)
-    let orbital_vel = (sun_gm / distance).sqrt();
-    let vel = DVec2::new(0.0, orbital_vel);
+    // Calculate position and velocity for Earth collision course
+    let (pos, vel) = calculate_earth_intercept(ephemeris, time);
 
     info!(
-        "Spawning test asteroid at {:.4} AU with velocity {:.2} km/s",
-        distance / AU_TO_METERS,
-        orbital_vel / 1000.0
+        "Spawning asteroid on Earth collision course at ({:.4}, {:.4}) AU with velocity {:.2} km/s",
+        pos.x / AU_TO_METERS,
+        pos.y / AU_TO_METERS,
+        vel.length() / 1000.0
     );
 
     spawn_asteroid_at_position(commands, meshes, materials, counter, pos, vel)

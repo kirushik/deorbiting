@@ -20,6 +20,15 @@ use bevy::prelude::*;
 use std::collections::HashMap;
 use std::sync::RwLock;
 
+/// Multiplier for collision detection radius.
+///
+/// For gameplay purposes, we detect collision when an asteroid enters
+/// the "danger zone" around a celestial body, not just its physical surface.
+/// This makes the game playable while representing realistic intervention thresholds.
+///
+/// At 50x, Earth's danger zone is ~320,000 km (about the Moon's orbital distance).
+pub const COLLISION_MULTIPLIER: f64 = 50.0;
+
 /// A constant (Δpos, Δvel) offset applied to a base ephemeris state.
 #[derive(Clone, Copy, Debug, Default)]
 struct StateOffset2 {
@@ -257,7 +266,50 @@ impl Ephemeris {
         sources
     }
 
+    /// Get all gravity sources with their IDs at a given time.
+    ///
+    /// Similar to `get_gravity_sources`, but includes the body ID for each source.
+    /// Useful for determining which body's gravity dominates at a position.
+    ///
+    /// # Arguments
+    /// * `time` - Time in seconds since J2000 epoch
+    ///
+    /// # Returns
+    /// Vector of (body_id, position in meters, GM in m³/s²) tuples.
+    pub fn get_gravity_sources_with_id(&self, time: f64) -> Vec<(CelestialBodyId, DVec2, f64)> {
+        let mut sources = Vec::new();
+
+        // Sun
+        if let Some(sun_data) = self.body_data.get(&CelestialBodyId::Sun) {
+            sources.push((CelestialBodyId::Sun, DVec2::ZERO, G * sun_data.mass));
+        }
+
+        // Planets
+        for &id in CelestialBodyId::PLANETS {
+            if let (Some(pos), Some(data)) =
+                (self.get_position_by_id(id, time), self.body_data.get(&id))
+            {
+                sources.push((id, pos, G * data.mass));
+            }
+        }
+
+        // Moons (significant for close encounters)
+        for &id in CelestialBodyId::MOONS {
+            if let (Some(pos), Some(data)) =
+                (self.get_position_by_id(id, time), self.body_data.get(&id))
+            {
+                sources.push((id, pos, G * data.mass));
+            }
+        }
+
+        sources
+    }
+
     /// Check if a position collides with any celestial body.
+    ///
+    /// Uses `COLLISION_MULTIPLIER` to create a "danger zone" around each body.
+    /// This makes collision detection more forgiving for gameplay while representing
+    /// realistic planetary defense intervention thresholds.
     ///
     /// # Arguments
     /// * `pos` - Position to check (meters from barycenter)
@@ -266,30 +318,30 @@ impl Ephemeris {
     /// # Returns
     /// Some(CelestialBodyId) if collision detected, None otherwise.
     pub fn check_collision(&self, pos: DVec2, time: f64) -> Option<CelestialBodyId> {
-        // Check Sun
+        // Check Sun (use smaller multiplier - Sun is already huge)
         if let Some(sun_data) = self.body_data.get(&CelestialBodyId::Sun) {
-            if pos.length() < sun_data.radius {
+            if pos.length() < sun_data.radius * 2.0 {
                 return Some(CelestialBodyId::Sun);
             }
         }
 
-        // Check planets
+        // Check planets - use full COLLISION_MULTIPLIER for danger zone
         for &id in CelestialBodyId::PLANETS {
             if let (Some(body_pos), Some(data)) =
                 (self.get_position_by_id(id, time), self.body_data.get(&id))
             {
-                if (pos - body_pos).length() < data.radius {
+                if (pos - body_pos).length() < data.radius * COLLISION_MULTIPLIER {
                     return Some(id);
                 }
             }
         }
 
-        // Check moons
+        // Check moons - use smaller multiplier (they're already small)
         for &id in CelestialBodyId::MOONS {
             if let (Some(body_pos), Some(data)) =
                 (self.get_position_by_id(id, time), self.body_data.get(&id))
             {
-                if (pos - body_pos).length() < data.radius {
+                if (pos - body_pos).length() < data.radius * 10.0 {
                     return Some(id);
                 }
             }

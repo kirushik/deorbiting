@@ -296,10 +296,10 @@ A coding-focused, step-by-step checklist for implementing the orbital mechanics 
 
 ---
 
-## Phase 4: Trajectory Prediction
+## Phase 4: Trajectory Prediction ✓
 
 ### 4.1 Prediction Resource (`src/prediction.rs`)
-- [ ] Define `PredictionSettings` resource:
+- [x] Define `PredictionSettings` resource:
   ```rust
   #[derive(Resource)]
   pub struct PredictionSettings {
@@ -308,7 +308,7 @@ A coding-focused, step-by-step checklist for implementing the orbital mechanics 
       pub update_interval: u32,
   }
   ```
-- [ ] Define `TrajectoryPath` component:
+- [x] Define `TrajectoryPath` component:
   ```rust
   #[derive(Component)]
   pub struct TrajectoryPath {
@@ -317,43 +317,46 @@ A coding-focused, step-by-step checklist for implementing the orbital mechanics 
   ```
 
 ### 4.2 Prediction System
-- [ ] Create `predict_trajectory` system:
-  - [ ] Clone asteroid's `BodyState`
-  - [ ] Create new `IAS15State` from clone
-  - [ ] Run simulation loop for max_steps
-  - [ ] Store (position, time) at each step
-  - [ ] Stop early on collision or max_time
-  - [ ] Update `TrajectoryPath` component
+- [x] Create `predict_trajectory` system:
+  - [x] Clone asteroid's `BodyState`
+  - [x] Create new `IAS15State` from clone
+  - [x] Run simulation loop for max_steps
+  - [x] Store (position, time) at each step
+  - [x] Stop early on collision or max_time
+  - [x] Update `TrajectoryPath` component
 
-### 4.3 Trajectory Rendering (`src/render/trajectory.rs`)
-- [ ] Create `draw_trajectory` system using Bevy Gizmos:
-  - [ ] Query entities with `TrajectoryPath`
-  - [ ] For each point: apply visual distortion
-  - [ ] Draw line segments between consecutive points
-  - [ ] Use z=1.0 (trajectory layer)
-- [ ] Add color gradient (fade with time/distance)
+### 4.3 Trajectory Rendering (`src/prediction.rs`)
+- [x] Create `draw_trajectory` system using Bevy Gizmos:
+  - [x] Query entities with `TrajectoryPath`
+  - [x] For each point: apply visual distortion
+  - [x] Draw line segments between consecutive points
+  - [x] Use z=1.0 (trajectory layer)
+- [x] Add color gradient (fade with time/distance)
 
 ### 4.4 Velocity Handle (`src/ui/velocity_handle.rs`)
-- [ ] Create `VelocityHandle` component
-- [ ] Spawn arrow mesh when asteroid selected:
-  - [ ] Base at asteroid position
-  - [ ] Length proportional to velocity (log scale)
-  - [ ] Direction = velocity direction
-- [ ] Implement drag interaction:
-  - [ ] Detect click on arrow tip
-  - [ ] Track drag delta
-  - [ ] Update `BodyState.vel` in real-time
-  - [ ] Trigger prediction recalculation
-- [ ] Update arrow visual during drag
+- [x] Create `VelocityHandle` component
+- [x] Spawn arrow mesh when asteroid selected:
+  - [x] Base at asteroid position
+  - [x] Length proportional to velocity (log scale)
+  - [x] Direction = velocity direction
+- [x] Implement drag interaction:
+  - [x] Detect click on arrow tip
+  - [x] Track drag delta
+  - [x] Update `BodyState.vel` in real-time
+  - [x] Trigger prediction recalculation
+- [x] Update arrow visual during drag
 
 ### 4.5 Prediction Updates
-- [ ] Recalculate prediction when:
-  - [ ] Velocity handle dragged
-  - [ ] Asteroid selected
-  - [ ] Every N frames (configurable)
-- [ ] Run prediction in separate system, not blocking render
+- [x] Recalculate prediction when:
+  - [x] Velocity handle dragged
+  - [x] Asteroid selected
+  - [x] Every N frames (configurable)
+- [x] Run prediction in separate system, not blocking render
 
-**Phase 4 Acceptance:** Trajectory line visible and accurate, velocity handle works, dragging updates prediction in real-time.
+### 4.6 Prediction Tests
+- [x] Integration test example (`examples/test_trajectory_prediction.rs`)
+
+**Phase 4 Acceptance:** ✓ Trajectory line visible and accurate, velocity handle works, dragging updates prediction in real-time. All 55 tests pass.
 
 ---
 

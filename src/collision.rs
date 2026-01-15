@@ -173,15 +173,16 @@ pub fn check_collisions(
 }
 
 /// Plugin providing collision detection for asteroids.
+///
+/// Note: Actual collision detection is now performed inside `physics_step`
+/// to ensure correct timing (asteroid and celestial body positions synchronized).
+/// This plugin only registers the event type and collision state resource.
 pub struct CollisionPlugin;
 
 impl Plugin for CollisionPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<CollisionEvent>()
-            .insert_resource(CollisionState::default())
-            // Run collision detection in FixedUpdate after physics
-            // No explicit ordering needed - just runs after physics_step
-            .add_systems(FixedUpdate, check_collisions);
+            .insert_resource(CollisionState::default());
     }
 }
 

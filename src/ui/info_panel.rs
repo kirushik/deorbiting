@@ -4,7 +4,7 @@ use bevy::math::DVec2;
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
 
-use crate::asteroid::{spawn_asteroid_at_position, Asteroid, AsteroidCounter, AsteroidName};
+use crate::asteroid::{Asteroid, AsteroidName};
 use crate::camera::{CameraFocus, MainCamera, RENDER_SCALE};
 use crate::input::DragState;
 use crate::ephemeris::{CelestialBodyId, Ephemeris};
@@ -12,7 +12,7 @@ use crate::physics::IntegratorStates;
 use crate::render::{CelestialBody, HoveredBody, SelectedBody};
 use crate::types::{BodyState, SelectableBody, SimulationTime, AU_TO_METERS};
 
-use super::{DisplayUnits, UiState};
+use super::{AsteroidPlacementMode, DisplayUnits, TogglePlacementModeEvent, UiState};
 
 /// System that renders the info panel.
 #[allow(clippy::too_many_arguments)]
@@ -23,9 +23,6 @@ pub fn info_panel(
     mut hovered: ResMut<HoveredBody>,
     mut ui_state: ResMut<UiState>,
     mut camera_focus: ResMut<CameraFocus>,
-    mut asteroid_counter: ResMut<AsteroidCounter>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
     mut integrator_states: ResMut<IntegratorStates>,
     camera_query: Query<(&Transform, &Camera, &GlobalTransform), With<MainCamera>>,
     celestial_bodies: Query<(Entity, &CelestialBody)>,
@@ -33,6 +30,8 @@ pub fn info_panel(
     ephemeris: Res<Ephemeris>,
     sim_time: Res<SimulationTime>,
     drag_state: Res<DragState>,
+    placement_mode: Res<AsteroidPlacementMode>,
+    mut toggle_placement: EventWriter<TogglePlacementModeEvent>,
 ) {
     let Some(ctx) = contexts.try_ctx_mut() else {
         return;
@@ -63,7 +62,7 @@ pub fn info_panel(
                 ui.separator();
 
                 // Get current camera position for focus animation
-                let (camera_transform, camera, camera_global) = camera_query.get_single().unwrap();
+                let (camera_transform, _camera, _camera_global) = camera_query.get_single().unwrap();
                 let camera_pos = Vec2::new(camera_transform.translation.x, camera_transform.translation.y);
 
                 // Celestial body list section
@@ -82,22 +81,23 @@ pub fn info_panel(
                 ui.separator();
 
                 // Asteroid section
-                render_asteroid_section(
+                let spawn_clicked = render_asteroid_section(
                     ui,
                     &mut commands,
                     &asteroids,
                     &mut selected,
                     &mut hovered,
-                    &mut asteroid_counter,
-                    &mut meshes,
-                    &mut materials,
                     &mut integrator_states,
                     &mut camera_focus,
-                    camera,
-                    camera_global,
                     camera_pos,
                     &drag_state,
+                    placement_mode.active,
                 );
+
+                // Send event to toggle placement mode
+                if spawn_clicked {
+                    toggle_placement.send(TogglePlacementModeEvent);
+                }
 
                 ui.separator();
 
@@ -343,6 +343,8 @@ fn format_position(ui: &mut egui::Ui, pos: DVec2, units: DisplayUnits) {
 }
 
 /// Render the asteroid section with spawn button, list, and edit controls.
+///
+/// Returns true if the spawn button was clicked (to trigger placement mode).
 #[allow(clippy::too_many_arguments)]
 fn render_asteroid_section(
     ui: &mut egui::Ui,
@@ -350,39 +352,35 @@ fn render_asteroid_section(
     asteroids: &Query<(Entity, &AsteroidName, &BodyState), With<Asteroid>>,
     selected: &mut ResMut<SelectedBody>,
     hovered: &mut ResMut<HoveredBody>,
-    counter: &mut ResMut<AsteroidCounter>,
-    meshes: &mut ResMut<Assets<Mesh>>,
-    materials: &mut ResMut<Assets<StandardMaterial>>,
     integrator_states: &mut ResMut<IntegratorStates>,
     camera_focus: &mut ResMut<CameraFocus>,
-    camera: &Camera,
-    camera_global: &GlobalTransform,
     camera_pos: Vec2,
     drag_state: &Res<DragState>,
-) {
+    placement_mode_active: bool,
+) -> bool {
+    let mut spawn_clicked = false;
+
     ui.collapsing("Asteroids", |ui| {
-        // Spawn button - spawn at center of current view
-        if ui.button("+ Spawn Asteroid").clicked() {
-            // Get center of viewport in world coordinates
-            let viewport_size = camera.logical_viewport_size().unwrap_or(Vec2::new(800.0, 600.0));
-            let center_screen = viewport_size / 2.0;
+        // Spawn button - enters placement mode for click-to-spawn
+        let button_text = if placement_mode_active {
+            "✕ Cancel Placement"
+        } else {
+            "+ Spawn Asteroid"
+        };
 
-            if let Ok(world_pos) = camera.viewport_to_world_2d(camera_global, center_screen) {
-                // Convert render position back to physics position
-                let physics_pos = DVec2::new(
-                    (world_pos.x as f64) / RENDER_SCALE,
-                    (world_pos.y as f64) / RENDER_SCALE,
-                );
+        let button = egui::Button::new(button_text);
+        let button = if placement_mode_active {
+            button.fill(egui::Color32::from_rgb(180, 80, 80))
+        } else {
+            button
+        };
 
-                spawn_asteroid_at_position(
-                    commands,
-                    meshes,
-                    materials,
-                    counter,
-                    physics_pos,
-                    DVec2::ZERO, // Start with zero velocity
-                );
-            }
+        if ui.add(button).clicked() {
+            spawn_clicked = true;
+        }
+
+        if placement_mode_active {
+            ui.label(egui::RichText::new("Click on map to place").italics().small());
         }
 
         ui.add_space(4.0);
@@ -440,6 +438,8 @@ fn render_asteroid_section(
             }
         }
     });
+
+    spawn_clicked
 }
 
 /// Render information about the currently selected body.
