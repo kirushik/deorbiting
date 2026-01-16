@@ -11,30 +11,39 @@ mod camera;
 mod collision;
 mod ephemeris;
 mod input;
+mod interceptor;
+mod outcome;
 mod physics;
 mod prediction;
 mod render;
+mod scenarios;
 mod time;
 mod types;
 mod ui;
 
-use asteroid::{handle_reset, spawn_initial_asteroid, AsteroidCounter, ResetEvent};
+use asteroid::{handle_reset, AsteroidCounter, ResetEvent};
 use camera::CameraPlugin;
 use collision::CollisionPlugin;
 use ephemeris::Ephemeris;
 use input::InputPlugin;
+use interceptor::InterceptorPlugin;
 use physics::PhysicsPlugin;
 use prediction::PredictionPlugin;
 use render::RenderPlugin;
+use scenarios::ScenarioPlugin;
 use time::TimePlugin;
 use types::SimulationTime;
 use ui::velocity_handle::VelocityHandlePlugin;
 use ui::UiPlugin;
 
 fn main() {
-    App::new()
-        .add_plugins(DefaultPlugins)
+    let mut app = App::new();
+
+    app.add_plugins(DefaultPlugins)
         .add_plugins(EguiPlugin)
+        // Diagnostic plugins for performance monitoring
+        .add_plugins(bevy::diagnostic::FrameTimeDiagnosticsPlugin::default())
+        .add_plugins(bevy::diagnostic::EntityCountDiagnosticsPlugin::default())
         // Insert resources before plugins that depend on them
         .insert_resource(Ephemeris::default())
         .insert_resource(SimulationTime::default())
@@ -52,10 +61,15 @@ fn main() {
             CollisionPlugin,
             PredictionPlugin,
             VelocityHandlePlugin,
+            ScenarioPlugin,
+            InterceptorPlugin,
         ))
-        // Spawn initial asteroid for testing
-        .add_systems(Startup, spawn_initial_asteroid)
         // Handle reset events
-        .add_systems(Update, handle_reset)
-        .run();
+        .add_systems(Update, handle_reset);
+
+    // Log diagnostics to console in debug builds
+    #[cfg(debug_assertions)]
+    app.add_plugins(bevy::diagnostic::LogDiagnosticsPlugin::default());
+
+    app.run();
 }

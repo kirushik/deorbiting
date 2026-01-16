@@ -91,6 +91,24 @@ fn keyboard_shortcuts(
         info!("Time scale: {}x", sim_time.scale);
     }
 
+    // Quick time scale selection with number keys
+    if keys.just_pressed(KeyCode::Digit1) {
+        sim_time.scale = 1.0;
+        info!("Time scale: 1x (real-time)");
+    }
+    if keys.just_pressed(KeyCode::Digit2) {
+        sim_time.scale = 10.0;
+        info!("Time scale: 10x");
+    }
+    if keys.just_pressed(KeyCode::Digit3) {
+        sim_time.scale = 100.0;
+        info!("Time scale: 100x");
+    }
+    if keys.just_pressed(KeyCode::Digit4) {
+        sim_time.scale = 1000.0;
+        info!("Time scale: 1000x");
+    }
+
     // R: reset simulation (time, asteroids, collision state)
     if keys.just_pressed(KeyCode::KeyR) {
         reset_events.send(ResetEvent);

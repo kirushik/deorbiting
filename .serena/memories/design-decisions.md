@@ -83,34 +83,54 @@ These changes prioritize **trajectory accuracy over visual tidiness** for an int
 
 **Redundant ephemeris lookups**: Added `compute_acceleration_from_sources()` and `find_dominant_body_from_sources()` to allow caching and reuse of gravity source positions within prediction loops.
 
-## Phase 5 Expansion (2026-01-16)
+## Phase 5 Implementation (2026-01-16)
 
 ### Scenarios
-Six educational scenarios based on real-world research:
-1. **Earth Collision Course** - Tutorial, 23-day collision
-2. **Apophis Flyby** - Gravity assist demo (simplified from real 2029 event)
-3. **Jupiter Slingshot** - Voyager-style +10 km/s boost
-4. **Interstellar Visitor** - Oumuamua-style hyperbolic (e>1, 30 km/s)
-5. **Deflection Challenge** - Planetary defense game, 6-12 month lead time
-6. **Sandbox** - Free experimentation, zero initial velocity
+Six educational scenarios implemented in `src/scenarios/`:
+1. **Earth Collision Course** - Tutorial, ~23-day collision (default)
+2. **Apophis Flyby** - Close Earth approach at 30,000 km
+3. **Jupiter Slingshot** - Voyager-style gravity assist
+4. **Interstellar Visitor** - Oumuamua-style hyperbolic (e>1, ~32 km/s)
+5. **Deflection Challenge** - 6-month lead time, starts paused
+6. **Sandbox** - Zero velocity, starts paused
+
+Key files:
+- `src/scenarios/mod.rs` - Scenario struct, ScenarioPlugin, load system
+- `src/scenarios/presets.rs` - 6 static scenario definitions
 
 ### Outcome Detection
-Three trajectory outcomes with distinct visual feedback:
-- **Collision** (red): Asteroid hits body
-- **Escape** (blue/cyan): Hyperbolic trajectory (E > 0)
-- **Stable Orbit** (green): Bound orbit without collision
+Implemented in `src/outcome.rs`:
+- `TrajectoryOutcome` enum: InProgress, Collision, Escape, StableOrbit
+- `OrbitalElements` struct: a, e, energy, angular momentum, period
+- `compute_orbital_elements()` - vis-viva equations
+- `detect_outcome()` - classify trajectory from prediction results
 
-Detection: specific orbital energy E = 0.5v² - GM/r
+Integrated into `TrajectoryPath` component in `src/prediction.rs`.
 
-### Interceptor System (Instant Methods)
-- **Kinetic Impactor**: Δv = β × (m × v_rel) / M_asteroid
-  - DART beta factor: 3.6 (ejecta amplification)
-  - Typical: 560 kg at 6 km/s → ~2.7 mm/s
-- **Nuclear Standoff**: ~2 cm/s per 100 kt for 300m asteroid (LLNL research)
+### Interceptor System
+Implemented in `src/interceptor/`:
+- **payload.rs**: `DeflectionPayload` enum (Kinetic/Nuclear), delta-v calculations
+- **mod.rs**: `Interceptor` component, `InterceptorPlugin`, systems
+
+Physics based on real research:
+- **Kinetic Impactor**: Δv = β × (m × v_rel) / M_asteroid (DART formula, β ≈ 3.6)
+- **Nuclear Standoff**: ~2 cm/s per 100 kt for 3×10^10 kg asteroid (LLNL research)
+
+### UI Components
+- `src/ui/scenario_menu.rs` - Modal window, Escape/M key trigger
+- `src/ui/outcome_overlay.rs` - Color-coded overlays (red/blue/green)
+- `src/ui/interceptor_launch.rs` - Payload configuration, direction, launch
+
+### Keyboard Shortcuts Added
+- Escape or M: Open scenario menu
+- 1-4: Quick time scale selection (1x, 10x, 100x, 1000x)
+
+### Reset Behavior Change
+`handle_reset()` now sends `LoadScenarioEvent` for current scenario instead of hardcoded asteroid spawn.
 
 ### Phase 5/6 Split
-- Phase 5: Instant deflection (kinetic, nuclear)
-- Phase 6: Continuous deflection (ion beam, gravity tractor, laser ablation)
+- Phase 5 (complete): Instant deflection (kinetic, nuclear)
+- Phase 6 (future): Continuous deflection (ion beam, gravity tractor, laser ablation)
 
 ## Key Constants
 

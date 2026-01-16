@@ -14,7 +14,7 @@ use crate::input::DragState;
 use crate::physics::{compute_acceleration, compute_adaptive_dt, PredictionConfig};
 use crate::render::z_layers;
 use crate::render::SelectedBody;
-use crate::types::{BodyState, InputSystemSet, SelectableBody, SimulationTime};
+use crate::types::{BodyState, InputSystemSet, SelectableBody, SimulationTime, AU_TO_METERS};
 use crate::ui::velocity_handle::VelocityDragState;
 
 /// Plugin providing trajectory prediction functionality.
@@ -83,6 +83,8 @@ pub struct TrajectoryPath {
     pub ends_in_collision: bool,
     /// Body that would be hit (if collision predicted).
     pub collision_target: Option<CelestialBodyId>,
+    /// Classified trajectory outcome.
+    pub outcome: crate::outcome::TrajectoryOutcome,
 }
 
 /// State for prediction system.
@@ -245,6 +247,36 @@ fn predict_trajectory(
         camera.zoom,
     );
 
+    // Compute trajectory outcome
+    let prediction_time_span = trajectory
+        .points
+        .last()
+        .map(|p| p.time - sim_time.current)
+        .unwrap_or(0.0);
+
+    let (final_pos, final_vel) = trajectory
+        .points
+        .last()
+        .map(|p| (p.pos, body_state.vel)) // Approximate final velocity
+        .unwrap_or((body_state.pos, body_state.vel));
+
+    let impact_velocity = if trajectory.ends_in_collision {
+        Some(body_state.vel.length()) // Approximate
+    } else {
+        None
+    };
+
+    trajectory.outcome = crate::outcome::detect_outcome(
+        body_state.pos,
+        body_state.vel,
+        trajectory.ends_in_collision,
+        trajectory.collision_target,
+        final_pos,
+        final_vel,
+        prediction_time_span,
+        impact_velocity,
+    );
+
     // Mark prediction as up-to-date
     state.needs_update = false;
     state.frame_counter = 0;
@@ -355,6 +387,7 @@ fn predict_with_verlet(
 /// Draw trajectory using Bevy gizmos.
 ///
 /// Renders trajectory at true physics positions (no distortion).
+/// For escape trajectories, applies additional distance-based fading.
 fn draw_trajectory(
     trajectories: Query<(Entity, &TrajectoryPath), With<Asteroid>>,
     selected: Res<SelectedBody>,
@@ -378,6 +411,17 @@ fn draw_trajectory(
     let total_points = trajectory.points.len();
     let mut prev_render_pos: Option<Vec3> = None;
 
+    // For escape trajectories, calculate starting position for distance-based fade
+    let is_escape = matches!(trajectory.outcome, crate::outcome::TrajectoryOutcome::Escape { .. });
+    let start_pos = if is_escape && !trajectory.points.is_empty() {
+        Some(trajectory.points[0].pos)
+    } else {
+        None
+    };
+
+    // Max fade distance: 30 AU for escape trajectories
+    const MAX_FADE_DISTANCE: f64 = 30.0 * AU_TO_METERS;
+
     for (i, point) in trajectory.points.iter().enumerate() {
         // Render at true physics position (no distortion)
         let render_pos = Vec3::new(
@@ -389,11 +433,24 @@ fn draw_trajectory(
         // Draw line segment from previous point
         if let Some(prev) = prev_render_pos {
             let t_normalized = i as f32 / total_points as f32;
-            let color = trajectory_color(
+            let mut color = trajectory_color(
                 t_normalized,
                 trajectory.ends_in_collision,
                 point.dominant_body,
             );
+
+            // Apply additional distance-based fade for escape trajectories
+            if let Some(start) = start_pos {
+                let distance = (point.pos - start).length();
+                let distance_fade = 1.0 - (distance / MAX_FADE_DISTANCE).min(1.0);
+                // Square the fade for more dramatic effect at large distances
+                let distance_alpha = (distance_fade * distance_fade) as f32;
+
+                // Multiply existing alpha by distance-based fade
+                let current_alpha = color.alpha();
+                color = color.with_alpha(current_alpha * distance_alpha.max(0.05));
+            }
+
             gizmos.line(prev, render_pos, color);
         }
 

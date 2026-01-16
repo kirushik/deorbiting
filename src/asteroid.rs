@@ -9,13 +9,10 @@ use bevy::prelude::*;
 use bevy::math::DVec2;
 
 use crate::camera::RENDER_SCALE;
-use crate::collision::CollisionState;
 use crate::ephemeris::{CelestialBodyId, Ephemeris};
-use crate::physics::IntegratorStates;
 use crate::prediction::TrajectoryPath;
 use crate::render::z_layers;
-use crate::types::{BodyState, SimulationTime, AU_TO_METERS, G};
-use crate::ui::ActiveNotification;
+use crate::types::{BodyState, AU_TO_METERS, G};
 
 /// Event to trigger a full simulation reset.
 ///
@@ -155,9 +152,20 @@ pub fn spawn_asteroid_at_position(
 
 /// Calculate position and velocity for an Earth intercept trajectory.
 ///
-/// Places the asteroid on a retrograde orbit at Earth's distance but 45 degrees
-/// ahead. This creates a collision in approximately 23 days, providing fast
-/// feedback for testing collision detection.
+/// Places the asteroid on Earth's exact elliptical orbit, traveling backwards.
+/// This guarantees collision in approximately 23 days regardless of Earth's
+/// orbital phase.
+///
+/// The key insight is that Earth has an elliptical orbit (e=0.0167). For
+/// guaranteed collision, the asteroid must be on the SAME elliptical orbit
+/// as Earth, just traveling in the opposite direction. This is achieved by:
+/// 1. Computing where Earth will be 45° ahead in its orbit
+/// 2. Placing asteroid at that exact point on Earth's orbital path
+/// 3. Computing Earth's actual velocity at that point (including radial component)
+/// 4. Reversing the velocity so asteroid travels backwards along Earth's orbit
+///
+/// Since both bodies are on the same orbital track moving toward each other,
+/// collision is guaranteed.
 ///
 /// # Arguments
 /// * `ephemeris` - Ephemeris resource for computing Earth's position
@@ -166,38 +174,36 @@ pub fn spawn_asteroid_at_position(
 /// # Returns
 /// Tuple of (position, velocity) in meters and m/s
 pub fn calculate_earth_intercept(ephemeris: &Ephemeris, time: f64) -> (DVec2, DVec2) {
-    // Get Earth's current position
-    let earth_pos = ephemeris
-        .get_position_by_id(CelestialBodyId::Earth, time)
+    // Time offset for 45° ahead in Earth's orbit
+    // Earth moves at ~0.986°/day, so 45° = ~45.6 days
+    let days_for_45_degrees = 45.0 / 0.9856;
+    let time_offset = days_for_45_degrees * 86400.0;
+
+    let future_time = time + time_offset;
+
+    // Get Earth's position 45° ahead in its orbit
+    let asteroid_pos = ephemeris
+        .get_position_by_id(CelestialBodyId::Earth, future_time)
         .unwrap_or(DVec2::new(AU_TO_METERS, 0.0));
 
-    // Earth's orbital parameters
-    let earth_r = earth_pos.length();
-    let earth_angle = earth_pos.y.atan2(earth_pos.x);
+    // Compute Earth's ACTUAL velocity at this position using numerical differentiation
+    // This captures both tangential and radial components of the elliptical orbit
+    let dt = 60.0; // 1 minute timestep for differentiation
+    let pos_before = ephemeris
+        .get_position_by_id(CelestialBodyId::Earth, future_time - dt)
+        .unwrap_or(asteroid_pos);
+    let pos_after = ephemeris
+        .get_position_by_id(CelestialBodyId::Earth, future_time + dt)
+        .unwrap_or(asteroid_pos);
 
-    // Place asteroid 45 degrees ahead of Earth at same orbital radius
-    // This gives ~23 days to collision - fast feedback for testing
-    let offset_angle = std::f64::consts::PI / 4.0; // 45 degrees ahead
-    let asteroid_angle = earth_angle + offset_angle;
-    let asteroid_r = earth_r; // Same radius as Earth
+    // Central difference gives Earth's velocity at this orbital position
+    let earth_velocity = (pos_after - pos_before) / (2.0 * dt);
 
-    let asteroid_pos = DVec2::new(
-        asteroid_r * asteroid_angle.cos(),
-        asteroid_r * asteroid_angle.sin(),
-    );
+    // Retrograde: asteroid travels opposite to Earth's motion
+    // This puts it on the same elliptical orbit, just going backwards
+    let asteroid_vel = -earth_velocity;
 
-    // Calculate retrograde circular velocity at this radius
-    // GM_sun from standard gravitational parameter
-    let gm_sun = G * 1.989e30;
-    let v_circular = (gm_sun / asteroid_r).sqrt();
-
-    // Tangent direction (perpendicular to radius, prograde direction)
-    let tangent = DVec2::new(-asteroid_angle.sin(), asteroid_angle.cos());
-
-    // Retrograde velocity (opposite to prograde)
-    let vel = -tangent * v_circular;
-
-    (asteroid_pos, vel)
+    (asteroid_pos, asteroid_vel)
 }
 
 /// Calculate velocity for an asteroid at a given position to intercept Earth.
@@ -311,26 +317,12 @@ pub fn spawn_initial_asteroid(
 /// System to handle simulation reset.
 ///
 /// When a `ResetEvent` is received:
-/// 1. Despawns all existing asteroids
-/// 2. Resets asteroid counter to 0
-/// 3. Resets simulation time to initial
-/// 4. Clears collision state
-/// 5. Spawns a fresh initial asteroid
-///
+/// Reloads the current scenario by sending a LoadScenarioEvent.
 /// This gives a "clean slate" - all user modifications are lost.
-#[allow(clippy::too_many_arguments)]
 pub fn handle_reset(
-    mut commands: Commands,
     mut reset_events: EventReader<ResetEvent>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    mut counter: ResMut<AsteroidCounter>,
-    mut sim_time: ResMut<SimulationTime>,
-    mut collision_state: ResMut<CollisionState>,
-    mut integrator_states: ResMut<IntegratorStates>,
-    mut active_notification: ResMut<ActiveNotification>,
-    asteroids: Query<Entity, With<Asteroid>>,
-    ephemeris: Res<Ephemeris>,
+    mut load_events: EventWriter<crate::scenarios::LoadScenarioEvent>,
+    current_scenario: Res<crate::scenarios::CurrentScenario>,
 ) {
     // Only process if there's a reset event
     if reset_events.read().next().is_none() {
@@ -340,33 +332,10 @@ pub fn handle_reset(
     // Clear any remaining reset events
     reset_events.clear();
 
-    info!("Resetting simulation...");
+    info!("Resetting simulation - reloading scenario: {}", current_scenario.id);
 
-    // Despawn all asteroids
-    for entity in asteroids.iter() {
-        commands.entity(entity).despawn();
-        integrator_states.remove(entity);
-    }
-
-    // Reset counter
-    counter.0 = 0;
-
-    // Reset simulation time
-    sim_time.reset();
-
-    // Clear collision state and active notification
-    collision_state.clear();
-    active_notification.current = None;
-
-    // Spawn fresh initial asteroid (use initial time, not current)
-    spawn_test_asteroid(
-        &mut commands,
-        &mut meshes,
-        &mut materials,
-        &mut counter,
-        &ephemeris,
-        sim_time.initial,
-    );
-
-    info!("Simulation reset complete");
+    // Send event to reload the current scenario
+    load_events.send(crate::scenarios::LoadScenarioEvent {
+        scenario_id: current_scenario.id,
+    });
 }

@@ -3,6 +3,9 @@
 mod asteroid_placement;
 mod collision_notification;
 mod info_panel;
+mod interceptor_launch;
+mod outcome_overlay;
+mod scenario_menu;
 mod time_controls;
 pub mod velocity_handle;
 
@@ -11,6 +14,9 @@ use bevy::prelude::*;
 pub use asteroid_placement::*;
 pub use collision_notification::*;
 pub use info_panel::*;
+pub use interceptor_launch::*;
+pub use outcome_overlay::*;
+pub use scenario_menu::*;
 pub use time_controls::*;
 
 /// Plugin that adds all UI systems.
@@ -21,6 +27,8 @@ impl Plugin for UiPlugin {
         app.init_resource::<UiState>()
             .init_resource::<ActiveNotification>()
             .init_resource::<AsteroidPlacementMode>()
+            .init_resource::<OutcomeOverlayState>()
+            .init_resource::<InterceptorLaunchState>()
             .add_event::<TogglePlacementModeEvent>()
             .add_systems(
                 Update,
@@ -31,6 +39,13 @@ impl Plugin for UiPlugin {
                     handle_toggle_placement_event,
                     handle_asteroid_placement,
                     update_placement_cursor,
+                    // New Phase 5 UI systems
+                    scenario_menu_system,
+                    scenario_menu_keyboard,
+                    update_outcome_state,
+                    animate_flash,
+                    outcome_overlay_system,
+                    interceptor_launch_system,
                 ),
             );
     }

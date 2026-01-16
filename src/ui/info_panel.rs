@@ -12,6 +12,7 @@ use crate::physics::IntegratorStates;
 use crate::render::{CelestialBody, HoveredBody, SelectedBody};
 use crate::types::{BodyState, SelectableBody, SimulationTime, AU_TO_METERS};
 
+use super::interceptor_launch::InterceptorLaunchState;
 use super::{AsteroidPlacementMode, DisplayUnits, TogglePlacementModeEvent, UiState};
 
 /// System that renders the info panel.
@@ -32,6 +33,7 @@ pub fn info_panel(
     drag_state: Res<DragState>,
     placement_mode: Res<AsteroidPlacementMode>,
     mut toggle_placement: EventWriter<TogglePlacementModeEvent>,
+    mut launch_state: ResMut<InterceptorLaunchState>,
 ) {
     let Some(ctx) = contexts.try_ctx_mut() else {
         return;
@@ -92,6 +94,7 @@ pub fn info_panel(
                     camera_pos,
                     &drag_state,
                     placement_mode.active,
+                    &mut launch_state,
                 );
 
                 // Send event to toggle placement mode
@@ -357,6 +360,7 @@ fn render_asteroid_section(
     camera_pos: Vec2,
     drag_state: &Res<DragState>,
     placement_mode_active: bool,
+    launch_state: &mut ResMut<InterceptorLaunchState>,
 ) -> bool {
     let mut spawn_clicked = false;
 
@@ -434,6 +438,11 @@ fn render_asteroid_section(
                     if hovered.body == Some(SelectableBody::Asteroid(entity)) {
                         hovered.body = None;
                     }
+                }
+
+                // Launch interceptor button
+                if ui.button("Launch Interceptor").clicked() {
+                    launch_state.open = true;
                 }
             }
         }

@@ -72,6 +72,9 @@ impl IntegratorStates {
 /// For each asteroid with a BodyState, advances the IAS15 integrator
 /// to cover the elapsed simulation time.
 ///
+/// This system is the authoritative source of simulation time advancement.
+/// It updates `sim_time.current` based on actual physics integration.
+///
 /// Collision detection is performed inside the integration loop at each step
 /// to ensure the correct simulation time is used (asteroid and celestial body
 /// positions are synchronized).
@@ -107,6 +110,9 @@ fn physics_step(
 
     // Track entities that collided (for deferred integrator state removal)
     let mut collided_entities = Vec::new();
+
+    // Track whether any collision occurred (for time advancement)
+    let mut had_collision = false;
 
     for (entity, name, mut body_state) in asteroids.iter_mut() {
         // Skip entities that are colliding (awaiting despawn)
@@ -157,6 +163,15 @@ fn physics_step(
                 }
             }
 
+            // Cap step size to remaining time to prevent overshoot.
+            // This ensures physics time exactly matches simulation clock advancement.
+            // Without this cap, IAS15's adaptive timestep could take a step larger
+            // than target_dt, causing the asteroid to advance more than the clock.
+            let remaining = target_dt - elapsed;
+            if ias15.dt > remaining && remaining > config.min_dt {
+                ias15.dt = remaining;
+            }
+
             // Create acceleration function that queries ephemeris at the current sim time
             // plus the relative offset within the step
             let current_sim_t = sim_t;
@@ -175,6 +190,10 @@ fn physics_step(
             // This ensures asteroid position and celestial body positions are synchronized
             let sim_t_after_step = start_time + elapsed;
             if let Some(body_hit) = ephemeris.check_collision(ias15.pos, sim_t_after_step) {
+                // Update sim_time.current to the collision time BEFORE handling
+                // This ensures the displayed time matches the collision time
+                sim_time.current = sim_t_after_step;
+
                 // Delegate collision handling to the collision module
                 handle_collision_response(
                     &mut commands,
@@ -193,6 +212,8 @@ fn physics_step(
                 // Track for deferred integrator state removal
                 collided_entities.push(entity);
 
+                // Mark collision occurred (sim_time was already updated above)
+                had_collision = true;
                 collided = true;
                 break;
             }
@@ -214,6 +235,12 @@ fn physics_step(
     // Clean up integrator states for collided entities (deferred to avoid borrow conflict)
     for entity in collided_entities {
         integrator_states.remove(entity);
+    }
+
+    // Advance simulation time by target_dt (step cap ensures no overshoot)
+    // Skip if collision already set sim_time to collision point
+    if !sim_time.paused && !had_collision {
+        sim_time.current += target_dt;
     }
 }
 
