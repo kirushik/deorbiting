@@ -83,6 +83,35 @@ These changes prioritize **trajectory accuracy over visual tidiness** for an int
 
 **Redundant ephemeris lookups**: Added `compute_acceleration_from_sources()` and `find_dominant_body_from_sources()` to allow caching and reuse of gravity source positions within prediction loops.
 
+## Phase 5 Expansion (2026-01-16)
+
+### Scenarios
+Six educational scenarios based on real-world research:
+1. **Earth Collision Course** - Tutorial, 23-day collision
+2. **Apophis Flyby** - Gravity assist demo (simplified from real 2029 event)
+3. **Jupiter Slingshot** - Voyager-style +10 km/s boost
+4. **Interstellar Visitor** - Oumuamua-style hyperbolic (e>1, 30 km/s)
+5. **Deflection Challenge** - Planetary defense game, 6-12 month lead time
+6. **Sandbox** - Free experimentation, zero initial velocity
+
+### Outcome Detection
+Three trajectory outcomes with distinct visual feedback:
+- **Collision** (red): Asteroid hits body
+- **Escape** (blue/cyan): Hyperbolic trajectory (E > 0)
+- **Stable Orbit** (green): Bound orbit without collision
+
+Detection: specific orbital energy E = 0.5v² - GM/r
+
+### Interceptor System (Instant Methods)
+- **Kinetic Impactor**: Δv = β × (m × v_rel) / M_asteroid
+  - DART beta factor: 3.6 (ejecta amplification)
+  - Typical: 560 kg at 6 km/s → ~2.7 mm/s
+- **Nuclear Standoff**: ~2 cm/s per 100 kt for 300m asteroid (LLNL research)
+
+### Phase 5/6 Split
+- Phase 5: Instant deflection (kinetic, nuclear)
+- Phase 6: Continuous deflection (ion beam, gravity tractor, laser ablation)
+
 ## Key Constants
 
 - J2000 Unix timestamp: 946728000

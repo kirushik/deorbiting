@@ -362,68 +362,210 @@ A coding-focused, step-by-step checklist for implementing the orbital mechanics 
 
 ---
 
-## Phase 5: Scenarios & Polish
+## Phase 5: Scenarios, Deflection & Polish
+
+> **Design Notes (2026-01):** Phase 5 expanded based on research into real asteroid scenarios
+> (Apophis, Oumuamua, Voyager gravity assists) and deflection technologies (DART, nuclear standoff).
+> Interceptor system added for planetary defense gameplay. Continuous deflection methods
+> (ion beam, gravity tractor, laser) deferred to Phase 6.
 
 ### 5.1 Scenario System (`src/scenarios/mod.rs`)
 - [ ] Define `Scenario` struct:
   ```rust
   pub struct Scenario {
-      pub name: &'static str,
-      pub description: &'static str,
-      pub asteroid_pos: DVec2,
-      pub asteroid_vel: DVec2,
-      pub start_time: f64,
+      pub id: &'static str,           // Unique identifier
+      pub name: &'static str,         // Display name
+      pub description: &'static str,  // Brief explanation
+      pub asteroid_pos: DVec2,        // Initial position (meters)
+      pub asteroid_vel: DVec2,        // Initial velocity (m/s)
+      pub start_time: f64,            // J2000 seconds
+      pub camera_center: Option<DVec2>, // Auto-position camera
+      pub camera_zoom: Option<f32>,   // Auto-zoom level
+      pub time_scale: Option<f64>,    // Initial time scale
   }
   ```
 - [ ] Create `load_scenario()` function:
-  - [ ] Reset simulation time
-  - [ ] Respawn/reset asteroid with scenario values
-  - [ ] Clear trajectory
+  - [ ] Despawn all existing asteroids
+  - [ ] Clear collision state and interceptors
+  - [ ] Reset SimulationTime to scenario.start_time
+  - [ ] Spawn asteroid with scenario position/velocity
+  - [ ] Set camera position/zoom if specified
+  - [ ] Trigger trajectory recalculation
+  - [ ] Unpause simulation
 
 ### 5.2 Preset Scenarios (`src/scenarios/presets.rs`)
-- [ ] Create "Apophis Approach" scenario:
-  - [ ] Near-Earth asteroid on close approach
-- [ ] Create "Jupiter Gravity Assist" scenario:
-  - [ ] Asteroid trajectory passing Jupiter
-- [ ] Create "Earth-Moon System" scenario:
-  - [ ] Asteroid in cislunar space
-- [ ] Create "Sandbox" scenario:
-  - [ ] Default position, zero velocity
 
-### 5.3 Scenario Menu (`src/ui/scenario_menu.rs`)
+Six scenarios designed for educational value (simplified for dramatic effect):
+
+- [ ] **Earth Collision Course** (Default/Tutorial):
+  - [ ] Asteroid 45° ahead of Earth, retrograde orbit → collision ~23 days
+  - [ ] Camera centered on Earth, 2 AU field of view
+  - [ ] Time scale 10x
+- [ ] **Apophis Flyby** (Gravity assist demo):
+  - [ ] Close Earth approach (0.0002 AU / 30,000 km)
+  - [ ] Shows orbital period change after encounter
+  - [ ] Camera centered on Earth, 0.1 AU close-up view
+- [ ] **Jupiter Slingshot** (Classic gravity assist):
+  - [ ] Asteroid approaching Jupiter from behind (gains ~10 km/s)
+  - [ ] Camera centered on Jupiter, 2 AU field of view
+  - [ ] Time scale 100x to watch flyby
+- [ ] **Interstellar Visitor** (Oumuamua-style):
+  - [ ] Hyperbolic trajectory (e > 1.0), ~30 km/s
+  - [ ] Camera centered on Sun, 10 AU field of view
+  - [ ] Demonstrates escape trajectories
+- [ ] **Deflection Challenge** (Planetary defense game):
+  - [ ] Asteroid on collision course, 6-12 months lead time
+  - [ ] Goal: Apply minimal delta-v to make asteroid miss Earth
+  - [ ] Educational: tiny changes early = huge miss distance
+- [ ] **Sandbox** (Free experimentation):
+  - [ ] Asteroid near Earth (1.05 AU), zero velocity
+  - [ ] User experiments with velocity handle
+  - [ ] Paused initially
+
+### 5.3 Outcome Detection (`src/collision_analysis.rs`)
+
+Three possible trajectory outcomes with distinct visual feedback:
+
+- [ ] Define `TrajectoryOutcome` enum:
+  ```rust
+  pub enum TrajectoryOutcome {
+      Collision { event: CollisionEvent },
+      Escape { escape_velocity: f64, direction: DVec2 },
+      StableOrbit { semi_major_axis: f64, eccentricity: f64, period: f64 },
+      InProgress,
+  }
+  ```
+- [ ] Implement orbital energy calculation:
+  - [ ] `E = 0.5*v² - GM/r` (specific orbital energy)
+  - [ ] E > 0 → hyperbolic (escaping)
+  - [ ] E < 0 → bound orbit
+- [ ] Implement eccentricity calculation from state vectors
+- [ ] Detect outcomes:
+  - [ ] Collision: existing collision detection
+  - [ ] Escape: E > 0 and r > 50 AU outbound
+  - [ ] Stable orbit: E < 0 and trajectory completes without collision
+
+### 5.4 Interceptor System (`src/interceptor/`)
+
+Instant deflection methods (kinetic impactor, nuclear standoff):
+
+- [ ] Define `Interceptor` component:
+  ```rust
+  pub struct Interceptor {
+      pub target: Entity,
+      pub payload: DeflectionPayload,
+      pub launch_time: f64,
+      pub arrival_time: f64,
+      pub deflection_direction: DVec2,
+      pub state: InterceptorState,
+  }
+  ```
+- [ ] Define `DeflectionPayload` enum:
+  - [ ] `Kinetic { mass_kg: f64, beta: f64 }` (100-1000 kg, β=1.0-5.0)
+  - [ ] `Nuclear { yield_kt: f64 }` (1-1000 kt)
+- [ ] Implement delta-v calculations:
+  - [ ] Kinetic: `Δv = β × (m × v_rel) / M_asteroid` (DART formula)
+  - [ ] Nuclear: ~2 cm/s per 100 kt for 300m asteroid (LLNL research)
+- [ ] Create `update_interceptors` system:
+  - [ ] Track in-flight interceptors
+  - [ ] Apply delta-v on arrival
+  - [ ] Trigger trajectory recalculation
+
+### 5.5 Interceptor Launch UI (`src/ui/interceptor_launch.rs`)
+
+- [ ] Create launch modal window:
+  - [ ] Payload type selector (Kinetic / Nuclear)
+  - [ ] Parameter sliders (mass, beta, yield)
+  - [ ] Direction control widget (2D arrow or "optimal" checkbox)
+  - [ ] Estimated flight time display
+  - [ ] Estimated delta-v and miss distance change
+  - [ ] Launch button
+- [ ] Add "Launch Interceptor" button to info panel
+
+### 5.6 Scenario Menu (`src/ui/scenario_menu.rs`)
 - [ ] Create modal window with `egui::Window`
-- [ ] List all scenarios with descriptions
+- [ ] List all 6 scenarios with descriptions
 - [ ] Radio button selection
 - [ ] Load and Cancel buttons
-- [ ] Trigger via menu button or Escape key
+- [ ] Trigger via menu button, Escape, or M key
+- [ ] Pause simulation while menu open
 
-### 5.4 Impact Overlay (`src/ui/impact_overlay.rs`)
-- [ ] Create full-screen overlay on collision:
-  - [ ] Semi-transparent dark background
-  - [ ] "IMPACT!" text centered
-  - [ ] Show which body was hit
+### 5.7 Outcome Overlay (`src/ui/outcome_overlay.rs`)
+
+Three distinct overlays with visual differentiation:
+
+- [ ] **Collision overlay** (red):
+  - [ ] "IMPACT!" heading with dramatic flash
+  - [ ] Body hit, impact velocity
   - [ ] Reset Scenario / New Scenario buttons
-- [ ] Trigger from `CollisionEvent`
+- [ ] **Escape overlay** (blue/cyan):
+  - [ ] "ESCAPE!" heading
+  - [ ] Escape velocity, direction
+  - [ ] Trajectory fading to infinity visual
+- [ ] **Stable orbit overlay** (green):
+  - [ ] "STABLE ORBIT!" heading
+  - [ ] Orbital parameters (a, e, period)
+  - [ ] Congratulations message for Deflection Challenge
 
-### 5.5 Visual Effects
-- [ ] Impact flash effect (brief screen flash)
-- [ ] Trajectory line fade (alpha gradient)
-- [ ] Selection highlight (ring or glow)
+### 5.8 Keyboard Shortcuts Update (`src/input.rs`)
+- [x] Space: play/pause *(existing)*
+- [x] +/-: zoom *(existing)*
+- [x] [/]: time scale *(existing)*
+- [x] R: reset *(existing)*
+- [ ] Escape or M: open scenario menu
+- [ ] 1-4: quick time scale selection
 
-### 5.6 Keyboard Shortcuts
-- [ ] Space: play/pause
-- [ ] 1-4: time scale
-- [ ] R: reset scenario
-- [ ] Escape/M: scenario menu
-- [ ] +/-: zoom
+### 5.9 Visual Effects
+- [ ] Impact flash effect (brief screen overlay that fades)
+- [ ] Interceptor trajectory line (dotted from Earth to intercept point)
+- [ ] Outcome color coding (red/blue/green for overlays)
 
-### 5.7 Final Polish
+### 5.10 Final Polish
 - [ ] Performance profiling (target 60 FPS)
 - [ ] Window resize handling
 - [ ] Error handling for edge cases
-- [ ] Code documentation
+- [ ] Code documentation for new modules
 
-**Phase 5 Acceptance:** Scenarios load correctly, impact detection shows overlay, keyboard shortcuts work, stable 60 FPS.
+**Phase 5 Acceptance:** All 6 scenarios load correctly with auto-camera, outcome detection works (collision/escape/capture), interceptor system deflects asteroids with correct physics, keyboard shortcuts work, stable 60 FPS.
+
+---
+
+## Phase 6: Advanced Deflection (Future)
+
+> **Note:** Phase 6 is reserved for continuous deflection methods that require
+> ongoing spacecraft operation. These are more complex to simulate than the
+> instant methods in Phase 5.
+
+### 6.1 Continuous Deflection Methods
+
+- [ ] **Ion Beam Shepherd**:
+  - [ ] Spacecraft hovers near asteroid, ion exhaust pushes it
+  - [ ] Continuous low thrust (~10 mN for months)
+  - [ ] More efficient than gravity tractor for asteroids <2km
+- [ ] **Gravity Tractor**:
+  - [ ] Spacecraft mass gravitationally pulls asteroid
+  - [ ] Very slow (needs decades of lead time)
+  - [ ] Most controlled method
+- [ ] **Laser Ablation**:
+  - [ ] Vaporize asteroid surface, creating thrust
+  - [ ] Effectiveness varies with solar distance
+  - [ ] DE-STARLITE concept: deflect Apophis-size in 1-15 years
+
+### 6.2 Full Spacecraft Visualization
+
+- [ ] Render spacecraft icon moving toward asteroid
+- [ ] Trajectory line from Earth to intercept point
+- [ ] Status indicators (en route, operating, complete)
+- [ ] Active spacecraft management for continuous methods
+
+### 6.3 Advanced Mission Features
+
+- [ ] Multiple interceptors in flight simultaneously
+- [ ] Spacecraft fuel/mass constraints
+- [ ] Launch window optimization
+- [ ] Multi-stage missions
+
+**Phase 6 Acceptance:** Continuous deflection methods work with scheduled effects, spacecraft visualization shows mission progress, advanced features enable complex planetary defense scenarios.
 
 ---
 
@@ -455,5 +597,10 @@ A coding-focused, step-by-step checklist for implementing the orbital mechanics 
 | 2026-01 | Removed visual distortion | Trajectory accuracy > visual tidiness; Z-ordering suffices |
 | 2026-01 | Moons decorative only | No gravity, no collision; simplifies physics model |
 | 2026-01 | Proximity cap optimization | Only activates within 3× collision radius |
+| 2026-01 | Phase 5 expanded with deflection | Added interceptor system (kinetic/nuclear) for planetary defense gameplay |
+| 2026-01 | 6 scenarios instead of 4 | Added Deflection Challenge and expanded Apophis/Interstellar based on research |
+| 2026-01 | Outcome detection system | Three outcomes (collision/escape/capture) with distinct visual feedback |
+| 2026-01 | Phase 5/6 split for deflection | Instant methods (kinetic/nuclear) in Phase 5; continuous methods (ion beam, gravity tractor, laser) deferred to Phase 6 |
+| 2026-01 | DART-based physics | Delta-v calculations use real DART mission beta factor (3.6) and LLNL nuclear research |
 
 > **Tip:** When starting a new coding session, run `list_memories` to see available context, then `read_memory` for relevant memories before beginning work.
