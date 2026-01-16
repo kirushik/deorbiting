@@ -214,16 +214,16 @@ fn interstellar_visitor_state(_time: f64, _planet_data: &HashMap<&str, (f64, f64
     (pos, vel)
 }
 
-/// Deflection Challenge: 50° ahead of Earth, retrograde orbit.
+/// Deflection Challenge: 91° ahead of Earth, retrograde orbit.
 /// Uses numerical differentiation to get Earth's actual velocity, matching the game.
 fn deflection_challenge_state(time: f64, planet_data: &HashMap<&str, (f64, f64, f64, f64)>) -> (DVec2, DVec2) {
-    // Time offset for 50° ahead in Earth's orbit
-    let days_for_50_degrees = 50.0 / 0.9856;
-    let time_offset = days_for_50_degrees * DAY_SECONDS;
+    // Time offset for 91° ahead in Earth's orbit → collision ~46 days
+    let days_for_91_degrees = 91.0 / 0.9856;
+    let time_offset = days_for_91_degrees * DAY_SECONDS;
 
     let future_time = time + time_offset;
 
-    // Get Earth's position 50° ahead in its orbit
+    // Get Earth's position 91° ahead in its orbit
     let pos = planet_position("Earth", future_time, planet_data);
 
     // Compute Earth's actual velocity via numerical differentiation
@@ -291,10 +291,10 @@ fn main() {
         Scenario {
             id: "deflection_challenge",
             name: "Deflection Challenge",
-            description: "Collision course with ~25 day warning (50° ahead)",
+            description: "Collision course with ~46 day warning (91° ahead)",
             get_initial_state: deflection_challenge_state,
-            max_days: 60.0,
-            expected_outcome: "Collision with Earth (~25 days)",
+            max_days: 80.0,
+            expected_outcome: "Collision with Earth (~46 days)",
         },
         Scenario {
             id: "sandbox",

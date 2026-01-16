@@ -319,14 +319,14 @@ pub fn compute_scenario_asteroid_state(
 
         "deflection_challenge" => {
             // Dynamic: Same approach as Earth Collision but with longer lead time
-            // 50° ahead of Earth (retrograde) → collision ~25 days
+            // 91° ahead of Earth (retrograde) → collision ~46 days
             // Uses numerical differentiation to get Earth's actual velocity on its
             // elliptical orbit, ensuring collision at all orbital phases.
-            let days_for_50_degrees = 50.0 / 0.9856;
-            let time_offset = days_for_50_degrees * 86400.0;
+            let days_for_91_degrees = 91.0 / 0.9856;
+            let time_offset = days_for_91_degrees * 86400.0;
             let future_time = time + time_offset;
 
-            // Get Earth's position 50° ahead
+            // Get Earth's position 91° ahead
             let pos = ephemeris.get_position_by_id(CelestialBodyId::Earth, future_time)
                 .unwrap_or(DVec2::new(AU_TO_METERS, 0.0));
 
