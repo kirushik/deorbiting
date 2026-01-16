@@ -415,11 +415,12 @@ fn body_color(body_id: CelestialBodyId) -> (f32, f32, f32) {
         CelestialBodyId::Neptune => (0.3, 0.4, 1.0),     // Deep blue
         // Moons inherit parent color (simplified)
         CelestialBodyId::Moon => (0.3, 0.5, 1.0),        // Blue (like Earth)
+        CelestialBodyId::Phobos | CelestialBodyId::Deimos => (1.0, 0.4, 0.3), // Red (like Mars)
         CelestialBodyId::Io
         | CelestialBodyId::Europa
         | CelestialBodyId::Ganymede
         | CelestialBodyId::Callisto => (1.0, 0.7, 0.3),  // Orange (like Jupiter)
-        CelestialBodyId::Titan => (0.9, 0.8, 0.5),       // Gold (like Saturn)
+        CelestialBodyId::Titan | CelestialBodyId::Enceladus => (0.9, 0.8, 0.5), // Gold (like Saturn)
     }
 }
 

@@ -17,9 +17,7 @@ use self::background::BackgroundPlugin;
 use self::bodies::CelestialBodyPlugin;
 use self::highlight::HighlightPlugin;
 use self::labels::LabelPlugin;
-use self::orbits::{
-    draw_danger_zones, draw_moon_orbit_paths, draw_orbit_paths, draw_soi_circles, OrbitPathPlugin,
-};
+use self::orbits::{draw_moon_orbit_paths, draw_orbit_paths, OrbitPathPlugin};
 use self::scaling::{
     apply_moon_position_distortion, compute_hierarchical_scales, ScalingPlugin,
 };
@@ -56,7 +54,7 @@ impl Plugin for RenderPlugin {
                 sync_celestial_positions,
                 compute_hierarchical_scales,
                 apply_moon_position_distortion,
-                (draw_orbit_paths, draw_moon_orbit_paths, draw_soi_circles, draw_danger_zones),
+                (draw_orbit_paths, draw_moon_orbit_paths),
             )
                 .chain(),
         );

@@ -3,8 +3,8 @@ use crate::ephemeris::table::{EphemerisTable, EphemerisTableError, State2};
 use bevy::math::DVec2;
 use std::collections::HashMap;
 
-/// Number of bodies with tables (excludes Sun which is at origin).
-const TABLE_BODY_COUNT: usize = 14;
+/// Number of bodies with tables (8 planets, excludes Sun and moons).
+const TABLE_BODY_COUNT: usize = 8;
 
 /// Time range covered by a loaded ephemeris table.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -16,8 +16,8 @@ pub struct TableCoverage {
 /// Mapping from in-game `CelestialBodyId` to the stable numeric IDs used in
 /// `scripts/export_horizons_ephemeris.py`.
 fn stable_body_id(id: CelestialBodyId) -> Option<u32> {
+    // Only planets have ephemeris tables. Moons use Kepler (visual-only).
     Some(match id {
-        CelestialBodyId::Sun => return None, // Sun is always origin
         CelestialBodyId::Mercury => 1,
         CelestialBodyId::Venus => 2,
         CelestialBodyId::Earth => 3,
@@ -26,12 +26,8 @@ fn stable_body_id(id: CelestialBodyId) -> Option<u32> {
         CelestialBodyId::Saturn => 6,
         CelestialBodyId::Uranus => 7,
         CelestialBodyId::Neptune => 8,
-        CelestialBodyId::Moon => 9,
-        CelestialBodyId::Io => 10,
-        CelestialBodyId::Europa => 11,
-        CelestialBodyId::Ganymede => 12,
-        CelestialBodyId::Callisto => 13,
-        CelestialBodyId::Titan => 14,
+        // Sun is always at origin, moons use Kepler
+        _ => return None,
     })
 }
 
@@ -49,6 +45,7 @@ impl HorizonsTables {
         let mut tables: HashMap<CelestialBodyId, EphemerisTable> = HashMap::new();
 
         // We intentionally hardcode names so the build doesn't depend on directory listing.
+        // Only planets have ephemeris tables - moons use Kepler approximation (visual-only).
         let candidates: &[(CelestialBodyId, &str)] = &[
             (CelestialBodyId::Mercury, "mercury.bin"),
             (CelestialBodyId::Venus, "venus.bin"),
@@ -58,12 +55,6 @@ impl HorizonsTables {
             (CelestialBodyId::Saturn, "saturn.bin"),
             (CelestialBodyId::Uranus, "uranus.bin"),
             (CelestialBodyId::Neptune, "neptune.bin"),
-            (CelestialBodyId::Moon, "moon.bin"),
-            (CelestialBodyId::Io, "io.bin"),
-            (CelestialBodyId::Europa, "europa.bin"),
-            (CelestialBodyId::Ganymede, "ganymede.bin"),
-            (CelestialBodyId::Callisto, "callisto.bin"),
-            (CelestialBodyId::Titan, "titan.bin"),
         ];
 
         for (id, file) in candidates {
@@ -121,8 +112,7 @@ impl HorizonsTables {
     /// Sample positions for all bodies at once, with better cache locality.
     ///
     /// Returns positions for bodies in standard order:
-    /// Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune,
-    /// Moon, Io, Europa, Ganymede, Callisto, Titan.
+    /// Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune.
     ///
     /// Bodies without tables or outside table range return None.
     pub fn sample_all_positions(&self, t: f64) -> [Option<DVec2>; TABLE_BODY_COUNT] {
@@ -135,12 +125,6 @@ impl HorizonsTables {
             CelestialBodyId::Saturn,
             CelestialBodyId::Uranus,
             CelestialBodyId::Neptune,
-            CelestialBodyId::Moon,
-            CelestialBodyId::Io,
-            CelestialBodyId::Europa,
-            CelestialBodyId::Ganymede,
-            CelestialBodyId::Callisto,
-            CelestialBodyId::Titan,
         ];
 
         let mut result = [None; TABLE_BODY_COUNT];

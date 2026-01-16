@@ -28,9 +28,7 @@ pub struct OrbitPathPlugin;
 
 impl Plugin for OrbitPathPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<OrbitPathSettings>()
-            .init_resource::<SoiSettings>()
-            .init_resource::<DangerZoneSettings>();
+        app.init_resource::<OrbitPathSettings>();
         // Systems are added by RenderPlugin with proper ordering
     }
 }
@@ -61,10 +59,10 @@ impl Default for OrbitPathSettings {
         Self {
             visible: true,
             segments: 256,
-            alpha: 0.3,
+            alpha: 0.15, // Faint but visible
             eccentricity_scale: 1.0,
-            dash_on: 2,
-            dash_off: 3,
+            dash_on: 1,  // Solid line
+            dash_off: 0,
         }
     }
 }
@@ -81,12 +79,15 @@ fn orbit_color(id: CelestialBodyId, alpha: f32) -> Color {
         CelestialBodyId::Uranus => Color::srgba(0.6, 0.8, 0.9, alpha),
         CelestialBodyId::Neptune => Color::srgba(0.3, 0.5, 0.9, alpha),
         // Moons use gray
-        CelestialBodyId::Moon => Color::srgba(0.5, 0.5, 0.5, alpha),
-        CelestialBodyId::Io
+        CelestialBodyId::Moon
+        | CelestialBodyId::Phobos
+        | CelestialBodyId::Deimos
+        | CelestialBodyId::Io
         | CelestialBodyId::Europa
         | CelestialBodyId::Ganymede
-        | CelestialBodyId::Callisto => Color::srgba(0.5, 0.5, 0.5, alpha),
-        CelestialBodyId::Titan => Color::srgba(0.5, 0.5, 0.5, alpha),
+        | CelestialBodyId::Callisto
+        | CelestialBodyId::Titan
+        | CelestialBodyId::Enceladus => Color::srgba(0.5, 0.5, 0.5, alpha),
         // Sun has no orbit
         CelestialBodyId::Sun => Color::NONE,
     }
@@ -390,196 +391,5 @@ pub fn draw_moon_orbit_paths(
                 gizmos.line(last, first, color);
             }
         }
-    }
-}
-
-
-/// Settings for Sphere of Influence (SOI) visualization.
-#[derive(Resource)]
-pub struct SoiSettings {
-    /// Whether to show SOI circles.
-    pub visible: bool,
-    /// Number of gradient rings to draw (more = smoother gradient).
-    pub gradient_rings: u32,
-    /// Maximum alpha for the innermost ring.
-    pub max_alpha: f32,
-    /// Number of segments per ring (higher = smoother circles).
-    pub segments: u32,
-}
-
-impl Default for SoiSettings {
-    fn default() -> Self {
-        Self {
-            visible: true,
-            gradient_rings: 8,
-            max_alpha: 0.12,
-            segments: 48,
-        }
-    }
-}
-
-/// Draw Sphere of Influence (Hill sphere) gradient around planets.
-///
-/// Shows the region where each planet's gravity dominates over the Sun's.
-/// Uses the physical Hill sphere radius (zoom-independent) with a gradient
-/// that fades from the planet outward, visualizing the "gravity pull region".
-pub fn draw_soi_circles(
-    bodies: Query<(&Transform, &CelestialBody)>,
-    ephemeris: Res<Ephemeris>,
-    settings: Res<SoiSettings>,
-    orbit_settings: Res<OrbitPathSettings>,
-    mut gizmos: Gizmos,
-) {
-    if !settings.visible || !orbit_settings.visible {
-        return;
-    }
-
-    for (transform, body) in bodies.iter() {
-        // Only draw SOI for planets (not Sun or moons)
-        if !CelestialBodyId::PLANETS.contains(&body.id) {
-            continue;
-        }
-
-        // Get body data for Hill sphere
-        let Some(data) = ephemeris.get_body_data_by_id(body.id) else {
-            continue;
-        };
-
-        // Skip if no Hill sphere data
-        if data.hill_sphere <= 0.0 {
-            continue;
-        }
-
-        // Use physical Hill sphere scaled to render units (zoom-independent)
-        let soi_render_radius = (data.hill_sphere * RENDER_SCALE) as f32;
-
-        // Get base color for this planet (without alpha)
-        let (r, g, b) = body_orbit_rgb(body.id);
-
-        // Center position
-        let center = Vec3::new(transform.translation.x, transform.translation.y, z_layers::TRAJECTORY);
-
-        // Draw gradient rings: from inner (opaque) to outer (transparent)
-        // Gradient represents gravity strength falling off with distance
-        for ring in 0..settings.gradient_rings {
-            // Ring position: 0 = innermost, gradient_rings-1 = outermost (at Hill sphere)
-            let ring_fraction = (ring + 1) as f32 / settings.gradient_rings as f32;
-            let ring_radius = soi_render_radius * ring_fraction;
-
-            // Alpha falls off towards the edge (stronger gravity = more visible)
-            // Use quadratic falloff to emphasize the inner region
-            let alpha = settings.max_alpha * (1.0 - ring_fraction * ring_fraction);
-            let color = Color::srgba(r, g, b, alpha);
-
-            // Draw circle at this radius
-            draw_circle_ring(&mut gizmos, center, ring_radius, settings.segments, color);
-        }
-    }
-}
-
-/// Draw a single circle ring using line segments.
-fn draw_circle_ring(gizmos: &mut Gizmos, center: Vec3, radius: f32, segments: u32, color: Color) {
-    let mut prev: Option<Vec3> = None;
-    let mut first: Option<Vec3> = None;
-
-    for i in 0..=segments {
-        let angle = (i as f32 / segments as f32) * std::f32::consts::TAU;
-        let pt = Vec3::new(
-            center.x + radius * angle.cos(),
-            center.y + radius * angle.sin(),
-            center.z,
-        );
-
-        if first.is_none() {
-            first = Some(pt);
-        }
-
-        if let Some(p0) = prev {
-            gizmos.line(p0, pt, color);
-        }
-
-        prev = Some(pt);
-    }
-}
-
-/// Get RGB color for a body's orbit/SOI.
-fn body_orbit_rgb(body_id: CelestialBodyId) -> (f32, f32, f32) {
-    match body_id {
-        CelestialBodyId::Mercury => (0.7, 0.7, 0.75),
-        CelestialBodyId::Venus => (0.9, 0.85, 0.6),
-        CelestialBodyId::Earth => (0.3, 0.6, 1.0),
-        CelestialBodyId::Mars => (1.0, 0.5, 0.3),
-        CelestialBodyId::Jupiter => (1.0, 0.8, 0.5),
-        CelestialBodyId::Saturn => (0.9, 0.85, 0.6),
-        CelestialBodyId::Uranus => (0.6, 0.9, 0.9),
-        CelestialBodyId::Neptune => (0.4, 0.5, 1.0),
-        _ => (0.5, 0.5, 0.5),
-    }
-}
-
-
-/// Settings for danger zone visualization (collision detection radius).
-#[derive(Resource)]
-pub struct DangerZoneSettings {
-    /// Whether to show danger zone rings.
-    pub visible: bool,
-    /// Alpha value for the danger zone ring.
-    pub alpha: f32,
-    /// Number of segments per ring (higher = smoother circles).
-    pub segments: u32,
-}
-
-impl Default for DangerZoneSettings {
-    fn default() -> Self {
-        Self {
-            visible: true,
-            alpha: 0.15,
-            segments: 64,
-        }
-    }
-}
-
-/// Draw danger zone rings around planets showing collision detection radius.
-///
-/// These rings visualize the `COLLISION_MULTIPLIER` radius used for collision
-/// detection, making it clear to players where asteroids will be considered
-/// as "hitting" a planet.
-pub fn draw_danger_zones(
-    bodies: Query<(&Transform, &CelestialBody)>,
-    ephemeris: Res<Ephemeris>,
-    settings: Res<DangerZoneSettings>,
-    mut gizmos: Gizmos,
-) {
-    if !settings.visible {
-        return;
-    }
-
-    for (transform, body) in bodies.iter() {
-        // Only draw danger zones for planets (not Sun or moons)
-        if !CelestialBodyId::PLANETS.contains(&body.id) {
-            continue;
-        }
-
-        // Get body data for radius
-        let Some(data) = ephemeris.get_body_data_by_id(body.id) else {
-            continue;
-        };
-
-        // Calculate danger zone radius using COLLISION_MULTIPLIER
-        use crate::ephemeris::COLLISION_MULTIPLIER;
-        let danger_radius = (data.radius * COLLISION_MULTIPLIER * RENDER_SCALE) as f32;
-
-        // Use a red-tinted color for danger zones
-        let color = Color::srgba(1.0, 0.3, 0.3, settings.alpha);
-
-        // Center position
-        let center = Vec3::new(
-            transform.translation.x,
-            transform.translation.y,
-            z_layers::TRAJECTORY - 0.1, // Slightly behind trajectories
-        );
-
-        // Draw the danger zone ring
-        draw_circle_ring(&mut gizmos, center, danger_radius, settings.segments, color);
     }
 }

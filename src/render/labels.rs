@@ -48,11 +48,14 @@ fn is_moon(id: CelestialBodyId) -> bool {
     matches!(
         id,
         CelestialBodyId::Moon
+            | CelestialBodyId::Phobos
+            | CelestialBodyId::Deimos
             | CelestialBodyId::Io
             | CelestialBodyId::Europa
             | CelestialBodyId::Ganymede
             | CelestialBodyId::Callisto
             | CelestialBodyId::Titan
+            | CelestialBodyId::Enceladus
     )
 }
 

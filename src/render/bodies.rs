@@ -27,6 +27,9 @@ pub struct CelestialBody {
     pub radius: f64,
     /// Rendering scale multiplier.
     pub visual_scale: f32,
+    /// Base render radius (radius * RENDER_SCALE * visual_scale, with minimum floor applied).
+    /// This is the actual mesh radius before dynamic scaling.
+    pub base_render_radius: f32,
     /// Human-readable name.
     pub name: String,
 }
@@ -64,11 +67,14 @@ fn body_color(id: CelestialBodyId) -> Color {
         CelestialBodyId::Uranus => Color::srgb(0.6, 0.8, 0.9),
         CelestialBodyId::Neptune => Color::srgb(0.3, 0.5, 0.9),
         CelestialBodyId::Moon => Color::srgb(0.7, 0.7, 0.7),
+        CelestialBodyId::Phobos => Color::srgb(0.5, 0.45, 0.4),  // Dark gray-brown
+        CelestialBodyId::Deimos => Color::srgb(0.55, 0.5, 0.45), // Slightly lighter gray-brown
         CelestialBodyId::Io => Color::srgb(0.9, 0.8, 0.3),
         CelestialBodyId::Europa => Color::srgb(0.85, 0.85, 0.8),
         CelestialBodyId::Ganymede => Color::srgb(0.6, 0.55, 0.5),
         CelestialBodyId::Callisto => Color::srgb(0.4, 0.4, 0.4),
         CelestialBodyId::Titan => Color::srgb(0.8, 0.6, 0.3),
+        CelestialBodyId::Enceladus => Color::srgb(0.95, 0.95, 0.98), // Bright icy white
     }
 }
 
@@ -87,8 +93,8 @@ fn spawn_solar_system(
         // Physical radius scaled to render units, then multiplied by visual_scale
         let render_radius = (body_data.radius * RENDER_SCALE) as f32 * body_data.visual_scale;
 
-        // Minimum visible size to ensure small bodies are visible and clickable
-        let render_radius = render_radius.max(0.5);
+        // Small floor to prevent degenerate meshes (scaling system handles visibility)
+        let render_radius = render_radius.max(0.01);
 
         // Get initial position from ephemeris
         let pos = ephemeris
@@ -125,6 +131,7 @@ fn spawn_solar_system(
                     id,
                     radius: body_data.radius,
                     visual_scale: body_data.visual_scale,
+                    base_render_radius: render_radius,
                     name: id.name().to_string(),
                 },
                 EffectiveVisualRadius(render_radius),
@@ -172,12 +179,14 @@ fn spawn_saturn_rings(
     // Saturn's axial tilt is about 26.7 degrees
     let tilt_angle = 26.7_f32.to_radians();
 
-    // Spawn rings as child of Saturn
+    // Spawn rings as child of Saturn, offset well behind (negative z) so moons render in front.
+    // The tilt causes the ring mesh to extend in z, so we need a large offset.
     commands.entity(saturn_entity).with_children(|parent| {
         parent.spawn((
             Mesh3d(mesh_handle),
             MeshMaterial3d(ring_material),
-            Transform::from_rotation(Quat::from_rotation_x(tilt_angle)),
+            Transform::from_rotation(Quat::from_rotation_x(tilt_angle))
+                .with_translation(Vec3::new(0.0, 0.0, -1.5)),
         ));
     });
 

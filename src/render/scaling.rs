@@ -8,7 +8,7 @@
 use bevy::prelude::*;
 use std::collections::HashMap;
 
-use crate::camera::{CameraState, RENDER_SCALE, VIEWPORT_HEIGHT};
+use crate::camera::{CameraState, VIEWPORT_HEIGHT};
 use crate::ephemeris::data::CelestialBodyId;
 
 use super::bodies::{CelestialBody, DistortionOffset, EffectiveVisualRadius};
@@ -91,7 +91,7 @@ pub fn compute_hierarchical_scales(
             continue; // Skip moons in pass 1
         }
 
-        let base_radius = (body.radius * RENDER_SCALE) as f32 * body.visual_scale;
+        let base_radius = body.base_render_radius;
 
         let visibility_scale = if base_radius < min_render_radius {
             (min_render_radius / base_radius).min(settings.max_scale)
@@ -115,7 +115,7 @@ pub fn compute_hierarchical_scales(
             continue; // Skip non-moons in pass 2
         };
 
-        let base_radius = (body.radius * RENDER_SCALE) as f32 * body.visual_scale;
+        let base_radius = body.base_render_radius;
 
         // Get parent's scale and radius
         let (parent_scale, parent_eff_radius) = parent_data

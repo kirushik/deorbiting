@@ -18,11 +18,14 @@ pub enum CelestialBodyId {
     Neptune,
     // Moons
     Moon,
+    Phobos,
+    Deimos,
     Io,
     Europa,
     Ganymede,
     Callisto,
     Titan,
+    Enceladus,
 }
 
 impl CelestialBodyId {
@@ -41,22 +44,26 @@ impl CelestialBodyId {
     /// All moons
     pub const MOONS: &'static [CelestialBodyId] = &[
         CelestialBodyId::Moon,
+        CelestialBodyId::Phobos,
+        CelestialBodyId::Deimos,
         CelestialBodyId::Io,
         CelestialBodyId::Europa,
         CelestialBodyId::Ganymede,
         CelestialBodyId::Callisto,
         CelestialBodyId::Titan,
+        CelestialBodyId::Enceladus,
     ];
 
     /// Get the parent body (for moons)
     pub fn parent(&self) -> Option<CelestialBodyId> {
         match self {
             CelestialBodyId::Moon => Some(CelestialBodyId::Earth),
+            CelestialBodyId::Phobos | CelestialBodyId::Deimos => Some(CelestialBodyId::Mars),
             CelestialBodyId::Io
             | CelestialBodyId::Europa
             | CelestialBodyId::Ganymede
             | CelestialBodyId::Callisto => Some(CelestialBodyId::Jupiter),
-            CelestialBodyId::Titan => Some(CelestialBodyId::Saturn),
+            CelestialBodyId::Titan | CelestialBodyId::Enceladus => Some(CelestialBodyId::Saturn),
             _ => None,
         }
     }
@@ -74,11 +81,14 @@ impl CelestialBodyId {
             CelestialBodyId::Uranus => "Uranus",
             CelestialBodyId::Neptune => "Neptune",
             CelestialBodyId::Moon => "Moon",
+            CelestialBodyId::Phobos => "Phobos",
+            CelestialBodyId::Deimos => "Deimos",
             CelestialBodyId::Io => "Io",
             CelestialBodyId::Europa => "Europa",
             CelestialBodyId::Ganymede => "Ganymede",
             CelestialBodyId::Callisto => "Callisto",
             CelestialBodyId::Titan => "Titan",
+            CelestialBodyId::Enceladus => "Enceladus",
         }
     }
 }
@@ -259,6 +269,35 @@ pub fn get_body_data(id: CelestialBodyId) -> CelestialBodyData {
             }
         }
 
+        // Mars' moons - Hill sphere relative to Mars
+        CelestialBodyId::Phobos => {
+            let a = 9.376e6; // 9,376 km
+            let mass = 1.0659e16;
+            let mars_mass = 6.417e23;
+            CelestialBodyData {
+                id,
+                mass,
+                radius: 1.127e4, // ~11.3 km mean radius (irregular)
+                orbit: Some(KeplerOrbit::from_elements(a, 0.0151, 150.06, 91.05, 1128.84)),
+                visual_scale: 500.0, // Tiny moon needs big scale
+                hill_sphere: compute_hill_sphere(a, mass, mars_mass),
+            }
+        }
+
+        CelestialBodyId::Deimos => {
+            let a = 2.346e7; // 23,460 km
+            let mass = 1.4762e15;
+            let mars_mass = 6.417e23;
+            CelestialBodyData {
+                id,
+                mass,
+                radius: 6.2e3, // ~6.2 km mean radius (irregular)
+                orbit: Some(KeplerOrbit::from_elements(a, 0.00033, 290.50, 325.00, 285.16)),
+                visual_scale: 600.0, // Even tinier
+                hill_sphere: compute_hill_sphere(a, mass, mars_mass),
+            }
+        }
+
         // Jupiter's moons - Hill sphere relative to Jupiter
         CelestialBodyId::Io => {
             let a = 4.218e8; // 421,800 km
@@ -316,7 +355,7 @@ pub fn get_body_data(id: CelestialBodyId) -> CelestialBodyData {
             }
         }
 
-        // Saturn's moon - Hill sphere relative to Saturn
+        // Saturn's moons - Hill sphere relative to Saturn
         CelestialBodyId::Titan => {
             let a = 1.222e9; // 1,221,870 km
             let mass = 1.345e23;
@@ -327,6 +366,20 @@ pub fn get_body_data(id: CelestialBodyId) -> CelestialBodyData {
                 radius: 2.575e6,
                 orbit: Some(KeplerOrbit::from_elements(a, 0.0288, 180.53, 163.31, 22.58)),
                 visual_scale: 280.0,
+                hill_sphere: compute_hill_sphere(a, mass, saturn_mass),
+            }
+        }
+
+        CelestialBodyId::Enceladus => {
+            let a = 2.380e8; // 238,020 km
+            let mass = 1.08e20;
+            let saturn_mass = 5.683e26;
+            CelestialBodyData {
+                id,
+                mass,
+                radius: 2.521e5, // 252.1 km
+                orbit: Some(KeplerOrbit::from_elements(a, 0.0047, 342.51, 199.69, 262.73)),
+                visual_scale: 400.0,
                 hill_sphere: compute_hill_sphere(a, mass, saturn_mass),
             }
         }
@@ -355,8 +408,8 @@ mod tests {
     #[test]
     fn test_all_bodies_have_data() {
         let bodies = all_bodies();
-        // Sun + 8 planets + 6 moons = 15
-        assert_eq!(bodies.len(), 15);
+        // Sun + 8 planets + 9 moons = 18
+        assert_eq!(bodies.len(), 18);
     }
 
     #[test]
