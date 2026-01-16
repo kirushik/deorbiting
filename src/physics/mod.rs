@@ -132,21 +132,27 @@ fn physics_step(
         while elapsed < target_dt {
             // Compute current simulation time precisely
             let sim_t = start_time + elapsed;
-            // Check proximity to celestial bodies and cap timestep to avoid skipping
+
+            // Only apply proximity timestep cap when actually near a collision boundary.
+            // This prevents unnecessary slowdown when far from planets.
             if let Some(closest) = find_closest_body(ias15.pos, sim_t, &ephemeris) {
-                // Calculate relative velocity (asteroid velocity minus body velocity)
-                let rel_vel = (ias15.vel - closest.body_velocity).length();
+                // Only cap timestep when within 3x collision radius (approaching danger zone)
+                if closest.distance < closest.collision_radius * 3.0 {
+                    let rel_vel = (ias15.vel - closest.body_velocity).length();
 
-                if rel_vel > 0.0 {
-                    // Cap timestep so we move at most 10% of the distance to the body
-                    // This ensures we won't skip over collision detection
-                    let safety_factor = 0.1;
-                    let max_dt_proximity = closest.distance * safety_factor / rel_vel;
+                    if rel_vel > 0.0 {
+                        // Distance to collision boundary (not center)
+                        let dist_to_boundary = (closest.distance - closest.collision_radius).max(1e3);
 
-                    // Apply the cap (don't go below min_dt)
-                    let capped_dt = ias15.dt.min(max_dt_proximity).max(config.min_dt);
-                    if capped_dt < ias15.dt {
-                        ias15.dt = capped_dt;
+                        // Cap so we move at most 50% of distance to boundary per step
+                        let safety_factor = 0.5;
+                        let max_dt_proximity = dist_to_boundary * safety_factor / rel_vel;
+
+                        // Apply the cap (don't go below min_dt)
+                        let capped_dt = ias15.dt.min(max_dt_proximity).max(config.min_dt);
+                        if capped_dt < ias15.dt {
+                            ias15.dt = capped_dt;
+                        }
                     }
                 }
             }

@@ -9,7 +9,6 @@ use bevy::prelude::*;
 
 use crate::asteroid::Asteroid;
 use crate::camera::{CameraState, RENDER_SCALE};
-use crate::distortion::distort_position;
 use crate::ephemeris::{CelestialBodyId, Ephemeris, GravitySourcesWithId};
 use crate::input::DragState;
 use crate::physics::{compute_acceleration, compute_adaptive_dt, PredictionConfig};
@@ -66,11 +65,12 @@ impl Default for PredictionSettings {
 /// A single point on a predicted trajectory.
 #[derive(Clone, Debug)]
 pub struct TrajectoryPoint {
-    /// Position in meters from barycenter.
+    /// Position in meters from barycenter (physics coordinate).
     pub pos: DVec2,
     /// Simulation time in seconds since J2000.
     pub time: f64,
     /// The celestial body whose gravity dominates at this point (None = Sun).
+    /// Used for trajectory coloring.
     pub dominant_body: Option<CelestialBodyId>,
 }
 
@@ -223,7 +223,7 @@ fn predict_trajectory(
     trajectory.ends_in_collision = false;
     trajectory.collision_target = None;
 
-    // Store starting point with dominant body calculation
+    // Store starting point with dominant body calculation (for coloring)
     let start_dominant = find_dominant_body(body_state.pos, sim_time.current, &ephemeris);
     trajectory.points.push(TrajectoryPoint {
         pos: body_state.pos,
@@ -320,7 +320,7 @@ fn predict_with_verlet(
         dt = dt_new;
         step += 1;
 
-        // Store points at interval with dominant body info
+        // Store points at interval with dominant body info (for coloring)
         if step % point_interval == 0 {
             let dominant = find_dominant_body(pos, sim_t, ephemeris);
             trajectory.points.push(TrajectoryPoint {
@@ -330,19 +330,17 @@ fn predict_with_verlet(
             });
         }
 
-        // Check collision (only when not dragging for performance)
-        if !is_dragging {
-            if let Some(body_id) = ephemeris.check_collision(pos, sim_t) {
-                trajectory.ends_in_collision = true;
-                trajectory.collision_target = Some(body_id);
-                // Collision point: the collided body dominates
-                trajectory.points.push(TrajectoryPoint {
-                    pos,
-                    time: sim_t,
-                    dominant_body: Some(body_id),
-                });
-                break;
-            }
+        // Check collision (always check - needed for trajectory coloring during drag)
+        if let Some(body_id) = ephemeris.check_collision(pos, sim_t) {
+            trajectory.ends_in_collision = true;
+            trajectory.collision_target = Some(body_id);
+            // Collision point: the collided body dominates
+            trajectory.points.push(TrajectoryPoint {
+                pos,
+                time: sim_t,
+                dominant_body: Some(body_id),
+            });
+            break;
         }
 
         // Check escape or crash
@@ -355,11 +353,11 @@ fn predict_with_verlet(
 }
 
 /// Draw trajectory using Bevy gizmos.
+///
+/// Renders trajectory at true physics positions (no distortion).
 fn draw_trajectory(
     trajectories: Query<(Entity, &TrajectoryPath), With<Asteroid>>,
     selected: Res<SelectedBody>,
-    ephemeris: Res<Ephemeris>,
-    _sim_time: Res<SimulationTime>,
     mut gizmos: Gizmos,
 ) {
     // Get selected asteroid entity
@@ -381,13 +379,10 @@ fn draw_trajectory(
     let mut prev_render_pos: Option<Vec3> = None;
 
     for (i, point) in trajectory.points.iter().enumerate() {
-        // Apply visual distortion
-        let distorted_pos = distort_position(point.pos, &ephemeris, point.time);
-
-        // Convert to render coordinates
+        // Render at true physics position (no distortion)
         let render_pos = Vec3::new(
-            (distorted_pos.x * RENDER_SCALE) as f32,
-            (distorted_pos.y * RENDER_SCALE) as f32,
+            (point.pos.x * RENDER_SCALE) as f32,
+            (point.pos.y * RENDER_SCALE) as f32,
             z_layers::TRAJECTORY,
         );
 

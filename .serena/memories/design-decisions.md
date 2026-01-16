@@ -8,11 +8,14 @@
 | Integrator | IAS15 | Adaptive 15th-order, machine-precision energy conservation |
 | Time base | `f64` seconds since J2000 (approx, uniform; ignore TT/UTC + leap seconds) | Good-enough game time axis; avoids heavy time libs | Good balance for observing planetary motion |
 | Moons | Treat as heliocentric in ephemeris tables (2D), but keep `CelestialBodyId::parent()` for gameplay/organization | Simplest runtime ephemeris usage; avoids mixed frames | Natural hierarchy: moon_pos = planet_pos + local_orbit |
-| Distortion | Nearest planet only | Simple v1, may have visual artifacts at boundaries |
+| Distortion | **REMOVED** | Caused trajectory/velocity mismatches; Z-ordering (asteroids z=3.0 > planets z=2.0) suffices for visibility |
+| Moons | **Decorative only** | No gravity contribution (9 sources: Sun + 8 planets), no collision detection |
 | Camera | Scroll zoom + drag pan | Standard map controls |
 | Orbit data | Table-based ephemeris generated from JPL Horizons (vectors) covering ~200y from J2000 | Much less drift than fixed Kepler elements; still lightweight at runtime | Accuracy with real planetary positions |
 | Bevy version | 0.15 | Latest stable |
 | Collision | Pause + destroy asteroid + notification | Clear feedback; simulation continues after play |
+| Collision zones | Planets 50×, Sun 2×, Moons none | Moons are decorative only |
+| Proximity timestep cap | Activates within 3× collision radius | Prevents skipping collisions without slowing distant flybys |
 | Reset behavior | Full reset: clear all asteroids, respawn initial | Asteroid positions are time-dependent; keeping user-spawned asteroids at reset would be inconsistent | Flexibility with guided experiences |
 
 ## Documentation Structure
@@ -23,7 +26,7 @@
 - `ROADMAP.md` - 6-phase implementation plan (Phase 0-5)
 - `UI.md` - Time controls, velocity handle, info panel, scenario menu
 
-## Implementation Notes (Updated 2026-01)
+## Implementation Notes (Updated 2026-01-16)
 
 | Change | Rationale |
 |--------|-----------|
@@ -62,6 +65,17 @@ Two code paths in `get_gravity_sources()`:
 SIMD in *gravity loop* has marginal benefit for 15 bodies. SIMD in *Hermite interpolation* is always beneficial (4 outputs computed in parallel).
 
 GPU acceleration (particular/wgpu) only beneficial for 1000+ bodies due to dispatch overhead.
+
+### Major Design Changes (2026-01-16)
+
+| Change | Before | After | Rationale |
+|--------|--------|-------|-----------|
+| **Visual distortion** | Asteroid positions pushed away from inflated planets | Asteroids render at true physics positions | Caused trajectory/velocity mismatches; Z-ordering keeps asteroids visible |
+| **Gravity sources** | 15 bodies (Sun + planets + moons) | 9 bodies (Sun + 8 planets) | Moons decorative only; simplifies physics |
+| **Collision detection** | Sun, planets, and moons | Sun (2×) and planets (50×) only | Moons decorative only |
+| **Proximity timestep cap** | 10% safety factor everywhere | 50% factor, only within 3× collision radius | Avoids unnecessary slowdown during distant flybys |
+
+These changes prioritize **trajectory accuracy over visual tidiness** for an intuition-building simulator.
 
 ### Performance Issues Fixed (2026-01)
 

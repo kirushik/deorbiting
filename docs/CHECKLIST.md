@@ -201,18 +201,15 @@ A coding-focused, step-by-step checklist for implementing the orbital mechanics 
 - [x] Add reset button (store initial time for reset)
 - [x] Style with semi-transparent dark background
 
-### 2.3 Visual Distortion (`src/distortion.rs`)
-- [x] Implement `apply_visual_distortion()` function:
-  ```rust
-  pub fn apply_visual_distortion(
-      obj_pos: DVec2,
-      planet_pos: DVec2,
-      phys_r: f64,
-      visual_scale: f32,
-  ) -> DVec2
-  ```
-- [x] Create `find_nearest_planet()` helper
-- [ ] Integrate into `sync_visuals` system (for non-planet objects) - Phase 3
+### 2.3 Visual Distortion - REMOVED
+- [x] ~~Implement `apply_visual_distortion()` function~~ → **Removed**
+- [x] ~~Create `find_nearest_planet()` helper~~ → **Removed**
+
+> **Decision (2026-01):** Visual distortion was implemented but later removed because:
+> - Caused trajectory/velocity arrow mismatches (different coordinate systems)
+> - Z-ordering already keeps asteroids visible (z=3.0 > planets z=2.0)
+> - Trajectory accuracy is more important than visual tidiness for an intuition-building tool
+> - `src/distortion.rs` was deleted; asteroids now render at true physics positions
 
 ### 2.4 Info Panel (`src/ui/info_panel.rs`)
 - [x] Create right side panel with `egui::SidePanel::right`
@@ -257,8 +254,11 @@ A coding-focused, step-by-step checklist for implementing the orbital mechanics 
 
 ### 3.3 Gravity Calculation (`src/physics/gravity.rs`)
 - [x] Implement `compute_acceleration(pos, time, ephemeris) -> DVec2`
-- [x] Sum gravitational acceleration from all bodies (uses ephemeris GM values)
+- [x] Sum gravitational acceleration from 9 bodies: Sun + 8 planets
 - [x] Handle singularity (skip if r < threshold)
+
+> **Note:** Moons are decorative only - they do not contribute to gravity calculations.
+> This simplifies physics while remaining educationally accurate.
 
 ### 3.4 Physics System (`src/physics/mod.rs`)
 - [x] Create `PhysicsPlugin`
@@ -273,18 +273,20 @@ A coding-focused, step-by-step checklist for implementing the orbital mechanics 
 ### 3.5 Asteroid Rendering
 - [x] Create `sync_asteroid_positions` system in `sync.rs`:
   - [x] Query entities with `Asteroid` and `BodyState`
-  - [x] Apply visual distortion
-  - [x] Set Transform at z=SPACECRAFT (3.0)
+  - [x] ~~Apply visual distortion~~ → **Removed** (renders at true physics position)
+  - [x] Set Transform at z=SPACECRAFT (3.0) - ensures visibility on top of planets
 - [x] Create gray sphere mesh for asteroid
 
 ### 3.6 Collision Detection (`src/collision.rs`)
 - [x] Create `check_collisions` system:
   - [x] Query asteroids
-  - [x] Call `Ephemeris::check_collision()`
+  - [x] Call `Ephemeris::check_collision()` - Sun (2×) and planets (50×) only
   - [x] If collision: set `SimulationTime.paused = true`
   - [x] Store collision event for UI
 - [x] Define `CollisionEvent` event type
 - [x] Create `CollisionPlugin`
+
+> **Note:** Moons have no collision detection - asteroids pass through them.
 
 ### 3.7 Physics Tests
 - [x] Test energy conservation over 100 orbits (<1e-4 relative error)
@@ -328,8 +330,8 @@ A coding-focused, step-by-step checklist for implementing the orbital mechanics 
 ### 4.3 Trajectory Rendering (`src/prediction.rs`)
 - [x] Create `draw_trajectory` system using Bevy Gizmos:
   - [x] Query entities with `TrajectoryPath`
-  - [x] For each point: apply visual distortion
-  - [x] Draw line segments between consecutive points
+  - [x] Draw line segments at true physics positions (no distortion)
+  - [x] Color segments based on gravitationally dominant body
   - [x] Use z=1.0 (trajectory layer)
 - [x] Add color gradient (fade with time/distance)
 
@@ -440,10 +442,18 @@ A coding-focused, step-by-step checklist for implementing the orbital mechanics 
 | Topic | Document | Serena Memory |
 |-------|----------|---------------|
 | Architecture decisions | `ARCHITECTURE.md` | `design-decisions.md` |
-| IAS15 algorithm details | `PHYSICS.md` | - |
+| Physics & integrator | `PHYSICS.md` | - |
 | Orbital elements data | `EPHEMERIS.md` | - |
 | UI layouts and behavior | `UI.md` | - |
 | Implementation order | `ROADMAP.md` | - |
 | This checklist | `CHECKLIST.md` | - |
+
+## Design Changes Log
+
+| Date | Change | Rationale |
+|------|--------|-----------|
+| 2026-01 | Removed visual distortion | Trajectory accuracy > visual tidiness; Z-ordering suffices |
+| 2026-01 | Moons decorative only | No gravity, no collision; simplifies physics model |
+| 2026-01 | Proximity cap optimization | Only activates within 3× collision radius |
 
 > **Tip:** When starting a new coding session, run `list_memories` to see available context, then `read_memory` for relevant memories before beginning work.

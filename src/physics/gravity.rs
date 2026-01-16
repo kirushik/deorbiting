@@ -231,11 +231,11 @@ mod tests {
         let ephemeris = Ephemeris::default();
         let sources = ephemeris.get_gravity_sources(0.0);
 
-        // Should have Sun + 8 planets + moons
-        // At minimum: Sun, Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune = 9
-        assert!(
-            sources.len() >= 9,
-            "Should have at least 9 gravity sources (Sun + 8 planets), got {}",
+        // Should have Sun + 8 planets = 9 gravity sources (moons are decorative only)
+        assert_eq!(
+            sources.len(),
+            9,
+            "Should have 9 gravity sources (Sun + 8 planets), got {}",
             sources.len()
         );
 

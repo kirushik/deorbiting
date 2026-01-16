@@ -50,7 +50,7 @@
    - Simple directional lighting
    - Starfield background
 
-## Phase 2: The "Split-World" (Visual Distortion) and GUI
+## Phase 2: GUI and Visual System
 
 1. **Time Control:** Use `bevy_egui` to create bottom panel:
    - Play/pause button
@@ -58,10 +58,11 @@
    - Time scaling selector (1x, 10x, 100x, 1000x)
    - Reset to scenario start
 
-2. **Distortion Algorithm:** Implement `apply_visual_distortion`:
-   - Find nearest planet to object
-   - Push visual position outward by (visual_radius - physical_radius)
-   - Apply to all non-planet objects before rendering
+2. **Visual Rendering:** (Distortion removed - see Design Changes)
+   - Planets rendered with inflated visual scales for visibility
+   - Asteroids render at true physics positions (no distortion)
+   - Z-ordering ensures asteroids (z=3.0) always visible on top of planets (z=2.0)
+   - Trajectory accuracy prioritized over visual tidiness
 
 3. **Info Panel:** Side panel with:
    - Selected body name and type
@@ -77,18 +78,20 @@
 
 2. **Sync System:** Update `sync_visuals` to:
    - Query asteroid's `BodyState`
-   - Apply visual distortion
+   - Render at true physics position (no distortion)
    - Convert f64 position to f32 `Transform`
+   - Apply z=3.0 to ensure visibility on top of planets
 
-3. **IAS15 Integrator:** Implement in `src/physics/integrator.rs`:
-   - Port from REBOUND or implement from paper
-   - 15th-order Gauss-Radau quadrature
-   - Adaptive timestep with error control
+3. **Integrator:** Implement in `src/physics/integrator.rs`:
+   - Velocity Verlet (symplectic, 2nd order) with adaptive timestep
+   - Adaptive timestep based on acceleration error estimation
    - Run in `FixedUpdate` schedule
+   - (IAS15 can be implemented later for higher precision if needed)
 
 4. **Gravity Calculation:**
-   - Sum gravitational forces from all celestial bodies
-   - Use `Ephemeris::get_gravity_sources(time)`
+   - Sum gravitational forces from 9 bodies: Sun + 8 planets
+   - Moons are decorative only (no gravity contribution)
+   - Use `Ephemeris::get_gravity_sources(time)` - fixed-size array
 
 5. **Verification:**
    - Test energy conservation over long runs
@@ -109,8 +112,8 @@
    - Store results in `TrajectoryPath`
 
 3. **Line Rendering:** Use Bevy Gizmos:
-   - Draw lines between predicted points
-   - Apply visual distortion to each point
+   - Draw lines between predicted points at true physics positions
+   - Color segments based on gravitationally dominant body
    - Always visible (not just when paused)
 
 4. **Velocity Handle:** Implement draggable arrow:
@@ -155,3 +158,16 @@
    - Planet labels
    - Orbit path visualization (optional toggle)
    - Performance optimization for smooth 60 FPS
+
+---
+
+## Design Changes (Post-Implementation)
+
+| Change | Date | Rationale |
+|--------|------|-----------|
+| **Removed visual distortion** | 2026-01 | Caused trajectory/velocity mismatches; Z-ordering suffices for visibility |
+| **Moons decorative only** | 2026-01 | No gravity contribution, no collision; simplifies physics model |
+| **Optimized proximity timestep cap** | 2026-01 | Only activates within 3× collision radius to avoid unnecessary slowdown |
+| **Collision zones** | 2026-01 | Planets: 50×, Sun: 2×, Moons: none |
+
+See `docs/CHECKLIST.md` for detailed implementation notes.

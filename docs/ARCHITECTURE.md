@@ -38,22 +38,24 @@
 
 ### 4. Core Architecture: The "Split-World" Pattern
 
-We strictly decouple **Simulation Space** (Physics) from **Render Space** (Visuals) to allow for "Visual Distortion" (inflating planets for visibility without breaking orbits).
+We strictly decouple **Simulation Space** (Physics) from **Render Space** (Visuals). Planets are rendered with inflated visual scales for visibility, but asteroids render at their true physics positions.
 
 #### Coordinate Systems
  1. Physics Space (The Truth):
     - stored in custom components (e.g., BodyState).
     - Units: Meters, Seconds.
     - Planets are point masses or small spheres.
- 2. Render Space (The Lie):
+    - Gravity computed from Sun + 8 planets only (moons are decorative).
+ 2. Render Space (Visuals):
     - stored in Bevy's Transform component.
     - Units: Screen-relative or Scaled Meters.
-    - Planets are visually inflated (scaled up).
-    - Z-Layering:
+    - Planets are visually inflated (scaled up) for visibility at all zoom levels.
+    - Asteroids render at true physics positions (no distortion).
+    - Z-Layering ensures asteroids always visible on top of planets:
       * 0.0: Background/Grid
       * 1.0: Trajectory Lines
       * 2.0: Celestial Bodies
-      * 3.0: Spacecraft/Player
+      * 3.0: Spacecraft/Player (always on top)
       * 4.0: UI Handles
 
 ### 5. Data Structures (ECS)
@@ -79,8 +81,13 @@ struct CelestialBody {
 #[derive(Component)]
 struct TrajectoryPath {
     // Stores position AND the specific time that position occurs
-    // Necessary because distortion depends on where the planet IS at that specific time
-    points: Vec<(DVec2, f64)>,  // (position in meters, time in seconds)
+    points: Vec<TrajectoryPoint>,
+}
+
+struct TrajectoryPoint {
+    pos: DVec2,                          // Position in meters
+    time: f64,                           // Simulation time in seconds
+    dominant_body: Option<CelestialBodyId>,  // For trajectory coloring
 }
 
 // SINGLE SOURCE OF TRUTH FOR CELESTIAL POSITIONS
@@ -94,81 +101,74 @@ impl Ephemeris {
     /// Get position of a celestial body at a given time
     fn get_position(&self, body: Entity, time: f64) -> DVec2 { ... }
 
-    /// Get all gravitating bodies for force calculations
-    fn get_gravity_sources(&self, time: f64) -> Vec<(DVec2, f64)> { ... }  // (pos, mass)
+    /// Get all gravitating bodies for force calculations.
+    /// Returns fixed-size array of 9 sources: Sun + 8 planets.
+    /// Moons are decorative only (no gravity contribution).
+    fn get_gravity_sources(&self, time: f64) -> [(DVec2, f64); 9] { ... }  // (pos, GM)
 }
 ```
 
-### 6. The Visual Distortion Algorithm
+### 6. Visual Rendering (No Distortion)
 
-To make the game playable, planets are rendered larger than their physics bodies. To prevent the asteroid from visually clipping inside a planet or looking like it's crashing when it's actually in a safe orbit, we apply a distortion to the asteroid's visual position based on its proximity to the nearest planet.
+Planets are rendered with inflated visual scales for visibility at all zoom levels.
+Asteroids and trajectories render at their **true physics positions** without any distortion.
 
-#### Logic:
- - Calculate distance between Asteroid and Planet (Physics Space).
- - Calculate the radius_delta (Visual Radius - Physical Radius).
- - Push the Asteroid's visual position away from the planet center by radius_delta.
+#### Why No Distortion?
 
-```rust
-// Reference Implementation
-// Note: Only considers nearest planet. May cause visual discontinuities
-// at boundaries between planets' influence zones - acceptable for v1.
-fn apply_visual_distortion(
-    obj_pos: DVec2,
-    planet_pos: DVec2,
-    phys_r: f64,
-    visual_scale: f32
-) -> DVec2 {
-    let delta = obj_pos - planet_pos;
-    let dist = delta.length();
-    let visual_r = phys_r * (visual_scale as f64);
+For an intuition-building physics simulator, **trajectory accuracy is more important than visual tidiness**:
 
-    // If we are far away, the offset is constant (the radius difference)
-    // If we are inside the planet, logic might need clamping, but for now:
-    let radius_delta = visual_r - phys_r;
+ - Z-ordering ensures asteroids (z=3.0) always render on top of planets (z=2.0)
+ - An asteroid appearing "inside" an inflated planet is educational - it shows the difference between visual scale and physical reality
+ - Trajectories always match physics exactly, with velocity arrows pointing in the correct direction
+ - Simpler code with fewer edge cases
 
-    let new_dist = dist + radius_delta;
-    let dir = delta.normalize_or_zero();
+#### Moons Are Decorative Only
 
-    planet_pos + (dir * new_dist)
-}
-```
+Moons (Earth's Moon, Jupiter's Galilean moons, Titan) are rendered for visual interest but:
+ - **Do not contribute to gravity calculations** (only Sun + 8 planets)
+ - **Have no collision detection** (asteroids pass through them)
+ - Can be rendered at any visual scale without affecting physics
 
 ### 7. Collision Detection
 
 #### Detection
- - Check if asteroid position enters any planet's physical radius
- - Performed every physics step
+ - Check if asteroid enters the "danger zone" around Sun or planets
+ - **Planets**: 50× physical radius (e.g., Earth's zone is ~320,000 km)
+ - **Sun**: 2× physical radius (~1.4 million km)
+ - **Moons**: No collision detection (decorative only)
+ - Performed every physics integration step
 
 #### Response
  - Pause simulation immediately
- - Display "Impact!" overlay with visual effect (explosion/flash)
+ - Display "Impact!" overlay with visual effect
  - User must manually reset or respawn asteroid
 
 ```rust
-fn check_collision(asteroid_pos: DVec2, planet_pos: DVec2, planet_radius: f64) -> bool {
-    (asteroid_pos - planet_pos).length() < planet_radius
+const COLLISION_MULTIPLIER: f64 = 50.0;  // For planets
+
+fn check_collision(asteroid_pos: DVec2, body_pos: DVec2, body_radius: f64) -> bool {
+    (asteroid_pos - body_pos).length() < body_radius * COLLISION_MULTIPLIER
 }
 ```
 
 ### 8. Systems Pipeline
 
 #### A. Update Loop (Play Mode)
-1. `physics_step`: Runs IAS15 integrator, updates BodyState.pos/vel based on gravity.
-2. `check_collisions`: Detects impacts, triggers pause if collision detected.
+1. `physics_step`: Runs integrator in FixedUpdate, updates BodyState.pos/vel based on gravity from Sun + 8 planets.
+2. Collision detection is integrated into `physics_step` to ensure synchronized positions.
 3. `sync_visuals`:
-   - Queries BodyState and Ephemeris.
-   - Calculates the distorted position.
-   - Converts f64 to f32 and writes to Transform.translation.
+   - Queries BodyState (asteroids) and Ephemeris (celestial bodies).
+   - Converts f64 physics positions to f32 Transform.translation.
+   - Applies z-ordering (asteroids on top of planets).
 
 #### B. Prediction Loop (Always Active)
 1. `input_handling`: User drags velocity handle -> Updates BodyState.vel.
 2. `predict_trajectory`:
    - Clones current state.
-   - Runs IAS15 loop for N steps into the future.
-   - Calls Ephemeris to get gravity sources at future times t+n.
-   - Stores results in TrajectoryPath.
+   - Runs integrator loop for N steps into the future.
+   - Queries Ephemeris for gravity sources at future times.
+   - Stores results in TrajectoryPath with dominant body info for coloring.
 3. `draw_trajectory`:
    - Iterates TrajectoryPath.
-   - Crucial: For every point, looks up where the planet was at that point's time.
-   - Applies apply_visual_distortion to the point.
-   - Draws line using Bevy Gizmos.
+   - Draws line segments at true physics positions using Bevy Gizmos.
+   - Colors segments based on gravitationally dominant body.

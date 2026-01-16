@@ -9,7 +9,6 @@ use bevy_egui::EguiPlugin;
 mod asteroid;
 mod camera;
 mod collision;
-mod distortion;
 mod ephemeris;
 mod input;
 mod physics;

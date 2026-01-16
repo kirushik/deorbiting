@@ -7,7 +7,6 @@ use bevy::{math::DVec2, prelude::*};
 
 use crate::asteroid::{Asteroid, AsteroidVisual};
 use crate::camera::{CameraState, RENDER_SCALE};
-use crate::distortion::distort_position;
 use crate::ephemeris::Ephemeris;
 use crate::render::bodies::CelestialBody;
 use crate::render::z_layers;
@@ -43,12 +42,9 @@ pub fn sync_celestial_positions(
 ///
 /// Unlike celestial bodies which read from ephemeris, asteroids have their
 /// positions computed by the physics integrator and stored in BodyState.
-/// This system also applies visual distortion to prevent clipping with
-/// inflated planets, and scales asteroids to maintain constant screen-space size.
+/// Scales asteroids to maintain constant screen-space size.
 pub fn sync_asteroid_positions(
     mut query: Query<(&mut Transform, &BodyState, &AsteroidVisual), With<Asteroid>>,
-    ephemeris: Res<Ephemeris>,
-    time: Res<SimulationTime>,
     camera: Res<CameraState>,
 ) {
     // Target screen-space size: asteroids appear as ~0.8% of viewport height
@@ -60,14 +56,10 @@ pub fn sync_asteroid_positions(
     let target_size = viewport_size * TARGET_SCREEN_FRACTION;
     
     for (mut transform, body_state, visual) in query.iter_mut() {
-        // Apply visual distortion relative to nearest planet
-        // This prevents the asteroid from appearing to clip through
-        // visually-inflated planets
-        let distorted_pos = distort_position(body_state.pos, &ephemeris, time.current);
-
         // Convert f64 meters to f32 render units
-        transform.translation.x = (distorted_pos.x * RENDER_SCALE) as f32;
-        transform.translation.y = (distorted_pos.y * RENDER_SCALE) as f32;
+        // No distortion applied - render at true physics position
+        transform.translation.x = (body_state.pos.x * RENDER_SCALE) as f32;
+        transform.translation.y = (body_state.pos.y * RENDER_SCALE) as f32;
         transform.translation.z = z_layers::SPACECRAFT;
         
         // Scale asteroid to maintain constant screen-space size

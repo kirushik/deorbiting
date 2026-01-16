@@ -109,10 +109,19 @@ fn compute_acceleration(
 }
 ```
 
+### Gravity Sources
+
+The simulation uses **9 gravity sources**: Sun + 8 planets.
+
+**Moons are decorative only** - they do not contribute to gravity calculations.
+This simplifies physics while keeping the simulation educationally accurate
+(moon gravity is negligible for solar system-scale orbital mechanics).
+
 ### Optimization Notes
- - Sun dominates (~99.86% of solar system mass) - compute Sun first
- - For distant asteroids, can approximate inner planets as single mass at barycenter
- - Moons: Include their parent planet's gravity, moon gravity optional for distant objects
+ - Fixed-size array of 9 sources (no heap allocation)
+ - Pre-computed GM values (computed once at startup)
+ - Batched ephemeris sampling for better cache locality
+ - Sun dominates (~99.86% of solar system mass)
 
 ## 4. The Prediction Loop
 
@@ -195,26 +204,34 @@ Instead of using physical radii, we detect collision when an asteroid enters
 a "danger zone" - a sphere of influence around each body:
 
 ```rust
-const COLLISION_MULTIPLIER: f64 = 50.0;  // 50x physical radius
+const COLLISION_MULTIPLIER: f64 = 50.0;  // For planets
+const SUN_MULTIPLIER: f64 = 2.0;         // Sun is already huge
 
 // Earth: 6,371 km × 50 = 318,550 km danger zone
-// (approximately the Moon's orbital distance)
+// Sun: 696,340 km × 2 = 1,392,680 km danger zone
 ```
 
 **Rationale**: For a planetary defense simulator, any asteroid passing within
 320,000 km of Earth would require intervention. This makes gameplay achievable
 while representing realistic threat thresholds.
 
+**Moons have no collision detection** - asteroids pass through them. Moons
+are decorative only, simplifying the physics model.
+
 #### 2. Proximity-Based Timestep Adaptation
 
-Before each integration step, we check the distance to the nearest celestial
-body and cap the timestep to ensure we don't skip over the danger zone:
+When approaching a celestial body's danger zone, we cap the timestep to ensure
+we don't skip over the collision boundary. The cap only activates within
+3× the collision radius to avoid unnecessary slowdown in open space:
 
 ```rust
-// Cap timestep based on proximity
-let safety_factor = 0.1;  // Move at most 10% of distance per step
-let max_dt_proximity = closest_distance / relative_velocity * safety_factor;
-ias15.dt = ias15.dt.min(max_dt_proximity);
+// Only activate proximity cap when close to danger zone
+if closest.distance < closest.collision_radius * 3.0 {
+    let dist_to_boundary = (closest.distance - closest.collision_radius).max(1e3);
+    let safety_factor = 0.5;  // Move at most 50% of distance to boundary per step
+    let max_dt_proximity = dist_to_boundary * safety_factor / relative_velocity;
+    ias15.dt = ias15.dt.min(max_dt_proximity).max(config.min_dt);
+}
 ```
 
 This is a simplified version of the close-encounter handling in professional
@@ -227,7 +244,8 @@ clear to players where impacts will register.
 
 ### Implementation Notes
 
-- The Sun uses a 2x multiplier (already huge)
-- Moons use a 10x multiplier (smaller bodies)
-- Timestep adaptation activates automatically when approaching any body
-- The minimum timestep (60 seconds) prevents excessive slowdown
+- **Sun**: 2× multiplier (~1.4 million km danger zone)
+- **Planets**: 50× multiplier (e.g., Earth ~320,000 km)
+- **Moons**: No collision detection (decorative only)
+- Timestep cap only activates within 3× collision radius
+- Minimum timestep prevents infinite loops in edge cases

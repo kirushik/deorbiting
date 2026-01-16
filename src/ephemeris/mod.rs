@@ -30,8 +30,8 @@ use std::sync::RwLock;
 pub const COLLISION_MULTIPLIER: f64 = 50.0;
 
 /// Total number of gravity sources in the solar system model.
-/// 1 Sun + 8 Planets + 6 Moons = 15 bodies
-pub const GRAVITY_SOURCE_COUNT: usize = 15;
+/// 1 Sun + 8 Planets = 9 bodies (moons are decorative only)
+pub const GRAVITY_SOURCE_COUNT: usize = 9;
 
 /// A gravity source: position and GM (standard gravitational parameter).
 /// GM = G * mass, in m³/s². Use directly: a = GM/r²
@@ -93,6 +93,7 @@ impl Default for Ephemeris {
 }
 
 /// Standard body order for gravity sources array.
+/// Only includes Sun + 8 planets (moons are decorative only).
 const BODY_ORDER: [CelestialBodyId; GRAVITY_SOURCE_COUNT] = [
     CelestialBodyId::Sun,
     CelestialBodyId::Mercury,
@@ -103,12 +104,6 @@ const BODY_ORDER: [CelestialBodyId; GRAVITY_SOURCE_COUNT] = [
     CelestialBodyId::Saturn,
     CelestialBodyId::Uranus,
     CelestialBodyId::Neptune,
-    CelestialBodyId::Moon,
-    CelestialBodyId::Io,
-    CelestialBodyId::Europa,
-    CelestialBodyId::Ganymede,
-    CelestialBodyId::Callisto,
-    CelestialBodyId::Titan,
 ];
 
 impl Ephemeris {
@@ -299,10 +294,10 @@ impl Ephemeris {
         // Sun is always at origin (index 0)
         result[0] = (DVec2::ZERO, self.gm_cache[0]);
 
-        // Try batched table sampling for bodies 1-14 (planets and moons)
+        // Try batched table sampling for bodies 1-8 (planets only, moons are decorative)
         if let Some(h) = &self.horizons {
             let positions = h.sample_all_positions(time);
-            for i in 0..14 {
+            for i in 0..8 {
                 let body_idx = i + 1; // Skip Sun
                 if let Some(pos) = positions[i] {
                     result[body_idx] = (pos, self.gm_cache[body_idx]);
@@ -346,7 +341,7 @@ impl Ephemeris {
     /// # Returns
     /// Fixed array of (body_id, position in meters, GM in m³/s²) tuples.
     pub fn get_gravity_sources_with_id(&self, time: f64) -> GravitySourcesWithId {
-        // Build the fixed array with IDs
+        // Build the fixed array with IDs (Sun + 8 planets, moons are decorative only)
         [
             // 0: Sun (always at origin)
             self.gravity_source_with_id_for(CelestialBodyId::Sun, time),
@@ -359,13 +354,6 @@ impl Ephemeris {
             self.gravity_source_with_id_for(CelestialBodyId::Saturn, time),
             self.gravity_source_with_id_for(CelestialBodyId::Uranus, time),
             self.gravity_source_with_id_for(CelestialBodyId::Neptune, time),
-            // 9-14: Moons
-            self.gravity_source_with_id_for(CelestialBodyId::Moon, time),
-            self.gravity_source_with_id_for(CelestialBodyId::Io, time),
-            self.gravity_source_with_id_for(CelestialBodyId::Europa, time),
-            self.gravity_source_with_id_for(CelestialBodyId::Ganymede, time),
-            self.gravity_source_with_id_for(CelestialBodyId::Callisto, time),
-            self.gravity_source_with_id_for(CelestialBodyId::Titan, time),
         ]
     }
 
@@ -402,22 +390,12 @@ impl Ephemeris {
         }
 
         // Check planets - use full COLLISION_MULTIPLIER for danger zone
+        // (Moons are decorative only - no collision detection)
         for &id in CelestialBodyId::PLANETS {
             if let (Some(body_pos), Some(data)) =
                 (self.get_position_by_id(id, time), self.body_data.get(&id))
             {
                 if (pos - body_pos).length() < data.radius * COLLISION_MULTIPLIER {
-                    return Some(id);
-                }
-            }
-        }
-
-        // Check moons - use smaller multiplier (they're already small)
-        for &id in CelestialBodyId::MOONS {
-            if let (Some(body_pos), Some(data)) =
-                (self.get_position_by_id(id, time), self.body_data.get(&id))
-            {
-                if (pos - body_pos).length() < data.radius * 10.0 {
                     return Some(id);
                 }
             }
@@ -560,8 +538,8 @@ mod tests {
         let eph = Ephemeris::new();
         let sources = eph.get_gravity_sources(0.0);
 
-        // Should have Sun + 8 planets + 6 moons = 15 sources
-        assert_eq!(sources.len(), 15);
+        // Should have Sun + 8 planets = 9 sources (moons are decorative only)
+        assert_eq!(sources.len(), 9);
 
         // Sun should have largest GM
         let sun_gm = sources[0].1;

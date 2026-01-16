@@ -166,6 +166,12 @@ moon_absolute_pos = planet_pos + moon_local_orbit_pos
 
 This is handled automatically by setting the `parent` field in `KeplerOrbit`.
 
+**Important: Moons are decorative only.** They are rendered for visual interest but:
+- Do NOT contribute to gravity calculations (only Sun + 8 planets)
+- Have NO collision detection (asteroids pass through them)
+
+This simplifies the physics model while keeping the simulation educationally accurate.
+
 ### Example: Earth's Moon
 ```rust
 let moon_orbit = KeplerOrbit {
@@ -239,38 +245,36 @@ const DEG_PER_DAY_TO_RAD_PER_SEC: f64 = DEG_TO_RAD / 86400.0;
 ## 7. Ephemeris Resource
 
 ```rust
+/// Number of gravity sources: Sun + 8 planets (moons are decorative)
+pub const GRAVITY_SOURCE_COUNT: usize = 9;
+
+/// Fixed-size array of gravity sources (no heap allocation)
+pub type GravitySources = [(DVec2, f64); GRAVITY_SOURCE_COUNT];
+
 #[derive(Resource)]
 struct Ephemeris {
-    orbits: HashMap<Entity, KeplerOrbit>,
-    masses: HashMap<Entity, f64>,
-    radii: HashMap<Entity, f64>,
+    body_data: HashMap<CelestialBodyId, CelestialBodyData>,
+    gm_cache: [f64; GRAVITY_SOURCE_COUNT],  // Pre-computed GM values
+    // ... entity mappings, Horizons tables, etc.
 }
 
 impl Ephemeris {
     fn get_position(&self, body: Entity, time: f64) -> DVec2 {
-        self.orbits.get(&body)
-            .map(|orbit| orbit.get_position(time, self))
-            .unwrap_or(DVec2::ZERO)
+        // Query from Horizons tables (preferred) or fall back to Kepler
     }
 
-    fn get_gravity_sources(&self, time: f64) -> Vec<(DVec2, f64)> {
-        self.orbits.keys()
-            .filter_map(|&entity| {
-                let pos = self.get_position(entity, time);
-                let mass = *self.masses.get(&entity)?;
-                Some((pos, mass))
-            })
-            .collect()
+    /// Returns fixed-size array of (position, GM) for Sun + 8 planets.
+    /// Moons are excluded (decorative only).
+    fn get_gravity_sources(&self, time: f64) -> GravitySources {
+        // Batched sampling from Horizons tables or Kepler fallback
     }
 
-    fn check_collision(&self, pos: DVec2, time: f64) -> bool {
-        for (&entity, &radius) in &self.radii {
-            let body_pos = self.get_position(entity, time);
-            if (pos - body_pos).length() < radius {
-                return true;
-            }
-        }
-        false
+    /// Check collision with Sun and planets only.
+    /// Moons have no collision detection.
+    fn check_collision(&self, pos: DVec2, time: f64) -> Option<CelestialBodyId> {
+        // Sun: 2x multiplier
+        // Planets: 50x multiplier (COLLISION_MULTIPLIER)
+        // Moons: not checked
     }
 }
 ```
