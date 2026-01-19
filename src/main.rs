@@ -9,6 +9,7 @@ use bevy_egui::EguiPlugin;
 mod asteroid;
 mod camera;
 mod collision;
+mod continuous;
 mod ephemeris;
 mod input;
 mod interceptor;
@@ -24,6 +25,7 @@ mod ui;
 use asteroid::{handle_reset, AsteroidCounter, ResetEvent};
 use camera::CameraPlugin;
 use collision::CollisionPlugin;
+use continuous::ContinuousPlugin;
 use ephemeris::Ephemeris;
 use input::InputPlugin;
 use interceptor::InterceptorPlugin;
@@ -63,6 +65,7 @@ fn main() {
             VelocityHandlePlugin,
             ScenarioPlugin,
             InterceptorPlugin,
+            ContinuousPlugin,
         ))
         // Handle reset events
         .add_systems(Update, handle_reset);

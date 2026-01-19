@@ -4,6 +4,7 @@ mod asteroid_placement;
 mod collision_notification;
 mod info_panel;
 mod interceptor_launch;
+mod mission_status;
 mod outcome_overlay;
 mod scenario_menu;
 mod time_controls;
@@ -15,6 +16,7 @@ pub use asteroid_placement::*;
 pub use collision_notification::*;
 pub use info_panel::*;
 pub use interceptor_launch::*;
+pub use mission_status::*;
 pub use outcome_overlay::*;
 pub use scenario_menu::*;
 pub use time_controls::*;
@@ -46,6 +48,8 @@ impl Plugin for UiPlugin {
                     animate_flash,
                     outcome_overlay_system,
                     interceptor_launch_system,
+                    // Phase 6: Continuous deflection
+                    mission_status_panel,
                 ),
             );
     }

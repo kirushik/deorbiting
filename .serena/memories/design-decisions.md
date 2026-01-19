@@ -130,7 +130,45 @@ Physics based on real research:
 
 ### Phase 5/6 Split
 - Phase 5 (complete): Instant deflection (kinetic, nuclear)
-- Phase 6 (future): Continuous deflection (ion beam, gravity tractor, laser ablation)
+- Phase 6 (complete): Continuous deflection (ion beam, gravity tractor, laser ablation)
+
+## Phase 6 Implementation (2026-01-19)
+
+### Continuous Deflection Methods
+Three continuous deflection methods implemented in `src/continuous/`:
+
+1. **Ion Beam Shepherd** - Spacecraft hovers near asteroid, ion exhaust pushes it
+   - Formula: `acceleration = thrust_N / asteroid_mass_kg`
+   - Fuel consumption: `mdot = thrust / (Isp × g0)`
+   - Typical thrust: 10-1000 mN
+
+2. **Gravity Tractor** - Spacecraft mass gravitationally pulls asteroid
+   - Formula: `acceleration = G × spacecraft_mass / distance²`
+   - Example: 20,000 kg at 200m → ~0.033 N force
+   - Very slow (decades), most controlled method
+
+3. **Laser Ablation** - Vaporize asteroid surface, creating thrust
+   - Formula: `thrust_N = 2.3 × (power_kW / 100) × solar_efficiency`
+   - Solar efficiency: `min(1.0, 1/distance_AU²)`
+
+### Key Components
+- `ContinuousDeflector` - Component tracking target, payload, state
+- `ContinuousDeflectorState` - EnRoute, Operating, FuelDepleted, Complete, Cancelled
+- `ContinuousPayload` - IonBeam, GravityTractor, LaserAblation variants
+- `ThrustDirection` - Retrograde, Prograde, Radial, Custom
+
+### Physics Integration
+- `compute_continuous_thrust()` aggregates thrust from all active deflectors
+- `physics_step` modified to include continuous thrust in acceleration
+- Prediction system also accounts for continuous thrust
+- Multiple deflectors can operate on same asteroid simultaneously
+
+### Key Files
+- `src/continuous/thrust.rs` - Thrust calculation functions
+- `src/continuous/payload.rs` - ContinuousPayload enum
+- `src/continuous/mod.rs` - Component, state machine, plugin
+- `src/ui/mission_status.rs` - Active missions panel
+- `src/render/deflectors.rs` - Visualization (icons, thrust arrows)
 
 ## Key Constants
 

@@ -1,8 +1,8 @@
 //! Interceptor launch configuration modal.
 //!
 //! UI for configuring and launching interceptor missions:
-//! - Payload type selection (Kinetic / Nuclear)
-//! - Parameter adjustment (mass, beta, yield)
+//! - Payload type selection (Kinetic / Nuclear / Continuous methods)
+//! - Parameter adjustment (mass, beta, yield, thrust, etc.)
 //! - Propulsion technology selection (affects speed)
 //! - Direction selection
 //! - Delta-v preview
@@ -12,6 +12,7 @@ use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
 
 use crate::asteroid::Asteroid;
+use crate::continuous::{ContinuousPayload, LaunchContinuousDeflectorEvent, ThrustDirection};
 use crate::ephemeris::{CelestialBodyId, Ephemeris};
 use crate::interceptor::{DeflectionPayload, LaunchInterceptorEvent};
 use crate::outcome::TrajectoryOutcome;
@@ -44,6 +45,22 @@ pub struct InterceptorLaunchState {
     pub direction_mode: DirectionMode,
     /// Custom direction angle (degrees from +X).
     pub custom_angle: f64,
+
+    // Continuous deflection parameters (Phase 6)
+    /// Ion beam thrust in millinewtons.
+    pub ion_thrust_mn: f64,
+    /// Ion beam fuel mass in kg.
+    pub ion_fuel_mass_kg: f64,
+    /// Ion beam specific impulse in seconds.
+    pub ion_isp: f64,
+    /// Gravity tractor spacecraft mass in kg.
+    pub gt_spacecraft_mass_kg: f64,
+    /// Gravity tractor mission duration in years.
+    pub gt_duration_years: f64,
+    /// Laser ablation power in kW.
+    pub laser_power_kw: f64,
+    /// Laser ablation mission duration in months.
+    pub laser_duration_months: f64,
 }
 
 /// Payload type selection.
@@ -52,6 +69,10 @@ pub enum PayloadType {
     #[default]
     Kinetic,
     Nuclear,
+    // Continuous deflection methods (Phase 6)
+    IonBeam,
+    GravityTractor,
+    LaserAblation,
 }
 
 /// Propulsion technology level affecting interceptor speed.
@@ -129,21 +150,76 @@ impl Default for InterceptorLaunchState {
             propulsion_level: PropulsionLevel::Current,
             direction_mode: DirectionMode::Retrograde,
             custom_angle: 0.0,
+            // Continuous deflection defaults (Phase 6)
+            ion_thrust_mn: 100.0,     // 100 mN
+            ion_fuel_mass_kg: 500.0,  // 500 kg propellant
+            ion_isp: 3500.0,          // Typical xenon ion engine
+            gt_spacecraft_mass_kg: 20_000.0, // 20 tons
+            gt_duration_years: 10.0,  // 10 years
+            laser_power_kw: 100.0,    // 100 kW
+            laser_duration_months: 12.0, // 1 year
         }
     }
 }
 
 impl InterceptorLaunchState {
-    /// Build the configured payload.
-    fn build_payload(&self) -> DeflectionPayload {
+    /// Check if the selected payload type is continuous (vs instant).
+    fn is_continuous(&self) -> bool {
+        matches!(
+            self.payload_type,
+            PayloadType::IonBeam | PayloadType::GravityTractor | PayloadType::LaserAblation
+        )
+    }
+
+    /// Build the configured instant payload.
+    /// Returns None for continuous payload types.
+    fn build_payload(&self) -> Option<DeflectionPayload> {
         match self.payload_type {
-            PayloadType::Kinetic => DeflectionPayload::Kinetic {
+            PayloadType::Kinetic => Some(DeflectionPayload::Kinetic {
                 mass_kg: self.kinetic_mass,
                 beta: self.kinetic_beta,
-            },
-            PayloadType::Nuclear => DeflectionPayload::Nuclear {
+            }),
+            PayloadType::Nuclear => Some(DeflectionPayload::Nuclear {
                 yield_kt: self.nuclear_yield,
-            },
+            }),
+            PayloadType::IonBeam | PayloadType::GravityTractor | PayloadType::LaserAblation => None,
+        }
+    }
+
+    /// Build the configured continuous payload.
+    /// Returns None for instant payload types.
+    fn build_continuous_payload(&self) -> Option<ContinuousPayload> {
+        let direction = match self.direction_mode {
+            DirectionMode::Retrograde => ThrustDirection::Retrograde,
+            DirectionMode::Prograde => ThrustDirection::Prograde,
+            DirectionMode::Radial => ThrustDirection::Radial,
+            DirectionMode::Custom => {
+                let rad = self.custom_angle.to_radians();
+                ThrustDirection::Custom(DVec2::new(rad.cos(), rad.sin()))
+            }
+        };
+
+        match self.payload_type {
+            PayloadType::IonBeam => Some(ContinuousPayload::IonBeam {
+                thrust_n: self.ion_thrust_mn / 1000.0, // Convert mN to N
+                fuel_mass_kg: self.ion_fuel_mass_kg,
+                specific_impulse: self.ion_isp,
+                hover_distance_m: 200.0, // Fixed for now
+                direction,
+            }),
+            PayloadType::GravityTractor => Some(ContinuousPayload::GravityTractor {
+                spacecraft_mass_kg: self.gt_spacecraft_mass_kg,
+                hover_distance_m: 200.0,
+                mission_duration: self.gt_duration_years * 365.25 * 86400.0, // Years to seconds
+                direction,
+            }),
+            PayloadType::LaserAblation => Some(ContinuousPayload::LaserAblation {
+                power_kw: self.laser_power_kw,
+                mission_duration: self.laser_duration_months * 30.44 * 86400.0, // Months to seconds
+                efficiency: 0.8, // Fixed efficiency
+                direction,
+            }),
+            PayloadType::Kinetic | PayloadType::Nuclear => None,
         }
     }
 
@@ -176,6 +252,7 @@ pub fn interceptor_launch_system(
     mut contexts: EguiContexts,
     mut launch_state: ResMut<InterceptorLaunchState>,
     mut launch_events: EventWriter<LaunchInterceptorEvent>,
+    mut continuous_launch_events: EventWriter<LaunchContinuousDeflectorEvent>,
     selected: Res<SelectedBody>,
     asteroids: Query<(Entity, &BodyState, Option<&TrajectoryPath>), With<Asteroid>>,
     ephemeris: Res<Ephemeris>,
@@ -234,11 +311,21 @@ pub fn interceptor_launch_system(
                 .map(|ttc| flight_time_seconds > ttc)
                 .unwrap_or(false);
 
-            // Payload type selection
-            ui.heading("Payload Type");
+            // Payload type selection - Instant methods
+            ui.heading("Instant Deflection");
             ui.horizontal(|ui| {
-                ui.selectable_value(&mut launch_state.payload_type, PayloadType::Kinetic, "Kinetic Impactor");
-                ui.selectable_value(&mut launch_state.payload_type, PayloadType::Nuclear, "Nuclear Standoff");
+                ui.selectable_value(&mut launch_state.payload_type, PayloadType::Kinetic, "Kinetic");
+                ui.selectable_value(&mut launch_state.payload_type, PayloadType::Nuclear, "Nuclear");
+            });
+
+            ui.add_space(4.0);
+
+            // Payload type selection - Continuous methods
+            ui.heading("Continuous Deflection");
+            ui.horizontal(|ui| {
+                ui.selectable_value(&mut launch_state.payload_type, PayloadType::IonBeam, "Ion Beam");
+                ui.selectable_value(&mut launch_state.payload_type, PayloadType::GravityTractor, "Gravity");
+                ui.selectable_value(&mut launch_state.payload_type, PayloadType::LaserAblation, "Laser");
             });
 
             ui.add_space(8.0);
@@ -265,6 +352,48 @@ pub fn interceptor_launch_system(
                             .suffix(" kt"));
                     });
                     ui.label(egui::RichText::new("Standoff detonation vaporizes surface material").weak().small());
+                }
+                PayloadType::IonBeam => {
+                    ui.horizontal(|ui| {
+                        ui.label("Thrust (mN):");
+                        ui.add(egui::Slider::new(&mut launch_state.ion_thrust_mn, 10.0..=1000.0)
+                            .logarithmic(true)
+                            .suffix(" mN"));
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Fuel mass:");
+                        ui.add(egui::Slider::new(&mut launch_state.ion_fuel_mass_kg, 100.0..=2000.0).suffix(" kg"));
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Isp:");
+                        ui.add(egui::Slider::new(&mut launch_state.ion_isp, 2000.0..=5000.0).suffix(" s"));
+                    });
+                    ui.label(egui::RichText::new("Spacecraft hovers near asteroid, ion exhaust pushes it").weak().small());
+                }
+                PayloadType::GravityTractor => {
+                    ui.horizontal(|ui| {
+                        ui.label("Mass:");
+                        ui.add(egui::Slider::new(&mut launch_state.gt_spacecraft_mass_kg, 5000.0..=50000.0)
+                            .suffix(" kg"));
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Duration:");
+                        ui.add(egui::Slider::new(&mut launch_state.gt_duration_years, 1.0..=20.0).suffix(" years"));
+                    });
+                    ui.label(egui::RichText::new("Spacecraft mass gravitationally pulls asteroid").weak().small());
+                }
+                PayloadType::LaserAblation => {
+                    ui.horizontal(|ui| {
+                        ui.label("Power:");
+                        ui.add(egui::Slider::new(&mut launch_state.laser_power_kw, 10.0..=1000.0)
+                            .logarithmic(true)
+                            .suffix(" kW"));
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Duration:");
+                        ui.add(egui::Slider::new(&mut launch_state.laser_duration_months, 1.0..=36.0).suffix(" months"));
+                    });
+                    ui.label(egui::RichText::new("Vaporizes asteroid surface, creating thrust plume").weak().small());
                 }
             }
 
@@ -365,37 +494,69 @@ pub fn interceptor_launch_system(
             ui.separator();
             ui.heading("Deflection Preview");
 
-            let payload = launch_state.build_payload();
-            let estimated_dv = payload.estimate_delta_v(asteroid_state.mass);
             let direction = launch_state.calculate_direction(asteroid_state.vel);
+            let is_continuous = launch_state.is_continuous();
 
-            ui.label(format!("Payload: {}", payload.description()));
             ui.label(format!("Asteroid mass: {:.2e} kg", asteroid_state.mass));
-            ui.label(format!(
-                "Estimated Δv: {:.4} mm/s",
-                estimated_dv * 1000.0
-            ));
             ui.label(format!(
                 "Direction: ({:.2}, {:.2})",
                 direction.x, direction.y
             ));
 
+            // Show estimated delta-v based on payload type
+            if let Some(payload) = launch_state.build_payload() {
+                let estimated_dv = payload.estimate_delta_v(asteroid_state.mass);
+                ui.label(format!("Payload: {}", payload.description()));
+                ui.label(format!(
+                    "Estimated Δv: {:.4} mm/s",
+                    estimated_dv * 1000.0
+                ));
+            } else if let Some(payload) = launch_state.build_continuous_payload() {
+                // Calculate estimated total delta-v for continuous methods
+                let solar_distance_au = asteroid_state.pos.length() / AU_TO_METERS;
+                let estimated_dv = payload.estimate_total_delta_v(asteroid_state.mass, solar_distance_au);
+                ui.label(format!("Method: {}", payload.name()));
+                ui.label(format!(
+                    "Est. total Δv: {:.4} mm/s",
+                    estimated_dv * 1000.0
+                ));
+                ui.label(egui::RichText::new("(applied over mission duration)").weak().small());
+            }
+
             ui.add_space(12.0);
 
-            // Launch button
+            // Launch button - different handling for instant vs continuous
             ui.horizontal(|ui| {
-                let launch_enabled = !will_arrive_late;
+                // For continuous methods, we don't check arrival time (they need time to work)
+                let launch_enabled = is_continuous || !will_arrive_late;
+                let button_text = if is_continuous {
+                    "🛰️ Deploy"
+                } else {
+                    "🚀 Launch"
+                };
+
                 let launch_button = ui.add_enabled(
                     launch_enabled,
-                    egui::Button::new(egui::RichText::new("🚀 Launch").size(16.0))
+                    egui::Button::new(egui::RichText::new(button_text).size(16.0))
                 );
+
                 if launch_button.clicked() {
-                    launch_events.send(LaunchInterceptorEvent {
-                        target: entity,
-                        payload,
-                        direction: Some(direction),
-                        flight_time: Some(flight_time_seconds),
-                    });
+                    if let Some(payload) = launch_state.build_payload() {
+                        // Launch instant interceptor
+                        launch_events.send(LaunchInterceptorEvent {
+                            target: entity,
+                            payload,
+                            direction: Some(direction),
+                            flight_time: Some(flight_time_seconds),
+                        });
+                    } else if let Some(payload) = launch_state.build_continuous_payload() {
+                        // Launch continuous deflector
+                        continuous_launch_events.send(LaunchContinuousDeflectorEvent {
+                            target: entity,
+                            payload,
+                            flight_time: flight_time_seconds,
+                        });
+                    }
                     launch_state.open = false;
                 }
 
@@ -404,7 +565,7 @@ pub fn interceptor_launch_system(
                 }
             });
 
-            if will_arrive_late {
+            if !is_continuous && will_arrive_late {
                 ui.label(egui::RichText::new("Select faster propulsion to launch")
                     .color(egui::Color32::from_rgb(255, 150, 100))
                     .small());

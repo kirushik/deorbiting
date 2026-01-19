@@ -5,6 +5,7 @@
 
 mod background;
 pub mod bodies;
+mod deflectors;
 pub mod highlight;
 mod labels;
 mod orbits;
@@ -15,6 +16,7 @@ use bevy::prelude::*;
 
 use self::background::BackgroundPlugin;
 use self::bodies::CelestialBodyPlugin;
+use self::deflectors::draw_deflector_trajectories;
 use self::highlight::HighlightPlugin;
 use self::labels::LabelPlugin;
 use self::orbits::{draw_moon_orbit_paths, draw_orbit_paths, OrbitPathPlugin};
@@ -55,6 +57,7 @@ impl Plugin for RenderPlugin {
                 compute_hierarchical_scales,
                 apply_moon_position_distortion,
                 (draw_orbit_paths, draw_moon_orbit_paths),
+                draw_deflector_trajectories,
             )
                 .chain(),
         );

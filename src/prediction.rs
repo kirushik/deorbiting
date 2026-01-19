@@ -9,6 +9,7 @@ use bevy::prelude::*;
 
 use crate::asteroid::Asteroid;
 use crate::camera::{CameraState, RENDER_SCALE};
+use crate::continuous::{compute_continuous_thrust, ContinuousDeflector};
 use crate::ephemeris::{CelestialBodyId, Ephemeris, GravitySourcesWithId};
 use crate::input::DragState;
 use crate::physics::{compute_acceleration, compute_adaptive_dt, PredictionConfig};
@@ -187,8 +188,10 @@ fn find_dominant_body_from_sources(pos: DVec2, sources: &GravitySourcesWithId) -
 /// This provides consistent, fast results suitable for interactive use.
 /// The actual simulation uses IAS15 for high accuracy, but the displayed
 /// trajectory preview uses Verlet which is accurate enough for visualization.
+#[allow(clippy::too_many_arguments)]
 fn predict_trajectory(
     mut asteroids: Query<(Entity, &BodyState, &mut TrajectoryPath), With<Asteroid>>,
+    deflectors: Query<(Entity, &ContinuousDeflector)>,
     selected: Res<SelectedBody>,
     ephemeris: Res<Ephemeris>,
     sim_time: Res<SimulationTime>,
@@ -236,8 +239,16 @@ fn predict_trajectory(
     // Check if we're in interactive drag mode (either position or velocity)
     let is_dragging = velocity_drag.dragging || position_drag.dragging.is_some();
 
+    // Collect deflector info for this asteroid
+    let deflector_snapshot: Vec<ContinuousDeflector> = deflectors
+        .iter()
+        .filter(|(_, d)| d.target == selected_entity)
+        .map(|(_, d)| d.clone())
+        .collect();
+
     // Run Velocity Verlet prediction with zoom-dependent timesteps
     predict_with_verlet(
+        selected_entity,
         body_state,
         &ephemeris,
         sim_time.current,
@@ -245,6 +256,7 @@ fn predict_trajectory(
         &mut trajectory,
         is_dragging,
         camera.zoom,
+        &deflector_snapshot,
     );
 
     // Compute trajectory outcome
@@ -288,7 +300,12 @@ fn predict_trajectory(
 /// Uses the same physics-based adaptive timestep as live simulation, ensuring
 /// predicted trajectories match actual behavior. Zoom level only affects
 /// point storage density (visual smoothness), not integration accuracy.
+///
+/// Includes continuous thrust from active deflectors in the acceleration
+/// calculation for accurate prediction of deflected trajectories.
+#[allow(clippy::too_many_arguments)]
 fn predict_with_verlet(
+    target_entity: Entity,
     body_state: &BodyState,
     ephemeris: &Ephemeris,
     start_time: f64,
@@ -296,6 +313,7 @@ fn predict_with_verlet(
     trajectory: &mut TrajectoryPath,
     is_dragging: bool,
     zoom: f32,
+    deflectors: &[ContinuousDeflector],
 ) {
     // Use physics-based adaptive timestep with config appropriate for prediction
     let config = if is_dragging {
@@ -315,9 +333,34 @@ fn predict_with_verlet(
     let mut vel = body_state.vel;
     let mut sim_t = start_time;
     let end_t = start_time + settings.max_time;
+    let asteroid_mass = body_state.mass;
+
+    // Compute total acceleration including gravity and continuous thrust
+    let compute_total_acc = |pos: DVec2, vel: DVec2, sim_t: f64| -> DVec2 {
+        let gravity_acc = compute_acceleration(pos, sim_t, ephemeris);
+
+        if deflectors.is_empty() {
+            gravity_acc
+        } else {
+            // Create deflector refs for thrust calculation
+            let deflector_refs: Vec<(Entity, &ContinuousDeflector)> = deflectors
+                .iter()
+                .map(|d| (Entity::PLACEHOLDER, d))
+                .collect();
+            let thrust_acc = compute_continuous_thrust(
+                target_entity,
+                pos,
+                vel,
+                asteroid_mass,
+                sim_t,
+                &deflector_refs,
+            );
+            gravity_acc + thrust_acc
+        }
+    };
 
     // Initialize with first acceleration and timestep
-    let mut acc = compute_acceleration(pos, sim_t, ephemeris);
+    let mut acc = compute_total_acc(pos, vel, sim_t);
     let mut dt = config.initial_dt;
 
     let mut step = 0;
@@ -328,8 +371,9 @@ fn predict_with_verlet(
         // Step 1: Position update
         let pos_new = pos + vel * dt + acc * (0.5 * dt * dt);
 
-        // Step 2: Compute new acceleration
-        let acc_new = compute_acceleration(pos_new, sim_t + dt, ephemeris);
+        // Step 2: Compute new acceleration (approximate velocity for thrust direction)
+        let vel_approx = vel + acc * dt; // First-order velocity approximation
+        let acc_new = compute_total_acc(pos_new, vel_approx, sim_t + dt);
 
         // Step 3: Velocity update
         let vel_new = vel + (acc + acc_new) * (0.5 * dt);

@@ -17,6 +17,9 @@ pub use integrator::{IAS15Config, IAS15State, PredictionConfig, compute_adaptive
 
 use crate::asteroid::{Asteroid, AsteroidName};
 use crate::collision::{CollisionEvent, CollisionState, handle_collision_response};
+use crate::continuous::{
+    compute_continuous_thrust, update_deflector_progress, ContinuousDeflector,
+};
 use crate::ephemeris::Ephemeris;
 use crate::render::SelectedBody;
 use crate::types::{BodyState, SimulationTime, SECONDS_PER_DAY};
@@ -86,6 +89,7 @@ fn physics_step(
     mut commands: Commands,
     mut asteroids: Query<(Entity, &AsteroidName, &mut BodyState), With<Asteroid>>,
     mut integrator_states: ResMut<IntegratorStates>,
+    mut deflectors: Query<(Entity, &mut ContinuousDeflector)>,
     ephemeris: Res<Ephemeris>,
     mut sim_time: ResMut<SimulationTime>,
     config: Res<IAS15Config>,
@@ -172,11 +176,40 @@ fn physics_step(
                 ias15.dt = remaining;
             }
 
-            // Create acceleration function that queries ephemeris at the current sim time
-            // plus the relative offset within the step
+            // Collect deflector info snapshot for this asteroid
+            // This allows us to include continuous thrust in the acceleration calculation
+            let deflector_snapshot: Vec<(Entity, ContinuousDeflector)> = deflectors
+                .iter()
+                .filter(|(_, d)| d.target == entity && d.is_operating())
+                .map(|(e, d)| (e, d.clone()))
+                .collect();
+
+            // Create acceleration function that includes both gravity and continuous thrust
             let current_sim_t = sim_t;
+            let asteroid_mass = body_state.mass;
+            let current_vel = ias15.vel; // Capture velocity before closure to avoid borrow conflict
             let acc_fn = |pos: DVec2, relative_t: f64| -> DVec2 {
-                compute_acceleration(pos, current_sim_t + relative_t, &ephemeris)
+                // Gravity from celestial bodies
+                let gravity_acc = compute_acceleration(pos, current_sim_t + relative_t, &ephemeris);
+
+                // Continuous thrust from active deflectors
+                if deflector_snapshot.is_empty() {
+                    gravity_acc
+                } else {
+                    let deflector_refs: Vec<(Entity, &ContinuousDeflector)> = deflector_snapshot
+                        .iter()
+                        .map(|(e, d)| (*e, d))
+                        .collect();
+                    let thrust_acc = compute_continuous_thrust(
+                        entity,
+                        pos,
+                        current_vel, // Use captured velocity for direction calculation
+                        asteroid_mass,
+                        current_sim_t + relative_t,
+                        &deflector_refs,
+                    );
+                    gravity_acc + thrust_acc
+                }
             };
 
             // Take one IAS15 step
@@ -185,6 +218,13 @@ fn physics_step(
             // Advance elapsed time (single accumulation from zero)
             let step_taken = ias15.dt_last_done;
             elapsed += step_taken;
+
+            // Update deflector progress (fuel consumption, accumulated delta-v)
+            for (deflector_entity, _) in &deflector_snapshot {
+                if let Ok((_, mut deflector)) = deflectors.get_mut(*deflector_entity) {
+                    update_deflector_progress(&mut deflector, asteroid_mass, ias15.pos, step_taken);
+                }
+            }
 
             // Check collision at the correct simulation time (after step)
             // This ensures asteroid position and celestial body positions are synchronized
