@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 bevy = "0.15"
 bevy_egui = "0.31"
+egui-phosphor = { version = "0.7", features = ["regular", "fill"] }
 thiserror = "2"
 rand = "0.8"
 wide = "0.7"

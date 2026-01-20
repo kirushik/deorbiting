@@ -1,7 +1,7 @@
 //! Input handling for keyboard shortcuts and mouse dragging.
 //!
 //! Provides keyboard controls for simulation time, camera zoom, and toggles.
-//! Also provides mouse drag support for moving asteroids when paused.
+//! Mouse drag support for moving asteroids with auto-pause.
 
 use bevy::math::DVec2;
 use bevy::prelude::*;
@@ -23,6 +23,8 @@ pub struct DragState {
     pub dragging: Option<Entity>,
     /// Offset from asteroid center to mouse position at drag start.
     pub drag_offset: DVec2,
+    /// Whether we auto-paused when starting drag.
+    pub auto_paused: bool,
 }
 
 /// Plugin providing keyboard input handling and mouse drag support.
@@ -115,36 +117,35 @@ fn keyboard_shortcuts(
     }
 }
 
-/// Handle mouse dragging of asteroids when simulation is paused.
+/// Handle mouse dragging of asteroids (body position).
+/// Auto-pauses simulation when starting to drag.
 #[allow(clippy::too_many_arguments)]
 fn handle_asteroid_drag(
     mouse: Res<ButtonInput<MouseButton>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     camera_query: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
-    mut asteroids: Query<&mut BodyState, With<Asteroid>>,
-    selected: Res<SelectedBody>,
-    sim_time: Res<SimulationTime>,
+    mut asteroids: Query<(Entity, &Transform, &mut BodyState), With<Asteroid>>,
+    mut selected: ResMut<SelectedBody>,
+    mut sim_time: ResMut<SimulationTime>,
     mut drag_state: ResMut<DragState>,
     mut integrator_states: ResMut<IntegratorStates>,
     mut prediction_state: ResMut<PredictionState>,
     velocity_drag_state: Res<VelocityDragState>,
     mut contexts: EguiContexts,
 ) {
-    // Only allow dragging when paused
-    if !sim_time.paused {
-        drag_state.dragging = None;
-        return;
-    }
-
     // Don't start position drag if velocity drag is active
     if velocity_drag_state.dragging {
         return;
     }
 
-    // Don't drag if egui wants the pointer
-    if let Some(ctx) = contexts.try_ctx_mut() {
-        if ctx.wants_pointer_input() {
-            return;
+    // IMPORTANT: Only check egui wants pointer when NOT already dragging.
+    // If we're dragging and mouse passes over an egui window, we still need
+    // to process drag updates and mouse release.
+    if drag_state.dragging.is_none() {
+        if let Some(ctx) = contexts.try_ctx_mut() {
+            if ctx.wants_pointer_input() {
+                return;
+            }
         }
     }
 
@@ -170,13 +171,30 @@ fn handle_asteroid_drag(
         (world_pos.y as f64) / RENDER_SCALE,
     );
 
-    // Start drag on mouse down
-    if mouse.just_pressed(MouseButton::Left) {
-        if let Some(SelectableBody::Asteroid(entity)) = selected.body {
-            if let Ok(body_state) = asteroids.get(entity) {
-                // Calculate offset from asteroid center
+    // Start drag on mouse down on asteroid body (not arrow tip)
+    if mouse.just_pressed(MouseButton::Left) && drag_state.dragging.is_none() {
+        // Check if clicking on any asteroid body
+        let click_radius = 3.0; // Render units
+
+        for (entity, transform, body_state) in asteroids.iter() {
+            let asteroid_render_pos = transform.translation.truncate();
+            let dist = (world_pos - asteroid_render_pos).length();
+
+            if dist < click_radius {
+                // Auto-pause if simulation is running
+                let was_paused = sim_time.paused;
+                if !was_paused {
+                    sim_time.paused = true;
+                    drag_state.auto_paused = true;
+                } else {
+                    drag_state.auto_paused = false;
+                }
+
+                // Select and start dragging this asteroid
+                selected.body = Some(SelectableBody::Asteroid(entity));
                 drag_state.dragging = Some(entity);
                 drag_state.drag_offset = body_state.pos - physics_pos;
+                break;
             }
         }
     }
@@ -184,14 +202,12 @@ fn handle_asteroid_drag(
     // Continue drag
     if mouse.pressed(MouseButton::Left) {
         if let Some(entity) = drag_state.dragging {
-            if let Ok(mut body_state) = asteroids.get_mut(entity) {
+            if let Ok((_, _, mut body_state)) = asteroids.get_mut(entity) {
                 let old_pos = body_state.pos;
-                // Update position with offset
                 body_state.pos = physics_pos + drag_state.drag_offset;
 
-                // Real-time preview: update trajectory as position changes
+                // Real-time preview
                 if (body_state.pos - old_pos).length() > 1e6 {
-                    // Only update if position changed significantly (> 1000 km)
                     mark_prediction_dirty(&mut prediction_state);
                 }
             }
@@ -202,13 +218,12 @@ fn handle_asteroid_drag(
     if mouse.just_released(MouseButton::Left) {
         if let Some(entity) = drag_state.dragging {
             if asteroids.contains(entity) {
-                // Reinitialize integrator state for new position (velocity preserved)
                 integrator_states.remove(entity);
-                // Trigger trajectory recalculation
                 mark_prediction_dirty(&mut prediction_state);
                 info!("Asteroid repositioned, velocity preserved");
             }
             drag_state.dragging = None;
+            // Note: Keep auto_paused state - user can resume manually with Space
         }
     }
 }

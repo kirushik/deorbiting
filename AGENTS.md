@@ -15,6 +15,7 @@ Visual representation of orbits, trajectories, and celestial bodies with accurat
  - [Physics Specification](./docs/PHYSICS.md) - IAS15 integrator, time system, gravity model
  - [Ephemeris & Orbital Elements](./docs/EPHEMERIS.md) - Kepler solver, J2000 orbital elements
  - [UI Specification](./docs/UI.md) - Time controls, velocity handle, panels, overlays
+ - [UI/UX Guidelines](./docs/UI_GUIDELINES.md) - Design principles, typography, colors, interaction patterns
 
 ### Implementation Guides (_how_ to build)
  - [Implementation Roadmap](./docs/ROADMAP.md) - High-level phase descriptions

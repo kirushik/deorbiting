@@ -1,80 +1,81 @@
-//! UI module providing egui-based interface panels.
+//! UI module providing egui-based interface.
+//!
+//! Redesigned for modeless, direct-manipulation interaction following
+//! Raskin's principles and Apple HIG.
 
-mod asteroid_placement;
-mod collision_notification;
-mod info_panel;
-mod interceptor_launch;
-mod mission_status;
-mod outcome_overlay;
-mod scenario_menu;
-mod time_controls;
+mod banners;
+mod box_selection;
+mod context_card;
+mod dock;
+pub mod icons;
+mod radial_menu;
+mod scenario_drawer;
 pub mod velocity_handle;
+
+// Keep asteroid_placement for click-to-spawn functionality
+mod asteroid_placement;
 
 use bevy::prelude::*;
 
-pub use asteroid_placement::*;
-pub use collision_notification::*;
-pub use info_panel::*;
-pub use interceptor_launch::*;
-pub use mission_status::*;
-pub use outcome_overlay::*;
-pub use scenario_menu::*;
-pub use time_controls::*;
+pub use banners::BannerState;
+// context_card exports are used internally
+pub use dock::{AsteroidListState, HelpTooltipState};
+pub use radial_menu::RadialMenuState;
+pub use scenario_drawer::ScenarioDrawerState;
+
+// Re-export asteroid placement for modeless spawning
+pub use asteroid_placement::{handle_asteroid_placement, update_placement_cursor};
 
 /// Plugin that adds all UI systems.
 pub struct UiPlugin;
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<UiState>()
-            .init_resource::<ActiveNotification>()
+        app
+            // Initialize resources
+            .init_resource::<UiState>()
+            .init_resource::<ScenarioDrawerState>()
+            .init_resource::<HelpTooltipState>()
+            .init_resource::<RadialMenuState>()
+            .init_resource::<BannerState>()
             .init_resource::<AsteroidPlacementMode>()
-            .init_resource::<OutcomeOverlayState>()
-            .init_resource::<InterceptorLaunchState>()
-            .add_event::<TogglePlacementModeEvent>()
+            .init_resource::<ActiveNotification>()
+            .init_resource::<icons::FontsInitialized>()
+            .init_resource::<box_selection::BoxSelectionState>()
+            .init_resource::<AsteroidListState>()
+            // Add systems
             .add_systems(
                 Update,
                 (
-                    time_controls_panel,
-                    info_panel,
-                    collision_notification,
-                    handle_toggle_placement_event,
+                    // Font initialization (runs once)
+                    icons::setup_fonts,
+                    // Dock (bottom bar with all controls)
+                    dock::dock_system,
+                    // Scenario drawer (slides up from dock)
+                    scenario_drawer::scenario_drawer_system,
+                    scenario_drawer::scenario_drawer_keyboard,
+                    // Context card (floating info near selection)
+                    context_card::context_card_system,
+                    // Radial deflection menu
+                    radial_menu::radial_menu_system,
+                    // Outcome banners
+                    banners::update_banner_state,
+                    banners::animate_banners,
+                    banners::banner_system,
+                    // Asteroid placement (click-to-spawn)
                     handle_asteroid_placement,
                     update_placement_cursor,
-                    // New Phase 5 UI systems
-                    scenario_menu_system,
-                    scenario_menu_keyboard,
-                    update_outcome_state,
-                    animate_flash,
-                    outcome_overlay_system,
-                    interceptor_launch_system,
-                    // Phase 6: Continuous deflection
-                    mission_status_panel,
+                    // Box selection (drag to select)
+                    box_selection::box_selection_input,
+                    box_selection::render_box_selection,
                 ),
             );
-    }
-}
-
-/// System to handle toggle placement mode events.
-fn handle_toggle_placement_event(
-    mut events: EventReader<TogglePlacementModeEvent>,
-    mut placement_mode: ResMut<AsteroidPlacementMode>,
-) {
-    for _ in events.read() {
-        placement_mode.active = !placement_mode.active;
-        if placement_mode.active {
-            info!("Asteroid placement mode activated - click to place asteroid");
-        } else {
-            info!("Asteroid placement mode deactivated");
-        }
     }
 }
 
 /// Global UI state.
 #[derive(Resource)]
 pub struct UiState {
-    /// Whether the info panel is expanded.
-    pub info_panel_open: bool,
     /// Display units for position/velocity.
     pub display_units: DisplayUnits,
 }
@@ -82,7 +83,6 @@ pub struct UiState {
 impl Default for UiState {
     fn default() -> Self {
         Self {
-            info_panel_open: true,
             display_units: DisplayUnits::Km,
         }
     }
@@ -108,6 +108,11 @@ pub struct AsteroidPlacementMode {
     pub active: bool,
 }
 
-/// Event to toggle asteroid placement mode.
-#[derive(Event)]
-pub struct TogglePlacementModeEvent;
+/// Resource tracking the currently displayed collision notification.
+///
+/// Kept for compatibility with collision system.
+#[derive(Resource, Default)]
+pub struct ActiveNotification {
+    /// The collision event currently being displayed, if any.
+    pub current: Option<crate::collision::CollisionEvent>,
+}
