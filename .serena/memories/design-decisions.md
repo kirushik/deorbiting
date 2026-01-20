@@ -135,7 +135,7 @@ Physics based on real research:
 ## Phase 6 Implementation (2026-01-19)
 
 ### Continuous Deflection Methods
-Three continuous deflection methods implemented in `src/continuous/`:
+Four continuous deflection methods implemented in `src/continuous/`:
 
 1. **Ion Beam Shepherd** - Spacecraft hovers near asteroid, ion exhaust pushes it
    - Formula: `acceleration = thrust_N / asteroid_mass_kg`
@@ -151,10 +151,23 @@ Three continuous deflection methods implemented in `src/continuous/`:
    - Formula: `thrust_N = 2.3 × (power_kW / 100) × solar_efficiency`
    - Solar efficiency: `min(1.0, 1/distance_AU²)`
 
+4. **Solar Sail** - Reflects sunlight for radiation pressure thrust
+   - Solar radiation pressure: ~9.08 μN/m² at 1 AU
+   - Formula: `thrust = sail_area × 9.08e-6 × reflectivity / distance_AU²`
+   - No fuel consumption; mission duration limited only by hardware lifetime
+
+### Additional Instant Payloads
+- **NuclearSplit** - Armageddon-style asteroid splitting
+  - Splits asteroid into two fragments with diverging trajectories
+  - Energy: `E = yield_kt × 4.184e12 J` (TNT equivalent)
+  - ~1% energy converted to kinetic separation
+  - Separation velocity: `v = sqrt(2 × 0.01 × E / M_asteroid)`
+  - Fragments move perpendicular to deflection direction
+
 ### Key Components
 - `ContinuousDeflector` - Component tracking target, payload, state
 - `ContinuousDeflectorState` - EnRoute, Operating, FuelDepleted, Complete, Cancelled
-- `ContinuousPayload` - IonBeam, GravityTractor, LaserAblation variants
+- `ContinuousPayload` - IonBeam, GravityTractor, LaserAblation, SolarSail variants
 - `ThrustDirection` - Retrograde, Prograde, Radial, Custom
 
 ### Physics Integration
@@ -169,6 +182,18 @@ Three continuous deflection methods implemented in `src/continuous/`:
 - `src/continuous/mod.rs` - Component, state machine, plugin
 - `src/ui/mission_status.rs` - Active missions panel
 - `src/render/deflectors.rs` - Visualization (icons, thrust arrows)
+
+### UI Enhancements (2026-01-20)
+- **Asteroid Mass Editor** - Collapsible section in info panel
+  - Logarithmic slider (10^6 to 10^15 kg)
+  - Quick preset buttons (1e9, 1e10, 1e11, 1e12 kg)
+  - Real-time mass modification updates physics/predictions
+
+- **Deflection Challenge Rebalancing**
+  - Reduced asteroid mass from 5e11 to 5e9 kg
+  - Expanded kinetic impactor slider: 100-10000 kg (was 100-2000)
+  - Expanded nuclear yield slider: 1-10000 kt (was 1-1000)
+  - Makes scenario solvable with various methods
 
 ## Key Constants
 

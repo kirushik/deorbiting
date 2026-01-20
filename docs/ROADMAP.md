@@ -161,6 +161,30 @@
 
 ---
 
+## Phase 6: Advanced Deflection
+
+1. **Continuous Deflection Methods:**
+   - Ion Beam Shepherd (hovering spacecraft with ion exhaust)
+   - Gravity Tractor (gravitational pull from nearby spacecraft)
+   - Laser Ablation (surface vaporization for thrust)
+   - Solar Sail (radiation pressure deflection)
+
+2. **Additional Instant Payloads:**
+   - Nuclear Split (Armageddon-style asteroid splitting into fragments)
+
+3. **Physics Integration:**
+   - Thrust integrated into IAS15 integrator
+   - Trajectory prediction includes continuous deflection
+   - Multiple simultaneous deflectors supported
+
+4. **UI Enhancements:**
+   - Launch controls for all deflection methods
+   - Mission status panel for active continuous deflectors
+   - Asteroid mass editor in info panel
+   - En-route visualization for all deployments
+
+---
+
 ## Design Changes (Post-Implementation)
 
 | Change | Date | Rationale |
@@ -169,5 +193,7 @@
 | **Moons decorative only** | 2026-01 | No gravity contribution, no collision; simplifies physics model |
 | **Optimized proximity timestep cap** | 2026-01 | Only activates within 3× collision radius to avoid unnecessary slowdown |
 | **Collision zones** | 2026-01 | Planets: 50×, Sun: 2×, Moons: none |
+| **Solar Sail method** | 2026-01 | Added 4th continuous deflection using solar radiation pressure |
+| **Nuclear splitting** | 2026-01 | Armageddon-style asteroid breakup into two fragments |
 
 See `docs/CHECKLIST.md` for detailed implementation notes.

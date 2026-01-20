@@ -57,6 +57,23 @@ pub enum ContinuousPayload {
         /// Direction to point the laser (affects thrust direction on asteroid).
         direction: ThrustDirection,
     },
+
+    /// Solar Sail - large reflective sail attached to asteroid.
+    ///
+    /// Uses solar radiation pressure for propellantless deflection.
+    /// Effectiveness varies with solar distance (1/r² scaling).
+    /// Based on NASA Solar Cruiser and similar concepts.
+    SolarSail {
+        /// Sail area in square meters (typical: 1,000 - 100,000 m²).
+        sail_area_m2: f64,
+        /// Mission duration in seconds.
+        mission_duration: f64,
+        /// Sail reflectivity (0.0-1.0, typically 0.85-0.95 for aluminized film).
+        reflectivity: f64,
+        /// Thrust direction is always away from Sun (SunPointing), but we track
+        /// the desired deflection effect.
+        direction: ThrustDirection,
+    },
 }
 
 impl Default for ContinuousPayload {
@@ -103,12 +120,25 @@ impl ContinuousPayload {
         }
     }
 
+    /// Default solar sail configuration.
+    ///
+    /// Based on NASA Solar Cruiser concept scaled up for asteroid deflection.
+    pub fn solar_sail_default() -> Self {
+        ContinuousPayload::SolarSail {
+            sail_area_m2: 10_000.0,       // 10,000 m² (100m × 100m sail)
+            mission_duration: 2.0 * 365.25 * 86400.0, // 2 years
+            reflectivity: 0.9,            // 90% reflective
+            direction: ThrustDirection::SunPointing, // Solar sails push away from Sun
+        }
+    }
+
     /// Get the thrust direction for this payload.
     pub fn direction(&self) -> ThrustDirection {
         match self {
             ContinuousPayload::IonBeam { direction, .. } => *direction,
             ContinuousPayload::GravityTractor { direction, .. } => *direction,
             ContinuousPayload::LaserAblation { direction, .. } => *direction,
+            ContinuousPayload::SolarSail { direction, .. } => *direction,
         }
     }
 
@@ -124,6 +154,9 @@ impl ContinuousPayload {
             ContinuousPayload::LaserAblation { .. } => {
                 "Laser Ablation: High-power laser vaporizes surface, creating thrust plume"
             }
+            ContinuousPayload::SolarSail { .. } => {
+                "Solar Sail: Large reflective sail uses solar radiation pressure for propellantless thrust"
+            }
         }
     }
 
@@ -133,6 +166,7 @@ impl ContinuousPayload {
             ContinuousPayload::IonBeam { .. } => "Ion Beam",
             ContinuousPayload::GravityTractor { .. } => "Gravity Tractor",
             ContinuousPayload::LaserAblation { .. } => "Laser Ablation",
+            ContinuousPayload::SolarSail { .. } => "Solar Sail",
         }
     }
 
@@ -155,6 +189,7 @@ impl ContinuousPayload {
             ContinuousPayload::IonBeam { .. } => None, // Limited by fuel, not time
             ContinuousPayload::GravityTractor { mission_duration, .. } => Some(*mission_duration),
             ContinuousPayload::LaserAblation { mission_duration, .. } => Some(*mission_duration),
+            ContinuousPayload::SolarSail { mission_duration, .. } => Some(*mission_duration),
         }
     }
 
@@ -169,7 +204,7 @@ impl ContinuousPayload {
     pub fn estimate_total_delta_v(&self, asteroid_mass_kg: f64, solar_distance_au: f64) -> f64 {
         use super::thrust::{
             gravity_tractor_acceleration, ion_beam_acceleration, ion_fuel_consumption_rate,
-            laser_ablation_acceleration,
+            laser_ablation_acceleration, solar_sail_acceleration,
         };
 
         match self {
@@ -205,6 +240,19 @@ impl ContinuousPayload {
             } => {
                 let acc = laser_ablation_acceleration(
                     power_kw * efficiency,
+                    solar_distance_au,
+                    asteroid_mass_kg,
+                );
+                acc * mission_duration
+            }
+            ContinuousPayload::SolarSail {
+                sail_area_m2,
+                mission_duration,
+                reflectivity,
+                ..
+            } => {
+                let acc = solar_sail_acceleration(
+                    sail_area_m2 * reflectivity,
                     solar_distance_au,
                     asteroid_mass_kg,
                 );

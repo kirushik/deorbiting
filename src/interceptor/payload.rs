@@ -31,6 +31,19 @@ pub enum DeflectionPayload {
         /// Range: 1-1000 kt.
         yield_kt: f64,
     },
+
+    /// Nuclear deep penetration - splits asteroid into fragments.
+    ///
+    /// "Armageddon" style: detonation inside asteroid breaks it apart.
+    /// Creates two fragments with diverging trajectories.
+    /// WARNING: May create multiple collision threats!
+    NuclearSplit {
+        /// Weapon yield (kilotons TNT equivalent).
+        yield_kt: f64,
+        /// Mass ratio for the split (fraction for first fragment, 0.0-1.0).
+        /// 0.5 = equal split, 0.7 = 70/30 split, etc.
+        split_ratio: f64,
+    },
 }
 
 impl Default for DeflectionPayload {
@@ -63,6 +76,19 @@ impl DeflectionPayload {
     /// Create a nuclear standoff device.
     pub fn nuclear(yield_kt: f64) -> Self {
         Self::Nuclear { yield_kt }
+    }
+
+    /// Create a nuclear splitting device.
+    pub fn nuclear_split(yield_kt: f64, split_ratio: f64) -> Self {
+        Self::NuclearSplit {
+            yield_kt,
+            split_ratio: split_ratio.clamp(0.1, 0.9),
+        }
+    }
+
+    /// Check if this payload splits the asteroid instead of deflecting it.
+    pub fn is_splitting(&self) -> bool {
+        matches!(self, DeflectionPayload::NuclearSplit { .. })
     }
 
     /// Calculate the delta-v imparted to the asteroid.
@@ -100,9 +126,40 @@ impl DeflectionPayload {
 
                 reference_delta_v * (yield_kt / reference_yield) * (reference_mass / asteroid_mass)
             }
+
+            DeflectionPayload::NuclearSplit { .. } => {
+                // Splitting payloads don't apply delta-v to the original asteroid.
+                // They destroy it and create fragments with separation velocity.
+                0.0
+            }
         };
 
         direction.normalize_or_zero() * delta_v_magnitude
+    }
+
+    /// Calculate the separation velocity for asteroid fragments.
+    ///
+    /// Based on nuclear detonation energy transfer to fragment kinetic energy.
+    /// Using ~1% efficiency for deep-buried detonation.
+    ///
+    /// # Arguments
+    /// * `yield_kt` - Yield in kilotons
+    /// * `total_mass` - Total asteroid mass in kg
+    ///
+    /// # Returns
+    /// Separation velocity in m/s (each fragment moves this fast relative to center)
+    pub fn calculate_separation_velocity(yield_kt: f64, total_mass: f64) -> f64 {
+        // Energy of nuclear explosion in Joules
+        // 1 kt TNT = 4.184 × 10^12 J
+        let energy_j = yield_kt * 4.184e12;
+        
+        // Assume 1% of energy goes into kinetic energy of fragments
+        // (rest goes to heat, radiation, debris, etc.)
+        let kinetic_energy = energy_j * 0.01;
+        
+        // KE = 0.5 * m * v^2  →  v = sqrt(2 * KE / m)
+        // Using reduced mass for two-body separation
+        (2.0 * kinetic_energy / total_mass).sqrt()
     }
 
     /// Get a human-readable description of the payload.
@@ -116,6 +173,14 @@ impl DeflectionPayload {
                     format!("Nuclear Standoff ({:.1} Mt)", yield_kt / 1000.0)
                 } else {
                     format!("Nuclear Standoff ({:.0} kt)", yield_kt)
+                }
+            }
+            DeflectionPayload::NuclearSplit { yield_kt, split_ratio } => {
+                let ratio_percent = (split_ratio * 100.0) as i32;
+                if *yield_kt >= 1000.0 {
+                    format!("Nuclear Split ({:.1} Mt, {}/{})", yield_kt / 1000.0, ratio_percent, 100 - ratio_percent)
+                } else {
+                    format!("Nuclear Split ({:.0} kt, {}/{})", yield_kt, ratio_percent, 100 - ratio_percent)
                 }
             }
         }

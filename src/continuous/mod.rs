@@ -26,7 +26,7 @@ use crate::types::{BodyState, SimulationTime, AU_TO_METERS};
 
 use self::thrust::{
     compute_thrust_direction, gravity_tractor_acceleration, ion_beam_acceleration,
-    ion_fuel_consumption_rate, laser_ablation_acceleration,
+    ion_fuel_consumption_rate, laser_ablation_acceleration, solar_sail_acceleration,
 };
 
 /// State of a continuous deflection mission.
@@ -257,6 +257,9 @@ fn update_continuous_deflectors(
                     ContinuousPayload::LaserAblation {
                         mission_duration, ..
                     } => (current_time - started_at) >= *mission_duration,
+                    ContinuousPayload::SolarSail {
+                        mission_duration, ..
+                    } => (current_time - started_at) >= *mission_duration,
                 };
 
                 if should_complete {
@@ -350,6 +353,14 @@ pub fn compute_continuous_thrust(
                 let solar_distance_au = asteroid_pos.length() / AU_TO_METERS;
                 laser_ablation_acceleration(power_kw * efficiency, solar_distance_au, asteroid_mass)
             }
+            ContinuousPayload::SolarSail {
+                sail_area_m2,
+                reflectivity,
+                ..
+            } => {
+                let solar_distance_au = asteroid_pos.length() / AU_TO_METERS;
+                solar_sail_acceleration(sail_area_m2 * reflectivity, solar_distance_au, asteroid_mass)
+            }
         };
 
         // Compute thrust direction
@@ -401,6 +412,14 @@ pub fn update_deflector_progress(
             } => {
                 let solar_distance_au = asteroid_pos.length() / AU_TO_METERS;
                 laser_ablation_acceleration(power_kw * efficiency, solar_distance_au, asteroid_mass)
+            }
+            ContinuousPayload::SolarSail {
+                sail_area_m2,
+                reflectivity,
+                ..
+            } => {
+                let solar_distance_au = asteroid_pos.length() / AU_TO_METERS;
+                solar_sail_acceleration(sail_area_m2 * reflectivity, solar_distance_au, asteroid_mass)
             }
         };
 

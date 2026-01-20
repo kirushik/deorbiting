@@ -40,14 +40,41 @@ pub fn draw_deflector_trajectories(
         let color = method_color(&deflector.payload);
 
         match &deflector.state {
-            ContinuousDeflectorState::EnRoute { .. } => {
-                // Draw dashed transit line from Earth to asteroid
-                draw_dashed_line(
+            ContinuousDeflectorState::EnRoute { arrival_time } => {
+                // Calculate interpolated spacecraft position
+                let total_time = *arrival_time - deflector.launch_time;
+                let elapsed = sim_time.current - deflector.launch_time;
+                let progress = if total_time > 0.0 {
+                    (elapsed / total_time).clamp(0.0, 1.0)
+                } else {
+                    1.0
+                };
+
+                // Simple linear interpolation for spacecraft position
+                let current_pos = earth_pos.lerp(asteroid_pos, progress);
+
+                // Draw traveled portion (solid line)
+                draw_solid_line(
                     &mut gizmos,
                     earth_pos,
+                    current_pos,
+                    color,
+                );
+
+                // Draw remaining portion (dashed line, semi-transparent)
+                draw_dashed_line(
+                    &mut gizmos,
+                    current_pos,
                     asteroid_pos,
-                    color.with_alpha(0.5),
-                    10,
+                    color.with_alpha(0.4),
+                    ((1.0 - progress) * 10.0).max(1.0) as usize,
+                );
+
+                // Draw spacecraft icon at current position
+                draw_spacecraft_icon(
+                    &mut gizmos,
+                    current_pos,
+                    color,
                 );
             }
             ContinuousDeflectorState::Operating { .. } => {
@@ -84,7 +111,29 @@ fn method_color(payload: &ContinuousPayload) -> Color {
         ContinuousPayload::IonBeam { .. } => Color::srgba(0.0, 0.8, 1.0, 1.0),      // Cyan
         ContinuousPayload::GravityTractor { .. } => Color::srgba(0.8, 0.4, 1.0, 1.0), // Purple
         ContinuousPayload::LaserAblation { .. } => Color::srgba(1.0, 0.6, 0.2, 1.0),  // Orange
+        ContinuousPayload::SolarSail { .. } => Color::srgba(1.0, 0.9, 0.3, 1.0),     // Yellow/Gold
     }
+}
+
+/// Draw a solid line between two points.
+fn draw_solid_line(
+    gizmos: &mut Gizmos,
+    start: bevy::math::DVec2,
+    end: bevy::math::DVec2,
+    color: Color,
+) {
+    let start_render = Vec3::new(
+        (start.x * RENDER_SCALE) as f32,
+        (start.y * RENDER_SCALE) as f32,
+        z_layers::TRAJECTORY,
+    );
+    let end_render = Vec3::new(
+        (end.x * RENDER_SCALE) as f32,
+        (end.y * RENDER_SCALE) as f32,
+        z_layers::TRAJECTORY,
+    );
+
+    gizmos.line(start_render, end_render, color);
 }
 
 /// Draw a dashed line between two points.

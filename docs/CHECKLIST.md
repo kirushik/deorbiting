@@ -216,9 +216,13 @@ A coding-focused, step-by-step checklist for implementing the orbital mechanics 
 - [x] Add collapse/expand button
 - [x] Display selected body name
 - [x] Display position (X, Y)
-- [ ] Display velocity magnitude - Phase 3 (requires asteroid with BodyState)
+- [x] Display velocity magnitude (for asteroids with BodyState)
 - [x] Add km/AU unit toggle
 - [x] Create `SelectedBody` resource to track selection
+- [x] Add asteroid mass editor (collapsible section):
+  - [x] Logarithmic slider (10^6 to 10^15 kg)
+  - [x] Quick preset buttons (1e9, 1e10, 1e11, 1e12 kg)
+  - [x] Real-time mass modification
 
 ### 2.5 Body Selection
 - [x] Implement mouse picking:
@@ -461,26 +465,39 @@ Instant deflection methods (kinetic impactor, nuclear standoff):
   }
   ```
 - [x] Define `DeflectionPayload` enum:
-  - [x] `Kinetic { mass_kg: f64, beta: f64 }` (100-1000 kg, β=1.0-5.0)
-  - [x] `Nuclear { yield_kt: f64 }` (1-1000 kt)
+  - [x] `Kinetic { mass_kg: f64, beta: f64 }` (100-10000 kg, β=1.0-5.0)
+  - [x] `Nuclear { yield_kt: f64 }` (1-10000 kt)
+  - [x] `NuclearSplit { yield_kt: f64, split_ratio: f64 }` (Armageddon-style splitting)
 - [x] Implement delta-v calculations:
   - [x] Kinetic: `Δv = β × (m × v_rel) / M_asteroid` (DART formula)
   - [x] Nuclear: ~2 cm/s per 100 kt for 300m asteroid (LLNL research)
+  - [x] NuclearSplit: Splits asteroid into two fragments with separation velocity
+    - [x] Energy: `E = yield_kt × 4.184e12 J` (TNT equivalent)
+    - [x] ~1% energy converted to kinetic separation
+    - [x] Separation velocity: `v = sqrt(2 × 0.01 × E / M_asteroid)`
+    - [x] Fragments move perpendicular to deflection direction (momentum conserved)
 - [x] Create `update_interceptors` system:
   - [x] Track in-flight interceptors
-  - [x] Apply delta-v on arrival
+  - [x] Apply delta-v on arrival (or spawn fragments for NuclearSplit)
   - [x] Trigger trajectory recalculation
+- [x] Create `handle_asteroid_splitting` system:
+  - [x] Despawn original asteroid
+  - [x] Spawn two fragment asteroids with diverging trajectories
+  - [x] Mass distribution based on split_ratio
 
 ### 5.5 Interceptor Launch UI (`src/ui/interceptor_launch.rs`)
 
 - [x] Create launch modal window:
-  - [x] Payload type selector (Kinetic / Nuclear)
-  - [x] Parameter sliders (mass, beta, yield)
+  - [x] Payload type selector (Kinetic / Nuclear / NuclearSplit / Continuous methods)
+  - [x] Parameter sliders (mass, beta, yield, split_ratio)
   - [x] Direction control widget (retrograde/prograde/radial/custom)
   - [x] Estimated flight time display
   - [x] Estimated delta-v display
   - [x] Launch button
 - [x] Add "Launch Interceptor" button to info panel
+- [x] NuclearSplit-specific controls:
+  - [x] Yield slider (100-10000 kt, logarithmic)
+  - [x] Split ratio slider (20%/80% to 80%/20%)
 
 ### 5.6 Scenario Menu (`src/ui/scenario_menu.rs`)
 - [x] Create modal window with `egui::Window`
@@ -550,6 +567,11 @@ Three distinct overlays with visual differentiation:
   - [x] Vaporize asteroid surface, creating thrust
   - [x] Solar efficiency: `min(1.0, 1/distance_AU²)`
   - [x] Formula: `thrust_N = 2.3 × (power_kW / 100) × solar_efficiency`
+- [x] **Solar Sail** (`src/continuous/thrust.rs`):
+  - [x] Reflects sunlight to generate thrust via radiation pressure
+  - [x] Solar pressure: ~9.08 μN/m² at 1 AU
+  - [x] Scales with 1/r² (inverse square law)
+  - [x] Formula: `acceleration = (sail_area × 9.08e-6 × reflectivity) / (distance_AU² × asteroid_mass)`
 
 ### 6.2 Component & State Machine (`src/continuous/mod.rs`)
 
@@ -560,7 +582,7 @@ Three distinct overlays with visual differentiation:
   - [x] FuelDepleted (out of propellant)
   - [x] Complete (mission finished)
   - [x] Cancelled
-- [x] `ContinuousPayload` enum with IonBeam, GravityTractor, LaserAblation
+- [x] `ContinuousPayload` enum with IonBeam, GravityTractor, LaserAblation, SolarSail
 - [x] `ThrustDirection` enum (Retrograde, Prograde, Radial, Custom)
 - [x] `LaunchContinuousDeflectorEvent` for spawning deflectors
 - [x] State transition system `update_deflector_states`
@@ -581,10 +603,11 @@ Three distinct overlays with visual differentiation:
 
 ### 6.5 UI - Launch Controls (`src/ui/interceptor_launch.rs`)
 
-- [x] Extended `PayloadType` enum with IonBeam, GravityTractor, LaserAblation
+- [x] Extended `PayloadType` enum with IonBeam, GravityTractor, LaserAblation, SolarSail
 - [x] Ion Beam controls: thrust (mN), fuel mass (kg), Isp (s)
 - [x] Gravity Tractor controls: spacecraft mass (kg), mission duration (years)
 - [x] Laser Ablation controls: power (kW), mission duration (months)
+- [x] Solar Sail controls: sail area (m²), reflectivity (0-1), mission duration (years)
 - [x] Launch event handling for continuous methods
 
 ### 6.6 Mission Status Panel (`src/ui/mission_status.rs`)
@@ -599,7 +622,8 @@ Three distinct overlays with visual differentiation:
 - [x] En route: dashed line from Earth to asteroid
 - [x] Operating: diamond spacecraft icon + thrust arrow
 - [x] Completed: small circle icon
-- [x] Color coding: cyan (ion), purple (gravity tractor), orange (laser)
+- [x] Color coding: cyan (ion), purple (gravity tractor), orange (laser), yellow/gold (solar sail)
+- [x] NuclearSplit interceptor trajectory: red/pink color (danger warning)
 
 ### 6.8 Integration Tests
 
@@ -651,5 +675,9 @@ Three distinct overlays with visual differentiation:
 | 2026-01 | Phase 5/6 split for deflection | Instant methods (kinetic/nuclear) in Phase 5; continuous methods (ion beam, gravity tractor, laser) deferred to Phase 6 |
 | 2026-01 | DART-based physics | Delta-v calculations use real DART mission beta factor (3.6) and LLNL nuclear research |
 | 2026-01 | Phase 6 continuous deflection | Added Ion Beam Shepherd, Gravity Tractor, Laser Ablation with physics integration |
+| 2026-01 | Solar Sail deflection method | 4th continuous method using solar radiation pressure (~9.08 μN/m² at 1 AU) |
+| 2026-01 | NuclearSplit payload | Armageddon-style asteroid splitting; creates two fragments with diverging trajectories |
+| 2026-01 | Asteroid mass editor | Collapsible UI in info panel with logarithmic slider (10^6-10^15 kg) and presets |
+| 2026-01 | Deflection Challenge rebalanced | Reduced asteroid mass from 5e11 to 5e9 kg; expanded kinetic/nuclear slider ranges |
 
 > **Tip:** When starting a new coding session, run `list_memories` to see available context, then `read_memory` for relevant memories before beginning work.

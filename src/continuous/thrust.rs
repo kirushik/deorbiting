@@ -134,6 +134,65 @@ pub fn laser_ablation_acceleration(
     thrust / asteroid_mass_kg
 }
 
+/// Solar sail thrust calculation.
+///
+/// A large reflective sail attached to the asteroid uses solar radiation
+/// pressure to slowly push the asteroid. The thrust is proportional to
+/// sail area and inversely proportional to distance from Sun squared.
+///
+/// # Arguments
+/// * `sail_area_m2` - Sail area in square meters
+/// * `solar_distance_au` - Distance from Sun in AU
+///
+/// # Returns
+/// Thrust in Newtons
+///
+/// # Physics
+/// Solar radiation pressure at 1 AU ≈ 9.08 μN/m² for perfect reflection.
+/// P = 2 × S / c where S = 1361 W/m² (solar constant), c = 3×10⁸ m/s
+/// Thrust = P × Area × (1 AU / distance)²
+///
+/// # Reference
+/// NASA Solar Cruiser: 1,672 m² sail
+/// Typical sails: 1,000 - 100,000 m²
+#[inline]
+pub fn solar_sail_thrust(sail_area_m2: f64, solar_distance_au: f64) -> f64 {
+    if sail_area_m2 <= 0.0 || solar_distance_au <= 0.0 {
+        return 0.0;
+    }
+
+    // Solar radiation pressure for perfect reflection at 1 AU
+    // P = 2 × S / c = 2 × 1361 / 3e8 ≈ 9.08 μN/m²
+    const SRP_AT_1AU: f64 = 9.08e-6; // N/m²
+
+    // Thrust falls off with distance squared
+    let distance_factor = 1.0 / (solar_distance_au * solar_distance_au);
+
+    SRP_AT_1AU * sail_area_m2 * distance_factor
+}
+
+/// Solar sail acceleration calculation.
+///
+/// # Arguments
+/// * `sail_area_m2` - Sail area in square meters
+/// * `solar_distance_au` - Distance from Sun in AU
+/// * `asteroid_mass_kg` - Mass of the asteroid in kg
+///
+/// # Returns
+/// Acceleration magnitude in m/s²
+#[inline]
+pub fn solar_sail_acceleration(
+    sail_area_m2: f64,
+    solar_distance_au: f64,
+    asteroid_mass_kg: f64,
+) -> f64 {
+    if asteroid_mass_kg <= 0.0 {
+        return 0.0;
+    }
+    let thrust = solar_sail_thrust(sail_area_m2, solar_distance_au);
+    thrust / asteroid_mass_kg
+}
+
 /// Compute thrust direction from reference direction.
 ///
 /// # Arguments

@@ -39,6 +39,8 @@ pub struct InterceptorLaunchState {
     pub kinetic_beta: f64,
     /// Nuclear yield (kt).
     pub nuclear_yield: f64,
+    /// Nuclear split ratio (fraction for first fragment).
+    pub split_ratio: f64,
     /// Propulsion technology level (affects speed).
     pub propulsion_level: PropulsionLevel,
     /// Direction mode.
@@ -61,6 +63,10 @@ pub struct InterceptorLaunchState {
     pub laser_power_kw: f64,
     /// Laser ablation mission duration in months.
     pub laser_duration_months: f64,
+    /// Solar sail area in square meters.
+    pub sail_area_m2: f64,
+    /// Solar sail mission duration in years.
+    pub sail_duration_years: f64,
 }
 
 /// Payload type selection.
@@ -69,10 +75,12 @@ pub enum PayloadType {
     #[default]
     Kinetic,
     Nuclear,
+    NuclearSplit,
     // Continuous deflection methods (Phase 6)
     IonBeam,
     GravityTractor,
     LaserAblation,
+    SolarSail,
 }
 
 /// Propulsion technology level affecting interceptor speed.
@@ -147,6 +155,7 @@ impl Default for InterceptorLaunchState {
             kinetic_mass: 560.0,      // DART mass
             kinetic_beta: 3.6,        // DART beta
             nuclear_yield: 100.0,     // 100 kt
+            split_ratio: 0.5,         // Equal split by default
             propulsion_level: PropulsionLevel::Current,
             direction_mode: DirectionMode::Retrograde,
             custom_angle: 0.0,
@@ -158,6 +167,8 @@ impl Default for InterceptorLaunchState {
             gt_duration_years: 10.0,  // 10 years
             laser_power_kw: 100.0,    // 100 kW
             laser_duration_months: 12.0, // 1 year
+            sail_area_m2: 10_000.0,   // 10,000 m² (100m × 100m)
+            sail_duration_years: 2.0, // 2 years
         }
     }
 }
@@ -167,7 +178,7 @@ impl InterceptorLaunchState {
     fn is_continuous(&self) -> bool {
         matches!(
             self.payload_type,
-            PayloadType::IonBeam | PayloadType::GravityTractor | PayloadType::LaserAblation
+            PayloadType::IonBeam | PayloadType::GravityTractor | PayloadType::LaserAblation | PayloadType::SolarSail
         )
     }
 
@@ -182,7 +193,11 @@ impl InterceptorLaunchState {
             PayloadType::Nuclear => Some(DeflectionPayload::Nuclear {
                 yield_kt: self.nuclear_yield,
             }),
-            PayloadType::IonBeam | PayloadType::GravityTractor | PayloadType::LaserAblation => None,
+            PayloadType::NuclearSplit => Some(DeflectionPayload::NuclearSplit {
+                yield_kt: self.nuclear_yield,
+                split_ratio: self.split_ratio,
+            }),
+            PayloadType::IonBeam | PayloadType::GravityTractor | PayloadType::LaserAblation | PayloadType::SolarSail => None,
         }
     }
 
@@ -219,7 +234,13 @@ impl InterceptorLaunchState {
                 efficiency: 0.8, // Fixed efficiency
                 direction,
             }),
-            PayloadType::Kinetic | PayloadType::Nuclear => None,
+            PayloadType::SolarSail => Some(ContinuousPayload::SolarSail {
+                sail_area_m2: self.sail_area_m2,
+                mission_duration: self.sail_duration_years * 365.25 * 86400.0, // Years to seconds
+                reflectivity: 0.9, // Fixed reflectivity for aluminized film
+                direction: ThrustDirection::SunPointing, // Solar sails always push away from Sun
+            }),
+            PayloadType::Kinetic | PayloadType::Nuclear | PayloadType::NuclearSplit => None,
         }
     }
 
@@ -316,6 +337,7 @@ pub fn interceptor_launch_system(
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut launch_state.payload_type, PayloadType::Kinetic, "Kinetic");
                 ui.selectable_value(&mut launch_state.payload_type, PayloadType::Nuclear, "Nuclear");
+                ui.selectable_value(&mut launch_state.payload_type, PayloadType::NuclearSplit, "Split ⚠");
             });
 
             ui.add_space(4.0);
@@ -326,6 +348,7 @@ pub fn interceptor_launch_system(
                 ui.selectable_value(&mut launch_state.payload_type, PayloadType::IonBeam, "Ion Beam");
                 ui.selectable_value(&mut launch_state.payload_type, PayloadType::GravityTractor, "Gravity");
                 ui.selectable_value(&mut launch_state.payload_type, PayloadType::LaserAblation, "Laser");
+                ui.selectable_value(&mut launch_state.payload_type, PayloadType::SolarSail, "Solar Sail");
             });
 
             ui.add_space(8.0);
@@ -336,7 +359,9 @@ pub fn interceptor_launch_system(
                 PayloadType::Kinetic => {
                     ui.horizontal(|ui| {
                         ui.label("Mass (kg):");
-                        ui.add(egui::Slider::new(&mut launch_state.kinetic_mass, 100.0..=2000.0).suffix(" kg"));
+                        ui.add(egui::Slider::new(&mut launch_state.kinetic_mass, 100.0..=10000.0)
+                            .logarithmic(true)
+                            .suffix(" kg"));
                     });
                     ui.horizontal(|ui| {
                         ui.label("Beta factor:");
@@ -347,11 +372,27 @@ pub fn interceptor_launch_system(
                 PayloadType::Nuclear => {
                     ui.horizontal(|ui| {
                         ui.label("Yield:");
-                        ui.add(egui::Slider::new(&mut launch_state.nuclear_yield, 1.0..=1000.0)
+                        ui.add(egui::Slider::new(&mut launch_state.nuclear_yield, 1.0..=10000.0)
                             .logarithmic(true)
                             .suffix(" kt"));
                     });
                     ui.label(egui::RichText::new("Standoff detonation vaporizes surface material").weak().small());
+                }
+                PayloadType::NuclearSplit => {
+                    ui.horizontal(|ui| {
+                        ui.label("Yield:");
+                        ui.add(egui::Slider::new(&mut launch_state.nuclear_yield, 100.0..=10000.0)
+                            .logarithmic(true)
+                            .suffix(" kt"));
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Split Ratio:");
+                        ui.add(egui::Slider::new(&mut launch_state.split_ratio, 0.2..=0.8)
+                            .step_by(0.05)
+                            .custom_formatter(|v, _| format!("{:.0}%/{:.0}%", v * 100.0, (1.0 - v) * 100.0)));
+                    });
+                    ui.label(egui::RichText::new("⚠ DANGER: Splits asteroid into two fragments!").color(egui::Color32::from_rgb(255, 100, 100)).small());
+                    ui.label(egui::RichText::new("May create multiple collision threats").weak().small());
                 }
                 PayloadType::IonBeam => {
                     ui.horizontal(|ui| {
@@ -394,6 +435,19 @@ pub fn interceptor_launch_system(
                         ui.add(egui::Slider::new(&mut launch_state.laser_duration_months, 1.0..=36.0).suffix(" months"));
                     });
                     ui.label(egui::RichText::new("Vaporizes asteroid surface, creating thrust plume").weak().small());
+                }
+                PayloadType::SolarSail => {
+                    ui.horizontal(|ui| {
+                        ui.label("Sail Area:");
+                        ui.add(egui::Slider::new(&mut launch_state.sail_area_m2, 1000.0..=100000.0)
+                            .logarithmic(true)
+                            .suffix(" m²"));
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Duration:");
+                        ui.add(egui::Slider::new(&mut launch_state.sail_duration_years, 0.5..=5.0).suffix(" years"));
+                    });
+                    ui.label(egui::RichText::new("Uses solar radiation pressure for propellantless deflection").weak().small());
                 }
             }
 

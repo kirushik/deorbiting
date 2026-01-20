@@ -108,7 +108,7 @@ pub static DEFLECTION_CHALLENGE: Scenario = Scenario {
     description: "~46 day warning. Can you deflect it with minimal delta-v?",
     asteroid_pos: None, // Computed dynamically: 90° ahead of Earth
     asteroid_vel: None, // Computed dynamically: retrograde at Earth's orbital velocity
-    asteroid_mass: 5e11, // Medium-sized threat
+    asteroid_mass: 5e9, // ~150m diameter rock (solvable with nuclear/heavy kinetic)
     asteroid_radius: 2.0,
     start_time: None,
     time_scale: 10.0,

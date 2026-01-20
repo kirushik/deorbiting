@@ -113,5 +113,8 @@ fn method_color_icon(payload: &ContinuousPayload) -> (egui::Color32, &'static st
         ContinuousPayload::LaserAblation { .. } => {
             (egui::Color32::from_rgb(255, 150, 50), "🔆") // Orange
         }
+        ContinuousPayload::SolarSail { .. } => {
+            (egui::Color32::from_rgb(255, 230, 80), "⛵") // Yellow/Gold
+        }
     }
 }

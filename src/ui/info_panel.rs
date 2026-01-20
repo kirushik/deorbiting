@@ -27,7 +27,7 @@ pub fn info_panel(
     mut integrator_states: ResMut<IntegratorStates>,
     camera_query: Query<(&Transform, &Camera, &GlobalTransform), With<MainCamera>>,
     celestial_bodies: Query<(Entity, &CelestialBody)>,
-    asteroids: Query<(Entity, &AsteroidName, &BodyState), With<Asteroid>>,
+    mut asteroids: Query<(Entity, &AsteroidName, &mut BodyState), With<Asteroid>>,
     ephemeris: Res<Ephemeris>,
     sim_time: Res<SimulationTime>,
     drag_state: Res<DragState>,
@@ -109,7 +109,7 @@ pub fn info_panel(
                     ui,
                     &selected,
                     &celestial_bodies,
-                    &asteroids,
+                    &mut asteroids,
                     &ephemeris,
                     sim_time.current,
                     &mut ui_state,
@@ -352,7 +352,7 @@ fn format_position(ui: &mut egui::Ui, pos: DVec2, units: DisplayUnits) {
 fn render_asteroid_section(
     ui: &mut egui::Ui,
     commands: &mut Commands,
-    asteroids: &Query<(Entity, &AsteroidName, &BodyState), With<Asteroid>>,
+    asteroids: &Query<(Entity, &AsteroidName, &mut BodyState), With<Asteroid>>,
     selected: &mut ResMut<SelectedBody>,
     hovered: &mut ResMut<HoveredBody>,
     integrator_states: &mut ResMut<IntegratorStates>,
@@ -456,7 +456,7 @@ fn render_selected_info(
     ui: &mut egui::Ui,
     selected: &ResMut<SelectedBody>,
     celestial_bodies: &Query<(Entity, &CelestialBody)>,
-    asteroids: &Query<(Entity, &AsteroidName, &BodyState), With<Asteroid>>,
+    asteroids: &mut Query<(Entity, &AsteroidName, &mut BodyState), With<Asteroid>>,
     ephemeris: &Ephemeris,
     time: f64,
     ui_state: &mut ResMut<UiState>,
@@ -479,10 +479,10 @@ fn render_selected_info(
             }
         }
         Some(SelectableBody::Asteroid(entity)) => {
-            if let Ok((_, name, body_state)) = asteroids.get(entity) {
+            if let Ok((_, name, mut body_state)) = asteroids.get_mut(entity) {
                 ui.heading(&name.0);
                 ui.add_space(4.0);
-                render_asteroid_info(ui, body_state, ui_state.display_units);
+                render_asteroid_info(ui, &mut body_state, ui_state.display_units);
 
                 ui.add_space(8.0);
 
@@ -500,8 +500,8 @@ fn render_selected_info(
     }
 }
 
-/// Render info for a selected asteroid.
-fn render_asteroid_info(ui: &mut egui::Ui, body_state: &BodyState, units: DisplayUnits) {
+/// Render info for a selected asteroid, including mass editor.
+fn render_asteroid_info(ui: &mut egui::Ui, body_state: &mut BodyState, units: DisplayUnits) {
     ui.label("Type: Asteroid");
 
     ui.add_space(8.0);
@@ -533,6 +533,43 @@ fn render_asteroid_info(ui: &mut egui::Ui, body_state: &BodyState, units: Displa
 
     ui.add_space(8.0);
 
-    // Mass
+    // Mass display and editor
     ui.label(format!("Mass: {:.2e} kg", body_state.mass));
+    
+    // Mass editor slider (logarithmic for wide range)
+    ui.collapsing("Edit Mass", |ui| {
+        // Convert to log scale for slider
+        let log_mass = body_state.mass.log10();
+        let mut new_log_mass = log_mass;
+        
+        ui.horizontal(|ui| {
+            ui.label("Mass:");
+            ui.add(egui::Slider::new(&mut new_log_mass, 6.0..=15.0)
+                .custom_formatter(|v, _| format!("{:.0e} kg", 10.0_f64.powf(v)))
+                .step_by(0.1));
+        });
+        
+        // Apply the change
+        if (new_log_mass - log_mass).abs() > 0.001 {
+            body_state.mass = 10.0_f64.powf(new_log_mass);
+        }
+        
+        // Quick mass presets
+        ui.horizontal(|ui| {
+            if ui.small_button("1e9").on_hover_text("~100m rock").clicked() {
+                body_state.mass = 1e9;
+            }
+            if ui.small_button("1e10").on_hover_text("~200m rock").clicked() {
+                body_state.mass = 1e10;
+            }
+            if ui.small_button("1e11").on_hover_text("~500m rock").clicked() {
+                body_state.mass = 1e11;
+            }
+            if ui.small_button("1e12").on_hover_text("~1km rock").clicked() {
+                body_state.mass = 1e12;
+            }
+        });
+        
+        ui.label(egui::RichText::new("Changing mass affects deflection calculations").weak().small());
+    });
 }
