@@ -18,7 +18,7 @@ use bevy::prelude::*;
 use crate::camera::RENDER_SCALE;
 use crate::ephemeris::{all_bodies, CelestialBodyId, Ephemeris};
 use crate::render::z_layers;
-use crate::types::SimulationTime;
+use crate::types::{SimulationTime, GM_SUN};
 
 use super::bodies::{CelestialBody, EffectiveVisualRadius};
 use super::scaling::MARGIN_FRACTION;
@@ -93,9 +93,11 @@ fn orbit_color(id: CelestialBodyId, alpha: f32) -> Color {
     }
 }
 
-/// Draw orbit paths for planets as aligned idealized Kepler ellipses.
+/// Draw orbit paths for planets as osculating Kepler ellipses.
 ///
-/// We use the ephemeris position "now" to align the ellipse so the planet lies on the path.
+/// We compute orbital elements (a, e, ω) from the current position and velocity,
+/// ensuring the planet always lies exactly on its drawn orbit path.
+/// This eliminates both the "hula-hoop" oscillation and position-orbit mismatch.
 pub fn draw_orbit_paths(
     mut gizmos: Gizmos,
     settings: Res<OrbitPathSettings>,
@@ -114,79 +116,60 @@ pub fn draw_orbit_paths(
             continue;
         }
 
-        // Current ephemeris position (source of truth for alignment)
-        let Some(pos_now) = ephemeris.get_position_by_id(id, sim_time.current) else {
+        // Get current position and velocity from ephemeris (Horizons if available)
+        let Some(pos) = ephemeris.get_position_by_id(id, sim_time.current) else {
             continue;
         };
-        let r_now = pos_now.length();
-        if !r_now.is_finite() || r_now <= 0.0 {
+        let Some(vel) = ephemeris.get_velocity_by_id(id, sim_time.current) else {
+            continue;
+        };
+
+        let r = pos.length();
+        if !r.is_finite() || r <= 0.0 {
             continue;
         }
 
-        // Base Kepler parameters from the baked orbital elements (used as a stable ellipse shape).
-        // This is *rendering only*; the phase/orientation is aligned so the current ephemeris
-        // position lies on the curve.
-        //
-        // IMPORTANT: Do not duplicate constants here. Reuse the canonical ephemeris body data.
-        let (a, e_base, omega_base) = all_bodies()
-            .into_iter()
-            .find(|b| b.id == id)
-            .and_then(|b| {
-                b.orbit
-                    .as_ref()
-                    .map(|o| (o.semi_major_axis, o.eccentricity, o.argument_of_periapsis))
-            })
-            .unwrap_or_else(|| {
-                // Should not happen for PLANETS, but keep rendering resilient.
-                (r_now, 0.0, 0.0)
-            });
+        // Compute osculating orbital elements from state vector (pos, vel)
+        // This ensures the drawn ellipse passes exactly through the planet's current position
+        let v_sq = vel.length_squared();
 
+        // Specific orbital energy: ε = v²/2 - μ/r
+        let specific_energy = v_sq / 2.0 - GM_SUN / r;
+
+        // Semi-major axis: a = -μ / (2ε)
+        // For elliptical orbits, ε < 0, so a > 0
+        let a = if specific_energy.abs() > 1e-10 {
+            -GM_SUN / (2.0 * specific_energy)
+        } else {
+            r // Fallback for near-parabolic (shouldn't happen for planets)
+        };
+
+        // Eccentricity vector: e_vec = ((v² - μ/r) * r_vec - (r·v) * v_vec) / μ
+        let r_dot_v = pos.dot(vel);
+        let e_vec = (pos * (v_sq - GM_SUN / r) - vel * r_dot_v) / GM_SUN;
+        let e_base = e_vec.length();
+
+        // Argument of periapsis: ω = atan2(e_vec.y, e_vec.x)
+        let omega = e_vec.y.atan2(e_vec.x);
+
+        // Apply eccentricity scaling from settings
         let mut e = e_base * settings.eccentricity_scale;
         e = e.clamp(0.0, 0.999_999);
 
-        // Semi-latus rectum.
+        // Semi-latus rectum
         let p = a * (1.0 - e * e);
 
-        // Align the ellipse’s argument-of-periapsis so that the current ephemeris position lies on it.
-        //
-        // Using polar form from focus:
-        //   r = p / (1 + e cos(ν))
-        // Solve for cos(ν): cos(ν) = (p/r - 1) / e  (when e > 0)
-        // Then choose ν such that the point's inertial angle θ = atan2(y,x) satisfies:
-        //   θ = ν + ω  =>  ω = θ - ν
-        //
-        // This ensures the curve passes through the current planet location.
-        let theta_now = pos_now.y.atan2(pos_now.x);
-        let omega_aligned = if e > 1e-9 {
-            let cos_nu = ((p / r_now) - 1.0) / e;
-            let cos_nu = cos_nu.clamp(-1.0, 1.0);
-            let nu = cos_nu.acos();
-            // Pick the ν branch that yields a better match by comparing reconstructed point direction.
-            // (Cheap disambiguation: try ±ν.)
-            let omega1 = theta_now - nu;
-            let omega2 = theta_now + nu;
-            // Keep the aligned ω reasonably close to the base ω to reduce jitter.
-            if angle_distance(omega1, omega_base) < angle_distance(omega2, omega_base) {
-                omega1
-            } else {
-                omega2
-            }
-        } else {
-            // Near-circular: orientation is arbitrary; just keep the base orientation.
-            omega_base
-        };
-
-        // Draw full ellipse as a closed polyline.
+        // Draw full ellipse as a closed polyline
         let mut first: Option<Vec3> = None;
         let mut prev: Option<Vec3> = None;
 
         for i in 0..=segments {
             let nu = (i as f64 / segments as f64) * std::f64::consts::TAU;
-            let r = if e > 0.0 { p / (1.0 + e * nu.cos()) } else { a };
-            let angle = nu + omega_aligned;
+            let r_at_nu = if e > 0.0 { p / (1.0 + e * nu.cos()) } else { a };
+            let angle = nu + omega;
 
-            let x = r * angle.cos();
-            let y = r * angle.sin();
+            let x = r_at_nu * angle.cos();
+            let y = r_at_nu * angle.sin();
 
             let pt = Vec3::new(
                 (x * RENDER_SCALE) as f32,
