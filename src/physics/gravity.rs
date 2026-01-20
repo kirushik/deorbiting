@@ -8,7 +8,7 @@ use bevy::math::DVec2;
 use crate::ephemeris::Ephemeris;
 use crate::types::GM_SUN;
 
-use crate::ephemeris::GravitySources;
+use crate::ephemeris::{CelestialBodyId, GravitySources, GravitySourcesFull};
 
 /// Compute gravitational acceleration at a given position and time.
 ///
@@ -59,6 +59,94 @@ pub fn compute_acceleration_from_sources(pos: DVec2, sources: &GravitySources) -
     acc
 }
 
+/// Result of combined gravity, dominant body, and collision computation.
+///
+/// This struct holds all the physics information computed from a single
+/// ephemeris lookup, avoiding redundant position queries.
+#[derive(Debug, Clone, Copy)]
+pub struct GravityResult {
+    /// Gravitational acceleration vector in m/s²
+    pub acceleration: DVec2,
+    /// The celestial body whose gravity dominates at this position.
+    /// None if the Sun dominates (the default case).
+    pub dominant_body: Option<CelestialBodyId>,
+    /// If a collision was detected, the body that was hit.
+    pub collision: Option<CelestialBodyId>,
+}
+
+/// Compute acceleration, dominant body, and collision check in a SINGLE pass.
+///
+/// This is significantly more efficient than calling separate functions,
+/// as it avoids redundant ephemeris lookups. For trajectory prediction,
+/// this reduces ephemeris queries from 24 per step to 8.
+///
+/// # Arguments
+/// * `pos` - Position in meters from solar system barycenter
+/// * `sources` - Pre-fetched array of full gravity source data
+///
+/// # Returns
+/// A `GravityResult` containing acceleration, dominant body, and collision info.
+#[inline]
+pub fn compute_gravity_full(pos: DVec2, sources: &GravitySourcesFull) -> GravityResult {
+    let mut acc = DVec2::ZERO;
+    let mut max_acc_mag = 0.0_f64;
+    let mut dominant = CelestialBodyId::Sun;
+    let mut collision = None;
+
+    for source in sources {
+        let delta = source.pos - pos;
+        let r_squared = delta.length_squared();
+
+        // Check collision first (before singularity guard)
+        let dist = r_squared.sqrt();
+        if dist < source.collision_radius && collision.is_none() {
+            collision = Some(source.id);
+        }
+
+        // Gravity computation with singularity guard
+        if r_squared > 1.0 {
+            let factor = source.gm / (r_squared * dist);
+            acc += delta * factor;
+
+            // Track dominant body (highest acceleration magnitude)
+            let acc_mag = source.gm / r_squared;
+            if acc_mag > max_acc_mag {
+                max_acc_mag = acc_mag;
+                dominant = source.id;
+            }
+        }
+    }
+
+    GravityResult {
+        acceleration: acc,
+        dominant_body: if dominant == CelestialBodyId::Sun {
+            None
+        } else {
+            Some(dominant)
+        },
+        collision,
+    }
+}
+
+/// Compute acceleration from full gravity sources (ignoring dominant body/collision).
+///
+/// Use this when you only need acceleration but have already fetched full sources.
+#[inline]
+pub fn compute_acceleration_from_full_sources(pos: DVec2, sources: &GravitySourcesFull) -> DVec2 {
+    let mut acc = DVec2::ZERO;
+
+    for source in sources {
+        let delta = source.pos - pos;
+        let r_squared = delta.length_squared();
+
+        if r_squared > 1.0 {
+            let r = r_squared.sqrt();
+            acc += delta * (source.gm / (r_squared * r));
+        }
+    }
+
+    acc
+}
 
 /// Information about the closest celestial body for timestep adaptation.
 #[derive(Debug, Clone, Copy)]

@@ -12,7 +12,10 @@ use std::collections::HashMap;
 use bevy::prelude::*;
 use bevy::math::DVec2;
 
-pub use gravity::{compute_acceleration, compute_acceleration_from_sources, find_closest_body, ClosestBodyInfo};
+pub use gravity::{
+    compute_acceleration, compute_acceleration_from_full_sources, compute_acceleration_from_sources,
+    compute_gravity_full, find_closest_body, ClosestBodyInfo, GravityResult,
+};
 pub use integrator::{IAS15Config, IAS15State, PredictionConfig, compute_adaptive_dt};
 
 use crate::asteroid::{Asteroid, AsteroidName};

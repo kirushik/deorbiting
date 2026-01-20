@@ -46,6 +46,20 @@ pub type GravitySources = [GravitySource; GRAVITY_SOURCE_COUNT];
 /// Fixed-size array of gravity sources with IDs (no heap allocation).
 pub type GravitySourcesWithId = [GravitySourceWithId; GRAVITY_SOURCE_COUNT];
 
+/// A full gravity source with all data needed for physics calculations.
+/// Includes ID, position, GM, and collision radius - everything needed
+/// for gravity, dominant body detection, and collision checking in one lookup.
+#[derive(Clone, Copy, Debug)]
+pub struct GravitySourceFull {
+    pub id: CelestialBodyId,
+    pub pos: DVec2,
+    pub gm: f64,
+    pub collision_radius: f64,
+}
+
+/// Fixed-size array of full gravity sources (no heap allocation).
+pub type GravitySourcesFull = [GravitySourceFull; GRAVITY_SOURCE_COUNT];
+
 /// A constant (Δpos, Δvel) offset applied to a base ephemeris state.
 #[derive(Clone, Copy, Debug, Default)]
 struct StateOffset2 {
@@ -367,6 +381,89 @@ impl Ephemeris {
         };
         let gm = self.body_data.get(&id).map(|d| G * d.mass).unwrap_or(0.0);
         (id, pos, gm)
+    }
+
+    /// Get all gravity sources with full data in a SINGLE ephemeris pass.
+    ///
+    /// This method returns position, GM, body ID, AND collision radius for all
+    /// gravity sources in one lookup. This is significantly more efficient than
+    /// calling `get_gravity_sources()`, `get_gravity_sources_with_id()`, and
+    /// performing collision checks separately (which would require 3x the
+    /// ephemeris interpolations).
+    ///
+    /// Use this in trajectory prediction loops where you need all three pieces
+    /// of information per timestep.
+    ///
+    /// # Arguments
+    /// * `time` - Time in seconds since J2000 epoch
+    ///
+    /// # Returns
+    /// Fixed array of `GravitySourceFull` with id, position, GM, and collision radius.
+    pub fn get_gravity_sources_full(&self, time: f64) -> GravitySourcesFull {
+        // Sun collision radius uses 2x multiplier (Sun is already huge)
+        const SUN_COLLISION_MULT: f64 = 2.0;
+
+        let mut result: GravitySourcesFull = [GravitySourceFull {
+            id: CelestialBodyId::Sun,
+            pos: DVec2::ZERO,
+            gm: 0.0,
+            collision_radius: 0.0,
+        }; GRAVITY_SOURCE_COUNT];
+
+        // Sun at origin (index 0)
+        let sun_radius = self
+            .body_data
+            .get(&CelestialBodyId::Sun)
+            .map(|d| d.radius)
+            .unwrap_or(6.96e8);
+        result[0] = GravitySourceFull {
+            id: CelestialBodyId::Sun,
+            pos: DVec2::ZERO,
+            gm: self.gm_cache[0],
+            collision_radius: sun_radius * SUN_COLLISION_MULT,
+        };
+
+        // Planets (indices 1-8) - batch position lookup where possible
+        if let Some(h) = &self.horizons {
+            let positions = h.sample_all_positions(time);
+            for i in 0..8 {
+                let body_idx = i + 1;
+                let id = BODY_ORDER[body_idx];
+                let pos = positions[i].unwrap_or_else(|| {
+                    self.get_position_by_id(id, time).unwrap_or(DVec2::ZERO)
+                });
+                let collision_radius = self
+                    .body_data
+                    .get(&id)
+                    .map(|d| d.radius * COLLISION_MULTIPLIER)
+                    .unwrap_or(0.0);
+                result[body_idx] = GravitySourceFull {
+                    id,
+                    pos,
+                    gm: self.gm_cache[body_idx],
+                    collision_radius,
+                };
+            }
+        } else {
+            // No tables: use Kepler for all bodies
+            for i in 1..GRAVITY_SOURCE_COUNT {
+                let id = BODY_ORDER[i];
+                let pos = self.get_position_by_id(id, time).unwrap_or(DVec2::ZERO);
+                let collision_radius = self
+                    .body_data
+                    .get(&id)
+                    .map(|d| d.radius * COLLISION_MULTIPLIER)
+                    .unwrap_or(0.0);
+                result[i] = GravitySourceFull {
+                    id,
+                    pos,
+                    gm: self.gm_cache[i],
+                    collision_radius,
+                };
+            }
+        }
+
+        result
     }
 
     /// Check if a position collides with any celestial body.

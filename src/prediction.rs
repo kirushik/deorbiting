@@ -6,13 +6,17 @@
 
 use bevy::math::DVec2;
 use bevy::prelude::*;
+use std::time::Instant;
 
 use crate::asteroid::Asteroid;
 use crate::camera::{CameraState, RENDER_SCALE};
 use crate::continuous::{compute_continuous_thrust, ContinuousDeflector};
 use crate::ephemeris::{CelestialBodyId, Ephemeris, GravitySourcesWithId};
 use crate::input::DragState;
-use crate::physics::{compute_acceleration, compute_adaptive_dt, PredictionConfig};
+use crate::physics::{
+    compute_acceleration_from_full_sources, compute_adaptive_dt, compute_gravity_full,
+    PredictionConfig,
+};
 use crate::render::z_layers;
 use crate::render::SelectedBody;
 use crate::types::{BodyState, InputSystemSet, SelectableBody, SimulationTime, AU_TO_METERS};
@@ -25,6 +29,8 @@ impl Plugin for PredictionPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<PredictionSettings>()
             .init_resource::<PredictionState>()
+            .init_resource::<TrajectoryCache>()
+            .init_resource::<PredictionBudget>()
             .add_systems(
                 Update,
                 (
@@ -55,8 +61,8 @@ pub struct PredictionSettings {
 impl Default for PredictionSettings {
     fn default() -> Self {
         Self {
-            max_steps: 50_000,
-            max_time: 5.0 * 365.25 * 24.0 * 3600.0, // 5 years in seconds
+            max_steps: 200_000,
+            max_time: 15.0 * 365.25 * 24.0 * 3600.0, // 15 years in seconds
             update_interval: 10,
             point_interval: 20, // Store every 20th point (reduced density)
         }
@@ -102,6 +108,172 @@ pub struct PredictionState {
     last_selected: Option<Entity>,
     /// Last simulation time when prediction was calculated.
     last_sim_time: f64,
+}
+
+/// Integrator state that can be continued from where we left off.
+#[derive(Clone, Debug)]
+struct ContinuationState {
+    /// Position at end of last prediction
+    pos: DVec2,
+    /// Velocity at end of last prediction
+    vel: DVec2,
+    /// Acceleration at end of last prediction
+    acc: DVec2,
+    /// Current timestep
+    dt: f64,
+    /// Simulation time at end of last prediction
+    sim_t: f64,
+    /// Number of steps taken so far
+    steps: usize,
+}
+
+/// Cache for incremental trajectory extension.
+///
+/// Instead of recomputing the entire trajectory from scratch on each update,
+/// we cache the integrator state and continue from where we left off.
+/// This enables efficient computation of very long trajectories (12+ years)
+/// while maintaining responsive updates.
+#[derive(Resource, Default)]
+pub struct TrajectoryCache {
+    /// Entity whose trajectory is cached
+    entity: Option<Entity>,
+    /// Initial state (pos, vel) at prediction start - for invalidation
+    initial_pos: DVec2,
+    initial_vel: DVec2,
+    /// Continuation state for extending trajectory
+    continuation: Option<ContinuationState>,
+    /// Whether trajectory reached a terminal state (collision or escape)
+    is_terminal: bool,
+    /// Hash of active deflector configuration (for invalidation)
+    deflector_hash: u64,
+    /// Simulation time when prediction started (for pruning old points)
+    prediction_start_time: f64,
+}
+
+impl TrajectoryCache {
+    /// Check if the cache is valid for the given entity and state.
+    fn is_valid_for(&self, entity: Entity, pos: DVec2, vel: DVec2, deflector_hash: u64) -> bool {
+        self.entity == Some(entity)
+            && self.initial_pos == pos
+            && self.initial_vel == vel
+            && self.deflector_hash == deflector_hash
+            && !self.is_terminal
+    }
+
+    /// Invalidate the cache.
+    fn invalidate(&mut self) {
+        self.entity = None;
+        self.continuation = None;
+        self.is_terminal = false;
+    }
+
+    /// Store the continuation state for later extension.
+    fn store_continuation(
+        &mut self,
+        entity: Entity,
+        initial_pos: DVec2,
+        initial_vel: DVec2,
+        continuation: ContinuationState,
+        deflector_hash: u64,
+        start_time: f64,
+    ) {
+        self.entity = Some(entity);
+        self.initial_pos = initial_pos;
+        self.initial_vel = initial_vel;
+        self.continuation = Some(continuation);
+        self.deflector_hash = deflector_hash;
+        self.prediction_start_time = start_time;
+    }
+
+    /// Mark the trajectory as terminal (collision or escape reached).
+    fn mark_terminal(&mut self) {
+        self.is_terminal = true;
+        self.continuation = None;
+    }
+}
+
+/// CPU budget management for prediction computation.
+///
+/// Automatically adapts the number of integration steps per frame based on
+/// measured performance. This ensures prediction doesn't cause frame drops
+/// on slower hardware while taking full advantage of faster hardware.
+#[derive(Resource)]
+pub struct PredictionBudget {
+    /// Target time budget per prediction update (microseconds).
+    /// Default: 5000μs (5ms) = 10% of 60 FPS frame budget.
+    pub target_micros: f64,
+
+    /// Exponentially weighted moving average of per-step cost (microseconds).
+    /// Updated after each prediction run.
+    step_cost_ewma: f64,
+
+    /// EWMA smoothing factor (0..1). Higher = more responsive to recent measurements.
+    ewma_alpha: f64,
+
+    /// Computed step budget for next prediction.
+    pub steps_budget: usize,
+
+    /// Minimum steps per extension (to make progress even on slow hardware).
+    min_steps: usize,
+
+    /// Maximum steps per extension (to bound worst-case latency).
+    max_steps: usize,
+}
+
+impl Default for PredictionBudget {
+    fn default() -> Self {
+        Self {
+            target_micros: 5000.0, // 5ms = 10% of 60 FPS frame
+            step_cost_ewma: 1.0,   // Initial estimate: 1μs per step (will be calibrated)
+            ewma_alpha: 0.2,       // Moderate smoothing
+            steps_budget: 5000,    // Initial budget
+            min_steps: 1000,       // Always make at least this much progress
+            max_steps: 20000,      // Cap to prevent long freezes
+        }
+    }
+}
+
+impl PredictionBudget {
+    /// Update step cost estimate based on measured performance.
+    pub fn update_cost(&mut self, steps_taken: usize, elapsed_micros: f64) {
+        if steps_taken > 0 {
+            let measured_cost = elapsed_micros / steps_taken as f64;
+            self.step_cost_ewma =
+                self.ewma_alpha * measured_cost + (1.0 - self.ewma_alpha) * self.step_cost_ewma;
+
+            // Recompute budget based on updated cost estimate
+            self.steps_budget = self.compute_budget();
+        }
+    }
+
+    /// Compute optimal step budget based on target time and cost estimate.
+    fn compute_budget(&self) -> usize {
+        let optimal = (self.target_micros / self.step_cost_ewma) as usize;
+        optimal.clamp(self.min_steps, self.max_steps)
+    }
+
+    /// Get the current step budget for extension.
+    pub fn get_extension_budget(&self) -> usize {
+        self.steps_budget
+    }
+}
+
+/// Compute a simple hash of deflector configuration for cache invalidation.
+fn compute_deflector_hash(deflectors: &[ContinuousDeflector]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    use std::collections::hash_map::DefaultHasher;
+
+    let mut hasher = DefaultHasher::new();
+
+    for d in deflectors {
+        // Hash relevant fields that affect trajectory
+        d.target.hash(&mut hasher);
+        d.launch_time.to_bits().hash(&mut hasher);
+        std::mem::discriminant(&d.state).hash(&mut hasher);
+        std::mem::discriminant(&d.payload).hash(&mut hasher);
+    }
+
+    hasher.finish()
 }
 
 /// Track selection and time changes to trigger prediction recalculation.
@@ -188,6 +360,11 @@ fn find_dominant_body_from_sources(pos: DVec2, sources: &GravitySourcesWithId) -
 /// This provides consistent, fast results suitable for interactive use.
 /// The actual simulation uses IAS15 for high accuracy, but the displayed
 /// trajectory preview uses Verlet which is accurate enough for visualization.
+///
+/// # Incremental Extension
+/// When not dragging, uses TrajectoryCache to extend trajectories incrementally.
+/// This enables efficient computation of very long trajectories (12+ years)
+/// while maintaining responsive updates during drag operations.
 #[allow(clippy::too_many_arguments)]
 fn predict_trajectory(
     mut asteroids: Query<(Entity, &BodyState, &mut TrajectoryPath), With<Asteroid>>,
@@ -197,6 +374,8 @@ fn predict_trajectory(
     sim_time: Res<SimulationTime>,
     settings: Res<PredictionSettings>,
     mut state: ResMut<PredictionState>,
+    mut cache: ResMut<TrajectoryCache>,
+    mut budget: ResMut<PredictionBudget>,
     velocity_drag: Res<VelocityDragState>,
     position_drag: Res<DragState>,
     camera: Res<CameraState>,
@@ -206,35 +385,25 @@ fn predict_trajectory(
 
     // Get selected asteroid entity
     let Some(SelectableBody::Asteroid(selected_entity)) = selected.body else {
+        cache.invalidate();
         return;
     };
 
     // Find the selected asteroid
     let Ok((_, body_state, mut trajectory)) = asteroids.get_mut(selected_entity) else {
+        cache.invalidate();
         return;
     };
 
     // Skip if velocity is essentially zero
     if body_state.vel.length() < 1.0 {
         trajectory.points.clear();
+        cache.invalidate();
         state.needs_update = false;
         state.frame_counter = 0;
         state.last_sim_time = sim_time.current;
         return;
     }
-
-    // Clear old trajectory
-    trajectory.points.clear();
-    trajectory.ends_in_collision = false;
-    trajectory.collision_target = None;
-
-    // Store starting point with dominant body calculation (for coloring)
-    let start_dominant = find_dominant_body(body_state.pos, sim_time.current, &ephemeris);
-    trajectory.points.push(TrajectoryPoint {
-        pos: body_state.pos,
-        time: sim_time.current,
-        dominant_body: start_dominant,
-    });
 
     // Check if we're in interactive drag mode (either position or velocity)
     let is_dragging = velocity_drag.dragging || position_drag.dragging.is_some();
@@ -246,18 +415,114 @@ fn predict_trajectory(
         .map(|(_, d)| d.clone())
         .collect();
 
-    // Run Velocity Verlet prediction with zoom-dependent timesteps
-    predict_with_verlet(
-        selected_entity,
-        body_state,
-        &ephemeris,
-        sim_time.current,
-        &settings,
-        &mut trajectory,
-        is_dragging,
-        camera.zoom,
-        &deflector_snapshot,
-    );
+    let deflector_hash = compute_deflector_hash(&deflector_snapshot);
+
+    // Determine if we can use the cache for incremental extension
+    let can_extend = !is_dragging
+        && cache.is_valid_for(selected_entity, body_state.pos, body_state.vel, deflector_hash)
+        && cache.continuation.is_some();
+
+    // Get step budget from adaptive system
+    let step_budget = budget.get_extension_budget();
+
+    if can_extend {
+        // Incremental extension: prune old points and continue from cached state
+        prune_old_points(&mut trajectory, sim_time.current);
+
+        // Get the continuation state
+        let continuation = cache.continuation.as_ref().unwrap().clone();
+        let steps_before = continuation.steps;
+
+        // Time the prediction
+        let start_time = Instant::now();
+
+        // Extend trajectory from where we left off
+        let result = predict_with_verlet_continue(
+            selected_entity,
+            body_state,
+            &ephemeris,
+            &settings,
+            &mut trajectory,
+            camera.zoom,
+            &deflector_snapshot,
+            continuation,
+            step_budget,
+        );
+
+        // Update budget with measured performance
+        let elapsed_micros = start_time.elapsed().as_micros() as f64;
+        let steps_taken = result
+            .continuation
+            .as_ref()
+            .map(|c| c.steps - steps_before)
+            .unwrap_or(0);
+        budget.update_cost(steps_taken, elapsed_micros);
+
+        // Update cache with new continuation state
+        if let Some(new_continuation) = result.continuation {
+            cache.continuation = Some(new_continuation);
+        }
+        if result.is_terminal {
+            cache.mark_terminal();
+        }
+    } else {
+        // Full recomputation
+        trajectory.points.clear();
+        trajectory.ends_in_collision = false;
+        trajectory.collision_target = None;
+
+        // Store starting point with dominant body calculation (for coloring)
+        let start_dominant = find_dominant_body(body_state.pos, sim_time.current, &ephemeris);
+        trajectory.points.push(TrajectoryPoint {
+            pos: body_state.pos,
+            time: sim_time.current,
+            dominant_body: start_dominant,
+        });
+
+        // Time the prediction
+        let start_time = Instant::now();
+
+        // Run prediction (either dragging mode or full recompute)
+        let result = predict_with_verlet_full(
+            selected_entity,
+            body_state,
+            &ephemeris,
+            sim_time.current,
+            &settings,
+            &mut trajectory,
+            is_dragging,
+            camera.zoom,
+            &deflector_snapshot,
+        );
+
+        // Update budget with measured performance
+        let elapsed_micros = start_time.elapsed().as_micros() as f64;
+        let steps_taken = result
+            .continuation
+            .as_ref()
+            .map(|c| c.steps)
+            .unwrap_or(0);
+        budget.update_cost(steps_taken, elapsed_micros);
+
+        // Update cache if not dragging
+        if !is_dragging {
+            if let Some(continuation) = result.continuation {
+                cache.store_continuation(
+                    selected_entity,
+                    body_state.pos,
+                    body_state.vel,
+                    continuation,
+                    deflector_hash,
+                    sim_time.current,
+                );
+            }
+            if result.is_terminal {
+                cache.mark_terminal();
+            }
+        } else {
+            cache.invalidate();
+        }
+    }
 
     // Compute trajectory outcome
     let prediction_time_span = trajectory
@@ -295,7 +560,32 @@ fn predict_trajectory(
     state.last_sim_time = sim_time.current;
 }
 
-/// Predict trajectory using Velocity Verlet integrator with adaptive timestep.
+/// Prune trajectory points that are in the past (before current simulation time).
+fn prune_old_points(trajectory: &mut TrajectoryPath, current_time: f64) {
+    // Keep some buffer (1 day) to avoid visual popping
+    let cutoff = current_time - 86400.0;
+
+    // Find first point that's after cutoff
+    let keep_from = trajectory
+        .points
+        .iter()
+        .position(|p| p.time > cutoff)
+        .unwrap_or(0);
+
+    if keep_from > 0 {
+        trajectory.points.drain(0..keep_from);
+    }
+}
+
+/// Result of trajectory prediction including continuation state.
+struct PredictionResult {
+    /// Continuation state for incremental extension (None if terminal)
+    continuation: Option<ContinuationState>,
+    /// Whether trajectory reached a terminal state (collision or escape)
+    is_terminal: bool,
+}
+
+/// Predict trajectory using Velocity Verlet integrator with adaptive timestep (full recomputation).
 ///
 /// Uses the same physics-based adaptive timestep as live simulation, ensuring
 /// predicted trajectories match actual behavior. Zoom level only affects
@@ -303,8 +593,15 @@ fn predict_trajectory(
 ///
 /// Includes continuous thrust from active deflectors in the acceleration
 /// calculation for accurate prediction of deflected trajectories.
+///
+/// # Optimization Note
+/// This function uses unified ephemeris queries (`get_gravity_sources_full`) to
+/// fetch position, GM, and collision radius in a single pass. This reduces
+/// ephemeris interpolations from 24 per step to 8, yielding ~3x speedup.
+///
+/// Returns a `PredictionResult` with continuation state for incremental extension.
 #[allow(clippy::too_many_arguments)]
-fn predict_with_verlet(
+fn predict_with_verlet_full(
     target_entity: Entity,
     body_state: &BodyState,
     ephemeris: &Ephemeris,
@@ -314,7 +611,7 @@ fn predict_with_verlet(
     is_dragging: bool,
     zoom: f32,
     deflectors: &[ContinuousDeflector],
-) {
+) -> PredictionResult {
     // Use physics-based adaptive timestep with config appropriate for prediction
     let config = if is_dragging {
         PredictionConfig::for_dragging()
@@ -334,15 +631,13 @@ fn predict_with_verlet(
     let mut sim_t = start_time;
     let end_t = start_time + settings.max_time;
     let asteroid_mass = body_state.mass;
+    let has_deflectors = !deflectors.is_empty();
 
-    // Compute total acceleration including gravity and continuous thrust
-    let compute_total_acc = |pos: DVec2, vel: DVec2, sim_t: f64| -> DVec2 {
-        let gravity_acc = compute_acceleration(pos, sim_t, ephemeris);
-
-        if deflectors.is_empty() {
+    // Helper to add continuous thrust to gravity acceleration
+    let add_thrust = |gravity_acc: DVec2, pos: DVec2, vel: DVec2, sim_t: f64| -> DVec2 {
+        if !has_deflectors {
             gravity_acc
         } else {
-            // Create deflector refs for thrust calculation
             let deflector_refs: Vec<(Entity, &ContinuousDeflector)> = deflectors
                 .iter()
                 .map(|d| (Entity::PLACEHOLDER, d))
@@ -359,8 +654,14 @@ fn predict_with_verlet(
         }
     };
 
-    // Initialize with first acceleration and timestep
-    let mut acc = compute_total_acc(pos, vel, sim_t);
+    // Initialize with first acceleration using unified query
+    let initial_sources = ephemeris.get_gravity_sources_full(sim_t);
+    let mut acc = add_thrust(
+        compute_acceleration_from_full_sources(pos, &initial_sources),
+        pos,
+        vel,
+        sim_t,
+    );
     let mut dt = config.initial_dt;
 
     let mut step = 0;
@@ -370,12 +671,19 @@ fn predict_with_verlet(
         // Velocity Verlet integration
         // Step 1: Position update
         let pos_new = pos + vel * dt + acc * (0.5 * dt * dt);
+        let new_time = sim_t + dt;
 
-        // Step 2: Compute new acceleration (approximate velocity for thrust direction)
+        // Step 2: Get all gravity data in ONE ephemeris lookup
+        let sources = ephemeris.get_gravity_sources_full(new_time);
+
+        // Step 3: Compute acceleration, dominant body, and collision in ONE pass
+        let gravity_result = compute_gravity_full(pos_new, &sources);
+
+        // Add continuous thrust if present
         let vel_approx = vel + acc * dt; // First-order velocity approximation
-        let acc_new = compute_total_acc(pos_new, vel_approx, sim_t + dt);
+        let acc_new = add_thrust(gravity_result.acceleration, pos_new, vel_approx, new_time);
 
-        // Step 3: Velocity update
+        // Step 4: Velocity update
         let vel_new = vel + (acc + acc_new) * (0.5 * dt);
 
         // Compute adaptive timestep using unified logic
@@ -392,22 +700,22 @@ fn predict_with_verlet(
         pos = pos_new;
         vel = vel_new;
         acc = acc_new;
-        sim_t += dt;
+        sim_t = new_time;
         dt = dt_new;
         step += 1;
 
         // Store points at interval with dominant body info (for coloring)
+        // Dominant body was already computed in gravity_result
         if step % point_interval == 0 {
-            let dominant = find_dominant_body(pos, sim_t, ephemeris);
             trajectory.points.push(TrajectoryPoint {
                 pos,
                 time: sim_t,
-                dominant_body: dominant,
+                dominant_body: gravity_result.dominant_body,
             });
         }
 
-        // Check collision (always check - needed for trajectory coloring during drag)
-        if let Some(body_id) = ephemeris.check_collision(pos, sim_t) {
+        // Check collision (already computed in gravity_result)
+        if let Some(body_id) = gravity_result.collision {
             trajectory.ends_in_collision = true;
             trajectory.collision_target = Some(body_id);
             // Collision point: the collided body dominates
@@ -416,15 +724,176 @@ fn predict_with_verlet(
                 time: sim_t,
                 dominant_body: Some(body_id),
             });
-            break;
+            return PredictionResult {
+                continuation: None,
+                is_terminal: true,
+            };
         }
 
         // Check escape or crash
         const ESCAPE_DISTANCE: f64 = 100.0 * 1.495978707e11; // 100 AU
         const CRASH_DISTANCE: f64 = 1e9; // ~Sun radius
         if pos.length() > ESCAPE_DISTANCE || pos.length() < CRASH_DISTANCE {
-            break;
+            return PredictionResult {
+                continuation: None,
+                is_terminal: true,
+            };
         }
+    }
+
+    // Return continuation state for future extension
+    PredictionResult {
+        continuation: Some(ContinuationState {
+            pos,
+            vel,
+            acc,
+            dt,
+            sim_t,
+            steps: step,
+        }),
+        is_terminal: false,
+    }
+}
+
+/// Continue trajectory prediction from a cached state (incremental extension).
+///
+/// This function continues where a previous prediction left off, enabling
+/// efficient computation of very long trajectories over multiple frames.
+#[allow(clippy::too_many_arguments)]
+fn predict_with_verlet_continue(
+    target_entity: Entity,
+    body_state: &BodyState,
+    ephemeris: &Ephemeris,
+    settings: &PredictionSettings,
+    trajectory: &mut TrajectoryPath,
+    zoom: f32,
+    deflectors: &[ContinuousDeflector],
+    continuation: ContinuationState,
+    step_budget: usize,
+) -> PredictionResult {
+    let config = PredictionConfig::default();
+
+    // Zoom only affects point storage density (visual smoothness)
+    let zoom_scale = (zoom as f64).sqrt().clamp(0.1, 10.0);
+    let point_interval = ((2.0 * zoom_scale) as usize).max(1);
+
+    let mut pos = continuation.pos;
+    let mut vel = continuation.vel;
+    let mut acc = continuation.acc;
+    let mut dt = continuation.dt;
+    let mut sim_t = continuation.sim_t;
+    let mut step = continuation.steps;
+    let end_t = sim_t + settings.max_time;
+    let asteroid_mass = body_state.mass;
+    let has_deflectors = !deflectors.is_empty();
+
+    // Helper to add continuous thrust to gravity acceleration
+    let add_thrust = |gravity_acc: DVec2, pos: DVec2, vel: DVec2, sim_t: f64| -> DVec2 {
+        if !has_deflectors {
+            gravity_acc
+        } else {
+            let deflector_refs: Vec<(Entity, &ContinuousDeflector)> = deflectors
+                .iter()
+                .map(|d| (Entity::PLACEHOLDER, d))
+                .collect();
+            let thrust_acc = compute_continuous_thrust(
+                target_entity,
+                pos,
+                vel,
+                asteroid_mass,
+                sim_t,
+                &deflector_refs,
+            );
+            gravity_acc + thrust_acc
+        }
+    };
+
+    // Use the adaptive step budget from PredictionBudget
+    let max_steps_this_frame = step + step_budget;
+    let max_total_steps = settings.max_steps;
+
+    while step < max_steps_this_frame && step < max_total_steps && sim_t < end_t {
+        // Velocity Verlet integration
+        let pos_new = pos + vel * dt + acc * (0.5 * dt * dt);
+        let new_time = sim_t + dt;
+
+        // Get all gravity data in ONE ephemeris lookup
+        let sources = ephemeris.get_gravity_sources_full(new_time);
+
+        // Compute acceleration, dominant body, and collision in ONE pass
+        let gravity_result = compute_gravity_full(pos_new, &sources);
+
+        // Add continuous thrust if present
+        let vel_approx = vel + acc * dt;
+        let acc_new = add_thrust(gravity_result.acceleration, pos_new, vel_approx, new_time);
+
+        // Velocity update
+        let vel_new = vel + (acc + acc_new) * (0.5 * dt);
+
+        // Compute adaptive timestep
+        let dt_new = compute_adaptive_dt(
+            acc,
+            acc_new,
+            dt,
+            config.min_dt,
+            config.max_dt,
+            config.epsilon,
+        );
+
+        // Update state
+        pos = pos_new;
+        vel = vel_new;
+        acc = acc_new;
+        sim_t = new_time;
+        dt = dt_new;
+        step += 1;
+
+        // Store points at interval
+        if step % point_interval == 0 {
+            trajectory.points.push(TrajectoryPoint {
+                pos,
+                time: sim_t,
+                dominant_body: gravity_result.dominant_body,
+            });
+        }
+
+        // Check collision
+        if let Some(body_id) = gravity_result.collision {
+            trajectory.ends_in_collision = true;
+            trajectory.collision_target = Some(body_id);
+            trajectory.points.push(TrajectoryPoint {
+                pos,
+                time: sim_t,
+                dominant_body: Some(body_id),
+            });
+            return PredictionResult {
+                continuation: None,
+                is_terminal: true,
+            };
+        }
+
+        // Check escape or crash
+        const ESCAPE_DISTANCE: f64 = 100.0 * 1.495978707e11; // 100 AU
+        const CRASH_DISTANCE: f64 = 1e9; // ~Sun radius
+        if pos.length() > ESCAPE_DISTANCE || pos.length() < CRASH_DISTANCE {
+            return PredictionResult {
+                continuation: None,
+                is_terminal: true,
+            };
+        }
+    }
+
+    // Return continuation state for future extension
+    PredictionResult {
+        continuation: Some(ContinuationState {
+            pos,
+            vel,
+            acc,
+            dt,
+            sim_t,
+            steps: step,
+        }),
+        is_terminal: false,
     }
 }
 
@@ -628,9 +1097,9 @@ mod tests {
     fn test_prediction_settings_defaults() {
         let settings = PredictionSettings::default();
 
-        assert_eq!(settings.max_steps, 50_000);
-        // 5 years in seconds ≈ 1.577e8
-        assert!((settings.max_time - 5.0 * 365.25 * 24.0 * 3600.0).abs() < 1.0);
+        assert_eq!(settings.max_steps, 200_000);
+        // 15 years in seconds ≈ 4.73e8
+        assert!((settings.max_time - 15.0 * 365.25 * 24.0 * 3600.0).abs() < 1.0);
         assert!(settings.update_interval > 0);
         assert_eq!(settings.point_interval, 20);
     }
