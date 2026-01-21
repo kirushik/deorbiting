@@ -39,7 +39,8 @@ pub enum DeflectionMethod {
 }
 
 impl DeflectionMethod {
-    fn icon(&self) -> &'static str {
+    /// Get the icon for this deflection method.
+    pub fn icon(&self) -> &'static str {
         use crate::ui::icons;
         match self {
             DeflectionMethod::Kinetic => icons::KINETIC,
@@ -52,7 +53,8 @@ impl DeflectionMethod {
         }
     }
 
-    fn name(&self) -> &'static str {
+    /// Get the display name for this deflection method.
+    pub fn name(&self) -> &'static str {
         match self {
             DeflectionMethod::Kinetic => "Kinetic",
             DeflectionMethod::Nuclear => "Nuclear",
@@ -64,7 +66,8 @@ impl DeflectionMethod {
         }
     }
 
-    fn color(&self) -> egui::Color32 {
+    /// Get the accent color for this deflection method.
+    pub fn color(&self) -> egui::Color32 {
         match self {
             DeflectionMethod::Kinetic => egui::Color32::from_rgb(255, 180, 100),
             DeflectionMethod::Nuclear => egui::Color32::from_rgb(255, 100, 100),
@@ -111,6 +114,7 @@ const ALL_METHODS: [DeflectionMethod; 7] = [
 ];
 
 /// System to render the radial deflection menu.
+/// The menu is opened via right-click on asteroid (handled by selection system).
 #[allow(clippy::too_many_arguments)]
 pub fn radial_menu_system(
     mut contexts: EguiContexts,
@@ -150,9 +154,10 @@ pub fn radial_menu_system(
     let center = egui::pos2(menu_state.position.x, menu_state.position.y);
     let radius = 90.0;
 
-    // Draw the radial menu
+    // Draw the radial menu (non-modal - allows viewport interaction)
     egui::Area::new(egui::Id::new("radial_menu"))
         .fixed_pos(center - egui::vec2(radius + 50.0, radius + 50.0))
+        .interactable(true)
         .show(ctx, |ui| {
             // Background circle
             ui.painter().circle(
@@ -162,20 +167,20 @@ pub fn radial_menu_system(
                 egui::Stroke::new(2.0, egui::Color32::from_rgb(60, 60, 80)),
             );
 
-            // Flight time indicator at center
+            // Flight time indicator at center - use primary color for mission-critical info
             ui.painter().text(
                 center - egui::vec2(0.0, 8.0),
                 egui::Align2::CENTER_CENTER,
                 format!("{:.0}d", flight_time_days),
                 egui::FontId::proportional(16.0),
-                egui::Color32::from_rgb(180, 180, 190),
+                egui::Color32::from_rgb(220, 220, 230), // PRIMARY - mission-critical
             );
             ui.painter().text(
                 center + egui::vec2(0.0, 8.0),
                 egui::Align2::CENTER_CENTER,
                 "flight",
-                egui::FontId::proportional(11.0),
-                egui::Color32::from_rgb(120, 120, 130),
+                egui::FontId::proportional(13.0), // Minimum readable size
+                egui::Color32::from_rgb(220, 220, 230), // PRIMARY
             );
 
             // Arrange all 7 methods in a circle
@@ -186,9 +191,8 @@ pub fn radial_menu_system(
                     + (i as f32 * std::f32::consts::TAU / num_methods as f32);
                 let button_pos = center + egui::vec2(angle.cos() * radius, angle.sin() * radius);
 
-                // Show keyboard shortcut number (1-7)
-                let shortcut_key = (i + 1).to_string();
-                if render_method_button(ui, button_pos, *method, &shortcut_key) {
+                // No keyboard shortcut display (removed to avoid conflict with dock speed keys)
+                if render_method_button(ui, button_pos, *method) {
                     apply_deflection(
                         target,
                         *method,
@@ -202,7 +206,7 @@ pub fn radial_menu_system(
             }
         });
 
-    // Close on click outside
+    // Close on click outside the menu area
     if ctx.input(|i| i.pointer.any_pressed())
         && let Some(pos) = ctx.input(|i| i.pointer.hover_pos())
     {
@@ -217,40 +221,12 @@ pub fn radial_menu_system(
         menu_state.open = false;
     }
 
-    // Keyboard shortcuts for quick selection (1-7)
-    let key_method_map = [
-        (egui::Key::Num1, DeflectionMethod::Kinetic),
-        (egui::Key::Num2, DeflectionMethod::Nuclear),
-        (egui::Key::Num3, DeflectionMethod::NuclearSplit),
-        (egui::Key::Num4, DeflectionMethod::IonBeam),
-        (egui::Key::Num5, DeflectionMethod::GravityTractor),
-        (egui::Key::Num6, DeflectionMethod::LaserAblation),
-        (egui::Key::Num7, DeflectionMethod::SolarSail),
-    ];
-
-    for (key, method) in key_method_map {
-        if ctx.input(|i| i.key_pressed(key)) {
-            apply_deflection(
-                target,
-                method,
-                asteroid_state,
-                flight_time_seconds,
-                &mut launch_events,
-                &mut continuous_launch_events,
-            );
-            menu_state.open = false;
-            break;
-        }
-    }
+    // NOTE: Keyboard shortcuts 1-7 removed to avoid conflict with dock speed keys.
+    // Use inline deflection strip in context card or banner for quick access.
 }
 
 /// Render a method button. Returns true if clicked.
-fn render_method_button(
-    ui: &mut egui::Ui,
-    pos: egui::Pos2,
-    method: DeflectionMethod,
-    shortcut: &str,
-) -> bool {
+fn render_method_button(ui: &mut egui::Ui, pos: egui::Pos2, method: DeflectionMethod) -> bool {
     let button_size = 44.0;
     let rect = egui::Rect::from_center_size(pos, egui::vec2(button_size, button_size));
 
@@ -273,21 +249,12 @@ fn render_method_button(
         egui::StrokeKind::Middle,
     );
 
-    // Keyboard shortcut badge (top-left corner)
-    ui.painter().text(
-        pos + egui::vec2(-button_size / 2.0 + 6.0, -button_size / 2.0 + 8.0),
-        egui::Align2::LEFT_TOP,
-        shortcut,
-        egui::FontId::proportional(10.0),
-        egui::Color32::from_rgb(150, 150, 160),
-    );
-
-    // Icon (use proportional font where Phosphor is added as fallback)
+    // Icon (must use explicit Phosphor font family)
     ui.painter().text(
         pos,
         egui::Align2::CENTER_CENTER,
         method.icon(),
-        egui::FontId::proportional(20.0),
+        egui::FontId::new(20.0, egui::FontFamily::Name("phosphor".into())),
         egui::Color32::WHITE,
     );
 
@@ -310,8 +277,8 @@ fn render_method_button(
         pos + egui::vec2(0.0, button_size / 2.0 + 22.0),
         egui::Align2::CENTER_TOP,
         type_label,
-        egui::FontId::proportional(11.0),
-        egui::Color32::from_rgb(130, 130, 140),
+        egui::FontId::proportional(11.0), // Truly supplementary - OK at 11px
+        egui::Color32::from_rgb(180, 180, 190), // Secondary text
     );
 
     response.clicked()

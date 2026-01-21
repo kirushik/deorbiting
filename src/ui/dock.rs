@@ -80,9 +80,7 @@ pub fn dock_system(
                 if ui
                     .add_sized(
                         [DOCK_BUTTON_SIZE, DOCK_BUTTON_SIZE],
-                        egui::Button::new(
-                            egui::RichText::new(play_icon).size(18.0).color(play_color),
-                        ),
+                        egui::Button::new(icons::icon_colored(play_icon, 18.0, play_color)),
                     )
                     .on_hover_text(play_tooltip)
                     .clicked()
@@ -178,7 +176,7 @@ pub fn dock_system(
                         [80.0, DOCK_BUTTON_SIZE],
                         egui::Label::new(
                             egui::RichText::new("No asteroids")
-                                .size(13.0)
+                                .size(12.0)
                                 .color(colors::SPEED_INACTIVE),
                         ),
                     );
@@ -209,11 +207,11 @@ pub fn dock_system(
                         let response = ui
                             .add_sized(
                                 [DOCK_BUTTON_SIZE, DOCK_BUTTON_SIZE],
-                                egui::Button::new(
-                                    egui::RichText::new(icons::ASTEROID)
-                                        .size(14.0)
-                                        .color(dot_color),
-                                )
+                                egui::Button::new(icons::icon_colored(
+                                    icons::ASTEROID,
+                                    14.0,
+                                    dot_color,
+                                ))
                                 .frame(is_selected),
                             )
                             .on_hover_text(&name.0);
@@ -233,7 +231,7 @@ pub fn dock_system(
                 let add_color = if placement_mode.active {
                     colors::SPEED_ACTIVE
                 } else {
-                    colors::SPEED_INACTIVE
+                    colors::TEXT // Use primary text color, not disabled grey
                 };
                 let add_tooltip = if placement_mode.active {
                     "Click on viewport to place (Right-click to cancel)"
@@ -243,9 +241,7 @@ pub fn dock_system(
                 if ui
                     .add_sized(
                         [DOCK_BUTTON_SIZE, DOCK_BUTTON_SIZE],
-                        egui::Button::new(
-                            egui::RichText::new(icons::ADD).size(14.0).color(add_color),
-                        ),
+                        egui::Button::new(icons::icon_colored(icons::ADD, 14.0, add_color)),
                     )
                     .on_hover_text(add_tooltip)
                     .clicked()
@@ -258,7 +254,7 @@ pub fn dock_system(
                     // Help button
                     let help_response = ui.add_sized(
                         [DOCK_BUTTON_SIZE, DOCK_BUTTON_SIZE],
-                        egui::Button::new(egui::RichText::new(icons::HELP).size(18.0)),
+                        egui::Button::new(icons::icon(icons::HELP, 18.0)),
                     );
                     if help_response.hovered() || help_state.visible {
                         help_state.visible = help_response.hovered();
@@ -268,7 +264,7 @@ pub fn dock_system(
                     }
 
                     // Scenarios button
-                    let scenarios_icon = if drawer_state.open {
+                    let scenarios_icon_str = if drawer_state.open {
                         icons::COLLAPSE
                     } else {
                         icons::MENU
@@ -276,7 +272,7 @@ pub fn dock_system(
                     if ui
                         .add_sized(
                             [DOCK_BUTTON_SIZE, DOCK_BUTTON_SIZE],
-                            egui::Button::new(egui::RichText::new(scenarios_icon).size(18.0)),
+                            egui::Button::new(icons::icon(scenarios_icon_str, 18.0)),
                         )
                         .on_hover_text("Scenarios (Esc)")
                         .clicked()
@@ -288,7 +284,7 @@ pub fn dock_system(
                     if ui
                         .add_sized(
                             [DOCK_BUTTON_SIZE, DOCK_BUTTON_SIZE],
-                            egui::Button::new(egui::RichText::new(icons::RESET).size(18.0)),
+                            egui::Button::new(icons::icon(icons::RESET, 18.0)),
                         )
                         .on_hover_text("Reset scenario (R)")
                         .clicked()

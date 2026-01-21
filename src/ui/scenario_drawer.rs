@@ -73,12 +73,12 @@ pub fn scenario_drawer_system(
 
                 // Header
                 ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("Select Scenario").size(18.0).strong());
+                    ui.label(egui::RichText::new("Select Scenario").size(16.0).strong());
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         use crate::ui::icons;
                         if ui
                             .add(
-                                egui::Button::new(egui::RichText::new(icons::CLOSE).size(16.0))
+                                egui::Button::new(icons::icon(icons::CLOSE, 16.0))
                                     .min_size(egui::vec2(28.0, 28.0)),
                             )
                             .on_hover_text("Close (Esc)")
@@ -183,12 +183,12 @@ fn render_scenario_card(
 
     let inner_rect = rect.shrink(10.0);
 
-    // Icon (Phosphor icon)
+    // Icon (Phosphor icon - must use explicit font family)
     ui.painter().text(
         egui::pos2(inner_rect.center().x, inner_rect.top() + 22.0),
         egui::Align2::CENTER_CENTER,
         icon,
-        egui::FontId::proportional(28.0),
+        egui::FontId::new(28.0, egui::FontFamily::Name("phosphor".into())),
         icon_color,
     );
 
@@ -197,7 +197,7 @@ fn render_scenario_card(
         egui::pos2(inner_rect.center().x, inner_rect.top() + 55.0),
         egui::Align2::CENTER_CENTER,
         name,
-        egui::FontId::proportional(15.0),
+        egui::FontId::proportional(14.0),
         egui::Color32::WHITE,
     );
 
@@ -211,17 +211,17 @@ fn render_scenario_card(
         egui::pos2(inner_rect.center().x, inner_rect.top() + 80.0),
         egui::Align2::CENTER_CENTER,
         desc_short,
-        egui::FontId::proportional(11.0),
-        egui::Color32::from_rgb(160, 160, 170),
+        egui::FontId::proportional(12.0),
+        egui::Color32::from_rgb(180, 180, 190), // Secondary text for better contrast
     );
 
-    // Current indicator
+    // Current indicator - use Phosphor check icon, not ASCII asterisk
     if is_current {
         ui.painter().text(
-            egui::pos2(inner_rect.right() - 2.0, inner_rect.top() + 2.0),
+            egui::pos2(inner_rect.right() - 4.0, inner_rect.top() + 4.0),
             egui::Align2::RIGHT_TOP,
-            "*",
-            egui::FontId::proportional(14.0),
+            crate::ui::icons::CHECK,
+            egui::FontId::new(12.0, egui::FontFamily::Name("phosphor".into())),
             egui::Color32::from_rgb(85, 221, 136),
         );
     }

@@ -2,18 +2,61 @@
 //!
 //! Provides icon constants using the Phosphor icon font.
 //! Icons are initialized via `setup_fonts` when the app starts.
+//!
+//! **Important**: Always use [`icon()`] to render icons, not raw `RichText::new(ICON)`.
+//! This ensures the Phosphor font is used explicitly, avoiding fallback issues.
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 
-/// Resource to track if fonts have been initialized.
-#[derive(Resource, Default)]
-pub struct FontsInitialized(pub bool);
+/// The font family name for Phosphor icons.
+/// Used internally to ensure icons render with the correct font.
+const PHOSPHOR_FONT: &str = "phosphor";
 
-/// System to initialize Phosphor icon fonts.
+/// Creates a RichText for an icon using the Phosphor font explicitly.
+///
+/// This uses a named font family to guarantee Phosphor is used for icons,
+/// avoiding any font fallback issues.
+///
+/// # Example
+/// ```ignore
+/// ui.label(icons::icon(icons::PLANET, 16.0));
+/// ```
+pub fn icon(icon_str: &str, size: f32) -> egui::RichText {
+    egui::RichText::new(icon_str)
+        .size(size)
+        .family(egui::FontFamily::Name(PHOSPHOR_FONT.into()))
+}
+
+/// Creates a colored icon RichText.
+pub fn icon_colored(icon_str: &str, size: f32, color: egui::Color32) -> egui::RichText {
+    icon(icon_str, size).color(color)
+}
+
+/// Resource to track font initialization state.
+/// UI systems should only run when this reaches 2+ (one frame after fonts are set).
+#[derive(Resource, Default)]
+pub struct FontsInitialized(pub u32);
+
+/// System to initialize fonts: Inter for UI text, Phosphor for icons.
 /// Runs in EguiPrimaryContextPass where the egui context is guaranteed to be ready.
+///
+/// Uses Inter Light (weight 300) to compensate for halation - light text on dark
+/// backgrounds appears heavier than intended. This is a standard dark mode optimization.
+///
+/// Font family is set to exactly [Inter, Phosphor] with NO system defaults.
+/// - Inter renders all regular text (A-Z, numbers, punctuation)
+/// - Phosphor renders icon characters (PUA codepoints that Inter lacks)
+/// - System defaults are excluded because they have fallback PUA glyphs
 pub fn setup_fonts(mut contexts: EguiContexts, mut initialized: ResMut<FontsInitialized>) {
-    if initialized.0 {
+    // State machine: 0 = not started, 1 = fonts set (wait one frame), 2+ = ready
+    if initialized.0 >= 2 {
+        return;
+    }
+
+    // If fonts were set last frame, increment to "ready" state
+    if initialized.0 == 1 {
+        initialized.0 = 2;
         return;
     }
 
@@ -22,12 +65,38 @@ pub fn setup_fonts(mut contexts: EguiContexts, mut initialized: ResMut<FontsInit
     };
 
     let mut fonts = egui::FontDefinitions::default();
-    egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
+
+    // Add Inter Light for text (weight 300 for dark mode halation compensation)
+    fonts.font_data.insert(
+        "inter".to_owned(),
+        std::sync::Arc::new(egui::FontData::from_static(include_bytes!(
+            "../../assets/fonts/Inter-Light.ttf"
+        ))),
+    );
+
+    // Add Phosphor icons font data
+    fonts.font_data.insert(
+        PHOSPHOR_FONT.to_owned(),
+        egui_phosphor::Variant::Regular.font_data().into(),
+    );
+
+    // Register Phosphor as a NAMED font family for explicit icon rendering.
+    // This allows icons::icon() to request this font directly, bypassing fallback.
+    fonts.families.insert(
+        egui::FontFamily::Name(PHOSPHOR_FONT.into()),
+        vec![PHOSPHOR_FONT.to_owned()],
+    );
+
+    // Set up Proportional family with Inter as primary text font.
+    // Keep system defaults for any characters Inter might lack.
+    if let Some(proportional) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
+        proportional.insert(0, "inter".to_owned());
+    }
 
     ctx.set_fonts(fonts);
-    initialized.0 = true;
+    initialized.0 = 1; // Set to 1, will become 2 next frame
 
-    info!("Phosphor icon fonts initialized");
+    info!("Fonts initialized: Inter Light + Phosphor icons");
 }
 
 // Re-export commonly used icons with semantic names for our app.
@@ -83,8 +152,10 @@ pub const SOLAR_SAIL: &str = egui_phosphor::regular::WIND;
 // Status icons
 /// Warning/alert icon
 pub const WARNING: &str = egui_phosphor::regular::WARNING;
-/// Success/check icon
+/// Success/check icon (circled)
 pub const SUCCESS: &str = egui_phosphor::regular::CHECK_CIRCLE;
+/// Check mark (simple)
+pub const CHECK: &str = egui_phosphor::regular::CHECK;
 /// Info icon
 pub const INFO: &str = egui_phosphor::regular::INFO;
 /// Clock/time icon

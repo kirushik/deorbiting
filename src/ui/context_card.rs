@@ -9,15 +9,20 @@ use bevy_egui::{EguiContexts, egui};
 use crate::asteroid::{Asteroid, AsteroidName};
 use crate::camera::{MainCamera, RENDER_SCALE};
 use crate::collision::CollisionState;
-use crate::continuous::{ContinuousDeflector, ContinuousDeflectorState};
+use crate::continuous::{
+    ContinuousDeflector, ContinuousDeflectorState, ContinuousPayload,
+    LaunchContinuousDeflectorEvent, ThrustDirection,
+};
 use crate::ephemeris::{CelestialBodyData, CelestialBodyId, Ephemeris, get_trivia};
+use crate::interceptor::{DeflectionPayload, LaunchInterceptorEvent};
 use crate::physics::IntegratorStates;
 use crate::render::{CelestialBody, SelectedBody};
-use crate::types::{AU_TO_METERS, BodyState, SelectableBody, SimulationTime};
+use crate::types::{AU_TO_METERS, BodyState, SECONDS_PER_DAY, SelectableBody, SimulationTime};
 
 use super::RadialMenuState;
+use super::icons;
+use super::radial_menu::DeflectionMethod;
 
-/// Colors for the context card.
 mod colors {
     use bevy_egui::egui::Color32;
 
@@ -25,13 +30,13 @@ mod colors {
     pub const CARD_BORDER: Color32 = Color32::from_rgb(60, 60, 80);
     pub const DANGER: Color32 = Color32::from_rgb(224, 85, 85);
     pub const SUCCESS: Color32 = Color32::from_rgb(85, 176, 85);
-    pub const ACCENT: Color32 = Color32::from_rgb(85, 153, 221);
+    pub const SECONDARY: Color32 = Color32::from_rgb(180, 180, 190);
 }
 
 /// Card dimensions for positioning calculations.
 const CARD_WIDTH: f32 = 200.0;
 const CARD_HEIGHT: f32 = 180.0; // Approximate height
-const CARD_MARGIN: f32 = 25.0; // Distance from object
+const CARD_MARGIN: f32 = 30.0; // Distance from object (per UI_GUIDELINES.md)
 const DOCK_HEIGHT: f32 = 56.0;
 const VELOCITY_ARROW_LENGTH: f32 = 35.0; // Approximate max arrow length to avoid
 
@@ -40,6 +45,20 @@ const EARTH_MASS: f64 = 5.972e24; // kg
 const JUPITER_MASS: f64 = 1.898e27; // kg
 const SOLAR_MASS: f64 = 1.989e30; // kg
 const EARTH_RADIUS: f64 = 6.371e6; // meters
+
+/// Base interceptor speed in m/s (for flight time calculation).
+const BASE_INTERCEPTOR_SPEED: f64 = 15_000.0;
+
+/// All deflection methods available in the inline strip.
+const ALL_METHODS: [DeflectionMethod; 7] = [
+    DeflectionMethod::Kinetic,
+    DeflectionMethod::Nuclear,
+    DeflectionMethod::NuclearSplit,
+    DeflectionMethod::IonBeam,
+    DeflectionMethod::GravityTractor,
+    DeflectionMethod::LaserAblation,
+    DeflectionMethod::SolarSail,
+];
 
 /// Format mass in appropriate units (Earth/Jupiter/Solar masses).
 fn format_mass(mass_kg: f64) -> String {
@@ -196,6 +215,8 @@ pub fn context_card_system(
     sim_time: Res<SimulationTime>,
     mut integrator_states: ResMut<IntegratorStates>,
     mut radial_menu_state: ResMut<RadialMenuState>,
+    mut launch_events: MessageWriter<LaunchInterceptorEvent>,
+    mut continuous_launch_events: MessageWriter<LaunchContinuousDeflectorEvent>,
 ) {
     let Some(ctx) = contexts.ctx_mut().ok() else {
         return;
@@ -264,6 +285,14 @@ pub fn context_card_system(
                         None
                     };
 
+                    // Calculate flight time from Earth
+                    let earth_pos = ephemeris
+                        .get_position_by_id(CelestialBodyId::Earth, sim_time.current)
+                        .unwrap_or(bevy::math::DVec2::new(AU_TO_METERS, 0.0));
+                    let distance = (body_state.pos - earth_pos).length();
+                    let flight_time_seconds = distance / BASE_INTERCEPTOR_SPEED;
+                    let flight_time_days = flight_time_seconds / SECONDS_PER_DAY;
+
                     let result = render_asteroid_card(
                         ctx,
                         &name.0,
@@ -271,6 +300,7 @@ pub fn context_card_system(
                         screen_pos,
                         active_deflector,
                         vel_dir,
+                        flight_time_days,
                     );
 
                     if result.delete_clicked {
@@ -279,8 +309,17 @@ pub fn context_card_system(
                         selected.body = None;
                     }
 
-                    if result.deflect_clicked {
-                        radial_menu_state.open = true;
+                    // Handle deflection method selection
+                    if let Some(method) = result.selected_method {
+                        apply_deflection(
+                            entity,
+                            method,
+                            &body_state,
+                            flight_time_seconds,
+                            &mut launch_events,
+                            &mut continuous_launch_events,
+                        );
+                        // Also set radial menu state for right-click access
                         radial_menu_state.target = Some(entity);
                         radial_menu_state.position = screen_pos;
                     }
@@ -294,10 +333,10 @@ pub fn context_card_system(
 /// Result from rendering asteroid card.
 struct AsteroidCardResult {
     delete_clicked: bool,
-    deflect_clicked: bool,
+    /// Selected deflection method from inline strip (None if not clicked).
+    selected_method: Option<DeflectionMethod>,
 }
 
-/// Render context card for a celestial body with enhanced information.
 fn render_celestial_card(
     ctx: &egui::Context,
     body: &CelestialBody,
@@ -327,133 +366,60 @@ fn render_celestial_card(
 
             // Header with icon and name
             ui.horizontal(|ui| {
-                let icon = celestial_icon(body.id);
-                ui.label(egui::RichText::new(icon).size(16.0));
+                let icon_str = celestial_icon(body.id);
+                ui.label(icons::icon(icon_str, 16.0));
                 ui.label(egui::RichText::new(&body.name).strong().size(16.0));
             });
 
             ui.separator();
 
-            // Type
-            let body_type = celestial_type(body.id);
-            ui.label(egui::RichText::new(body_type).weak().size(13.0));
-
-            // Distance from Sun
-            let dist_au = distance_from_sun / AU_TO_METERS;
-            let dist_mkm = distance_from_sun / 1e9;
-            ui.label(egui::RichText::new(format!("{:.1} M km from Sun", dist_mkm)).size(14.0));
+            // Type - using SECONDARY instead of weak()
+            let body_type = celestial_type_detailed(body.id);
             ui.label(
-                egui::RichText::new(format!("({:.3} AU)", dist_au))
-                    .weak()
-                    .size(12.0),
+                egui::RichText::new(body_type)
+                    .color(colors::SECONDARY)
+                    .size(13.0),
             );
 
             ui.add_space(4.0);
 
-            // Orbital velocity
-            let vel_km_s = current_velocity / 1000.0;
-            ui.label(egui::RichText::new(format!("Velocity: {:.1} km/s", vel_km_s)).size(14.0));
-
-            // Orbital period and eccentricity (only for bodies with orbits)
-            if let Some(orbit) = &body_data.orbit {
-                // Period in days: T = 2π / mean_motion (where mean_motion is rad/s)
-                let period_seconds = std::f64::consts::TAU / orbit.mean_motion;
-                let period_days = period_seconds / 86400.0;
+            // Distance and velocity - compact single line for non-Sun bodies
+            if body.id != CelestialBodyId::Sun {
+                let dist_mkm = distance_from_sun / 1e9;
+                let vel_km_s = current_velocity / 1000.0;
                 ui.label(
-                    egui::RichText::new(format!("Period: {}", format_period(period_days)))
+                    egui::RichText::new(format!("{:.1} M km • {:.1} km/s", dist_mkm, vel_km_s))
                         .size(14.0),
                 );
-                ui.label(
-                    egui::RichText::new(format!("e = {:.4}", orbit.eccentricity))
-                        .weak()
-                        .size(12.0),
-                );
+
+                // Orbital period (only for bodies with orbits)
+                if let Some(orbit) = &body_data.orbit {
+                    let period_seconds = std::f64::consts::TAU / orbit.mean_motion;
+                    let period_days = period_seconds / 86400.0;
+                    ui.label(
+                        egui::RichText::new(format!("Period: {}", format_period(period_days)))
+                            .size(14.0),
+                    );
+                }
             }
 
-            // Collapsible details section
-            egui::CollapsingHeader::new(egui::RichText::new("Details").size(13.0))
-                .default_open(false)
-                .show(ui, |ui| {
-                    ui.label(
-                        egui::RichText::new(format!("Mass: {}", format_mass(body_data.mass)))
-                            .size(13.0),
-                    );
-                    ui.label(
-                        egui::RichText::new(format!("Radius: {}", format_radius(body_data.radius)))
-                            .size(13.0),
-                    );
+            ui.add_space(6.0);
 
-                    if body_data.hill_sphere > 0.0 {
-                        let hill_au = body_data.hill_sphere / AU_TO_METERS;
-                        ui.label(
-                            egui::RichText::new(format!("Hill sphere: {:.4} AU", hill_au))
-                                .size(13.0),
-                        );
-                    }
-
-                    // Perihelion/Aphelion for bodies with orbits
-                    if let Some(orbit) = &body_data.orbit {
-                        let perihelion = orbit.semi_major_axis * (1.0 - orbit.eccentricity);
-                        let aphelion = orbit.semi_major_axis * (1.0 + orbit.eccentricity);
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "Perihelion: {:.3} AU",
-                                perihelion / AU_TO_METERS
-                            ))
-                            .size(13.0),
-                        );
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "Aphelion: {:.3} AU",
-                                aphelion / AU_TO_METERS
-                            ))
-                            .size(13.0),
-                        );
-                    }
-                });
-
-            // Trivia section
+            // Smart properties based on body type
             let trivia = get_trivia(body.id);
-            egui::CollapsingHeader::new(egui::RichText::new("Fun Facts").size(13.0))
-                .default_open(false)
-                .show(ui, |ui| {
-                    if let Some(moons) = trivia.known_moons {
-                        ui.label(egui::RichText::new(format!("Moons: {}", moons)).size(12.0));
-                    }
-                    if trivia.has_rings {
-                        ui.label(egui::RichText::new("Has rings").size(12.0));
-                    }
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "Surface gravity: {:.2}g",
-                            trivia.surface_gravity_g
-                        ))
-                        .size(12.0),
-                    );
-                    if let Some(day_hours) = trivia.day_length_hours {
-                        if day_hours >= 24.0 {
-                            ui.label(
-                                egui::RichText::new(format!(
-                                    "Day length: {:.1} days",
-                                    day_hours / 24.0
-                                ))
-                                .size(12.0),
-                            );
-                        } else {
-                            ui.label(
-                                egui::RichText::new(format!("Day length: {:.1}h", day_hours))
-                                    .size(12.0),
-                            );
-                        }
-                    }
-                    ui.add_space(4.0);
-                    ui.label(
-                        egui::RichText::new(trivia.fun_fact)
-                            .weak()
-                            .italics()
-                            .size(12.0),
-                    );
-                });
+            render_body_properties(ui, body.id, body_data, &trivia);
+
+            ui.add_space(8.0);
+            ui.separator();
+            ui.add_space(4.0);
+
+            // Fun fact - simple text, no tinted background, no italics
+            // Using secondary color and 13px minimum for readability
+            ui.label(
+                egui::RichText::new(format!("💡 {}", trivia.fun_fact))
+                    .color(colors::SECONDARY)
+                    .size(13.0),
+            );
         });
 }
 
@@ -465,12 +431,13 @@ fn render_asteroid_card(
     screen_pos: Vec2,
     active_deflector: Option<&ContinuousDeflector>,
     velocity_dir: Option<Vec2>,
+    flight_time_days: f64,
 ) -> AsteroidCardResult {
     use crate::ui::icons;
 
     let mut result = AsteroidCardResult {
         delete_clicked: false,
-        deflect_clicked: false,
+        selected_method: None,
     };
 
     // Smart positioning to avoid obstructing the object AND velocity arrow
@@ -489,23 +456,25 @@ fn render_asteroid_card(
                 .corner_radius(4.0),
         )
         .show(ctx, |ui| {
-            ui.set_max_width(200.0);
+            ui.set_max_width(220.0);
 
             // Header with icon and name
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(icons::ASTEROID).size(16.0));
+                ui.label(icons::icon(icons::ASTEROID, 16.0));
                 ui.label(egui::RichText::new(name).strong().size(16.0));
             });
 
             ui.separator();
 
-            // Key stats
+            // Compact key stats: distance • velocity
             let dist_from_sun = body_state.pos.length();
             let dist_mkm = dist_from_sun / 1e9;
             let vel_km_s = body_state.vel.length() / 1000.0;
 
-            ui.label(egui::RichText::new(format!("{:.1} M km from Sun", dist_mkm)).size(14.0));
-            ui.label(egui::RichText::new(format!("{:.1} km/s velocity", vel_km_s)).size(14.0));
+            ui.label(
+                egui::RichText::new(format!("{:.1} M km • {:.1} km/s", dist_mkm, vel_km_s))
+                    .size(14.0),
+            );
 
             // Editable mass field
             ui.horizontal(|ui| {
@@ -558,32 +527,63 @@ fn render_asteroid_card(
             ui.add_space(8.0);
             ui.separator();
 
-            // Action buttons
+            // Inline deflection strip
+            ui.label(egui::RichText::new("DEFLECT").strong().size(12.0));
+
+            // Deflection method icons (7 buttons, 32×32 each)
             ui.horizontal(|ui| {
-                let deflect_button = egui::Button::new(
-                    egui::RichText::new("Deflect >")
-                        .size(14.0)
-                        .color(egui::Color32::WHITE),
-                )
-                .fill(colors::ACCENT)
-                .min_size(egui::vec2(75.0, 28.0));
+                ui.spacing_mut().item_spacing.x = 2.0;
+                for method in ALL_METHODS.iter() {
+                    let icon_str = method.icon();
+                    let color = method.color();
 
-                if ui.add(deflect_button).clicked() {
-                    result.deflect_clicked = true;
-                }
+                    let btn = ui
+                        .add_sized(
+                            [32.0, 32.0],
+                            egui::Button::new(icons::icon_colored(
+                                icon_str,
+                                18.0,
+                                egui::Color32::WHITE,
+                            ))
+                            .fill(egui::Color32::from_rgba_premultiplied(
+                                color.r() / 2,
+                                color.g() / 2,
+                                color.b() / 2,
+                                200,
+                            ))
+                            .stroke(egui::Stroke::new(1.5, color)),
+                        )
+                        .on_hover_text(method.name());
 
-                let delete_button = egui::Button::new(
-                    egui::RichText::new("Delete")
-                        .size(14.0)
-                        .color(egui::Color32::WHITE),
-                )
-                .fill(colors::DANGER)
-                .min_size(egui::vec2(60.0, 28.0));
-
-                if ui.add(delete_button).clicked() {
-                    result.delete_clicked = true;
+                    if btn.clicked() {
+                        result.selected_method = Some(*method);
+                    }
                 }
             });
+
+            // Flight time indicator
+            ui.label(
+                egui::RichText::new(format!("~{:.0} days flight time", flight_time_days))
+                    .weak()
+                    .size(12.0),
+            );
+
+            ui.add_space(4.0);
+
+            // Delete button
+            let delete_button = egui::Button::new(
+                egui::RichText::new("Delete")
+                    .size(14.0)
+                    .color(egui::Color32::WHITE),
+            )
+            .fill(colors::DANGER);
+
+            if ui
+                .add_sized([80.0, 28.0], delete_button)
+                .clicked()
+            {
+                result.delete_clicked = true;
+            }
         });
 
     result
@@ -600,19 +600,18 @@ fn render_deflection_status(ui: &mut egui::Ui, deflector: &ContinuousDeflector) 
             .color(colors::SUCCESS),
     );
 
-    let (icon, method_name) = deflector_display(&deflector.payload);
+    let (icon_str, method_name) = deflector_display(&deflector.payload);
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new(icon).size(14.0));
+        ui.label(icons::icon(icon_str, 14.0));
         ui.label(method_name);
     });
 
     match &deflector.state {
         ContinuousDeflectorState::EnRoute { .. } => {
-            ui.label(
-                egui::RichText::new(format!("{} En route", icons::CLOCK))
-                    .weak()
-                    .size(12.0),
-            );
+            ui.horizontal(|ui| {
+                ui.label(icons::icon(icons::CLOCK, 12.0).weak());
+                ui.label(egui::RichText::new("En route").weak().size(12.0));
+            });
         }
         ContinuousDeflectorState::Operating {
             fuel_consumed,
@@ -633,27 +632,127 @@ fn render_deflection_status(ui: &mut egui::Ui, deflector: &ContinuousDeflector) 
             ui.label(format!("Dv: +{:.4} mm/s", accumulated_delta_v * 1000.0));
         }
         ContinuousDeflectorState::FuelDepleted { total_delta_v, .. } => {
-            ui.label(
-                egui::RichText::new(format!("{} Fuel depleted", icons::FUEL))
-                    .weak()
-                    .size(12.0),
-            );
+            ui.horizontal(|ui| {
+                ui.label(icons::icon(icons::FUEL, 12.0).weak());
+                ui.label(egui::RichText::new("Fuel depleted").weak().size(12.0));
+            });
             ui.label(format!("Total Dv: {:.4} mm/s", total_delta_v * 1000.0));
         }
         ContinuousDeflectorState::Complete { total_delta_v, .. } => {
-            ui.label(
-                egui::RichText::new(format!("{} Complete", icons::SUCCESS))
-                    .color(colors::SUCCESS)
-                    .size(12.0),
-            );
+            ui.horizontal(|ui| {
+                ui.label(icons::icon_colored(icons::SUCCESS, 12.0, colors::SUCCESS));
+                ui.label(
+                    egui::RichText::new("Complete")
+                        .color(colors::SUCCESS)
+                        .size(12.0),
+                );
+            });
             ui.label(format!("Total Dv: {:.4} mm/s", total_delta_v * 1000.0));
         }
         ContinuousDeflectorState::Cancelled => {
-            ui.label(
-                egui::RichText::new(format!("{} Cancelled", icons::CLOSE))
-                    .color(colors::DANGER)
-                    .size(12.0),
-            );
+            ui.horizontal(|ui| {
+                ui.label(icons::icon_colored(icons::CLOSE, 12.0, colors::DANGER));
+                ui.label(
+                    egui::RichText::new("Cancelled")
+                        .color(colors::DANGER)
+                        .size(12.0),
+                );
+            });
+        }
+    }
+}
+
+/// Apply a deflection method with default parameters.
+fn apply_deflection(
+    target: Entity,
+    method: DeflectionMethod,
+    asteroid_state: &BodyState,
+    flight_time_seconds: f64,
+    launch_events: &mut MessageWriter<LaunchInterceptorEvent>,
+    continuous_launch_events: &mut MessageWriter<LaunchContinuousDeflectorEvent>,
+) {
+    // Default direction: retrograde (opposite to velocity)
+    let direction = -asteroid_state.vel.normalize_or_zero();
+
+    match method {
+        DeflectionMethod::Kinetic => {
+            launch_events.write(LaunchInterceptorEvent {
+                target,
+                payload: DeflectionPayload::Kinetic {
+                    mass_kg: 560.0,
+                    beta: 3.6,
+                },
+                direction: Some(direction),
+                flight_time: Some(flight_time_seconds),
+            });
+        }
+        DeflectionMethod::Nuclear => {
+            launch_events.write(LaunchInterceptorEvent {
+                target,
+                payload: DeflectionPayload::Nuclear { yield_kt: 100.0 },
+                direction: Some(direction),
+                flight_time: Some(flight_time_seconds),
+            });
+        }
+        DeflectionMethod::NuclearSplit => {
+            launch_events.write(LaunchInterceptorEvent {
+                target,
+                payload: DeflectionPayload::NuclearSplit {
+                    yield_kt: 500.0,
+                    split_ratio: 0.5,
+                },
+                direction: Some(direction),
+                flight_time: Some(flight_time_seconds),
+            });
+        }
+        DeflectionMethod::IonBeam => {
+            continuous_launch_events.write(LaunchContinuousDeflectorEvent {
+                target,
+                payload: ContinuousPayload::IonBeam {
+                    thrust_n: 0.1,
+                    fuel_mass_kg: 500.0,
+                    specific_impulse: 3500.0,
+                    hover_distance_m: 200.0,
+                    direction: ThrustDirection::Retrograde,
+                },
+                flight_time: flight_time_seconds,
+            });
+        }
+        DeflectionMethod::GravityTractor => {
+            continuous_launch_events.write(LaunchContinuousDeflectorEvent {
+                target,
+                payload: ContinuousPayload::GravityTractor {
+                    spacecraft_mass_kg: 20_000.0,
+                    hover_distance_m: 200.0,
+                    mission_duration: 10.0 * 365.25 * 86400.0,
+                    direction: ThrustDirection::Retrograde,
+                },
+                flight_time: flight_time_seconds,
+            });
+        }
+        DeflectionMethod::LaserAblation => {
+            continuous_launch_events.write(LaunchContinuousDeflectorEvent {
+                target,
+                payload: ContinuousPayload::LaserAblation {
+                    power_kw: 100.0,
+                    mission_duration: 12.0 * 30.44 * 86400.0,
+                    efficiency: 0.8,
+                    direction: ThrustDirection::Retrograde,
+                },
+                flight_time: flight_time_seconds,
+            });
+        }
+        DeflectionMethod::SolarSail => {
+            continuous_launch_events.write(LaunchContinuousDeflectorEvent {
+                target,
+                payload: ContinuousPayload::SolarSail {
+                    sail_area_m2: 10_000.0,
+                    mission_duration: 2.0 * 365.25 * 86400.0,
+                    reflectivity: 0.9,
+                    direction: ThrustDirection::SunPointing,
+                },
+                flight_time: flight_time_seconds,
+            });
         }
     }
 }
@@ -682,15 +781,88 @@ fn celestial_icon(id: CelestialBodyId) -> &'static str {
     }
 }
 
-/// Get type description for a celestial body.
-fn celestial_type(id: CelestialBodyId) -> &'static str {
-    if id == CelestialBodyId::Sun {
-        "Star"
-    } else if CelestialBodyId::PLANETS.contains(&id) {
-        "Planet"
-    } else if CelestialBodyId::MOONS.contains(&id) {
-        "Moon"
-    } else {
-        "Body"
+/// Get detailed type description for a celestial body.
+fn celestial_type_detailed(id: CelestialBodyId) -> &'static str {
+    match id {
+        CelestialBodyId::Sun => "Star",
+        CelestialBodyId::Mercury | CelestialBodyId::Venus => "Terrestrial Planet",
+        CelestialBodyId::Earth => "Terrestrial Planet",
+        CelestialBodyId::Mars => "Terrestrial Planet",
+        CelestialBodyId::Jupiter | CelestialBodyId::Saturn => "Gas Giant",
+        CelestialBodyId::Uranus | CelestialBodyId::Neptune => "Ice Giant",
+        CelestialBodyId::Moon => "Natural Satellite",
+        CelestialBodyId::Phobos | CelestialBodyId::Deimos => "Martian Moon",
+        CelestialBodyId::Io
+        | CelestialBodyId::Europa
+        | CelestialBodyId::Ganymede
+        | CelestialBodyId::Callisto => "Jovian Moon",
+        CelestialBodyId::Titan | CelestialBodyId::Enceladus => "Saturnian Moon",
+    }
+}
+
+/// Render body-specific properties based on type.
+fn render_body_properties(
+    ui: &mut egui::Ui,
+    id: CelestialBodyId,
+    body_data: &CelestialBodyData,
+    trivia: &crate::ephemeris::data::CelestialBodyTrivia,
+) {
+    // Mass and radius for all bodies
+    ui.label(egui::RichText::new(format!("Mass: {}", format_mass(body_data.mass))).size(13.0));
+    ui.label(
+        egui::RichText::new(format!("Radius: {}", format_radius(body_data.radius))).size(13.0),
+    );
+
+    // Surface gravity for all
+    ui.label(
+        egui::RichText::new(format!("Surface gravity: {:.2}g", trivia.surface_gravity_g))
+            .size(13.0),
+    );
+
+    // Type-specific properties
+    match id {
+        CelestialBodyId::Sun => {
+            // Sun-specific: nothing extra beyond the basics
+        }
+        CelestialBodyId::Mercury
+        | CelestialBodyId::Venus
+        | CelestialBodyId::Earth
+        | CelestialBodyId::Mars => {
+            // Terrestrial: day length
+            if let Some(day_hours) = trivia.day_length_hours {
+                let day_str = if day_hours >= 24.0 {
+                    format!("{:.1} days", day_hours / 24.0)
+                } else {
+                    format!("{:.1}h", day_hours)
+                };
+                ui.label(egui::RichText::new(format!("Day length: {}", day_str)).size(13.0));
+            }
+        }
+        CelestialBodyId::Jupiter | CelestialBodyId::Saturn => {
+            // Gas giants: moons count, rings
+            if let Some(moons) = trivia.known_moons {
+                ui.label(egui::RichText::new(format!("Known moons: {}", moons)).size(13.0));
+            }
+            if trivia.has_rings {
+                ui.label(egui::RichText::new("Has prominent rings").size(13.0));
+            }
+        }
+        CelestialBodyId::Uranus | CelestialBodyId::Neptune => {
+            // Ice giants: moons count, special note for Uranus tilt
+            if let Some(moons) = trivia.known_moons {
+                ui.label(egui::RichText::new(format!("Known moons: {}", moons)).size(13.0));
+            }
+            if id == CelestialBodyId::Uranus {
+                ui.label(egui::RichText::new("Axial tilt: 98°").size(13.0));
+            }
+        }
+        _ => {
+            // Moons: parent body info is implicit from the type label
+            // Hill sphere if significant
+            if body_data.hill_sphere > 1e6 {
+                let hill_km = body_data.hill_sphere / 1000.0;
+                ui.label(egui::RichText::new(format!("Hill sphere: {:.0} km", hill_km)).size(13.0));
+            }
+        }
     }
 }

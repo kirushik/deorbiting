@@ -43,11 +43,12 @@ impl Plugin for UiPlugin {
             .init_resource::<ActiveNotification>()
             .init_resource::<icons::FontsInitialized>()
             .init_resource::<box_selection::BoxSelectionState>()
-            // Font initialization runs in EguiPrimaryContextPass when context is ready
-            .add_systems(EguiPrimaryContextPass, icons::setup_fonts)
             // Keyboard shortcuts don't need egui context - can stay in Update
             .add_systems(Update, scenario_drawer::scenario_drawer_keyboard)
-            // UI systems run in EguiPrimaryContextPass when context is valid
+            // Font initialization MUST run before any UI systems that use icons
+            .add_systems(EguiPrimaryContextPass, icons::setup_fonts)
+            // UI systems run in EguiPrimaryContextPass AFTER fonts are initialized
+            // Run condition ensures fonts are ready before any icon rendering
             .add_systems(
                 EguiPrimaryContextPass,
                 (
@@ -63,7 +64,9 @@ impl Plugin for UiPlugin {
                     banners::update_banner_state,
                     banners::animate_banners,
                     banners::banner_system,
-                ),
+                )
+                    .after(icons::setup_fonts)
+                    .run_if(|init: Res<icons::FontsInitialized>| init.0 >= 2),
             )
             .add_systems(
                 EguiPrimaryContextPass,
@@ -74,7 +77,9 @@ impl Plugin for UiPlugin {
                     // Box selection (drag to select)
                     box_selection::box_selection_input,
                     box_selection::render_box_selection,
-                ),
+                )
+                    .after(icons::setup_fonts)
+                    .run_if(|init: Res<icons::FontsInitialized>| init.0 >= 2),
             );
     }
 }

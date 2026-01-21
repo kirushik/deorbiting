@@ -14,6 +14,7 @@ use crate::render::z_layers;
 use bevy_egui::EguiPrimaryContextPass;
 
 use crate::types::{InputSystemSet, SelectableBody};
+use crate::ui::RadialMenuState;
 use crate::ui::velocity_handle::VelocityDragState;
 
 /// Plugin providing hover and selection highlighting.
@@ -26,7 +27,7 @@ impl Plugin for HighlightPlugin {
             // Detection systems use egui - run in EguiPrimaryContextPass
             .add_systems(
                 EguiPrimaryContextPass,
-                (detect_hover, detect_selection)
+                (detect_hover, detect_selection, detect_right_click_menu)
                     .chain()
                     .after(InputSystemSet::VelocityDrag),
             )
@@ -193,6 +194,56 @@ fn detect_selection(
         &celestial_bodies,
         &asteroids,
     );
+}
+
+/// Detect right-clicks on asteroids to open the radial deflection menu.
+fn detect_right_click_menu(
+    mouse: Res<ButtonInput<MouseButton>>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
+    camera_query: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
+    celestial_bodies: Query<(Entity, &Transform, &CelestialBody)>,
+    asteroids: Query<(Entity, &Transform, &AsteroidVisual), With<Asteroid>>,
+    mut radial_menu_state: ResMut<RadialMenuState>,
+    mut contexts: EguiContexts,
+) {
+    // Only process on right click
+    if !mouse.just_pressed(MouseButton::Right) {
+        return;
+    }
+
+    // Don't process if egui wants the pointer
+    if let Ok(ctx) = contexts.ctx_mut()
+        && ctx.wants_pointer_input()
+    {
+        return;
+    }
+
+    let Ok(window) = window_query.single() else {
+        return;
+    };
+
+    let Ok((camera, camera_transform)) = camera_query.single() else {
+        return;
+    };
+
+    // Find body at cursor
+    let body = find_body_at_cursor(
+        window,
+        camera,
+        camera_transform,
+        &celestial_bodies,
+        &asteroids,
+    );
+
+    // Only open radial menu if right-clicking on an asteroid
+    if let Some(SelectableBody::Asteroid(entity)) = body {
+        // Get screen position for menu
+        if let Some(cursor_pos) = window.cursor_position() {
+            radial_menu_state.open = true;
+            radial_menu_state.target = Some(entity);
+            radial_menu_state.position = Vec2::new(cursor_pos.x, cursor_pos.y);
+        }
+    }
 }
 
 /// Draw highlight ring around hovered body.

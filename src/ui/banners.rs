@@ -6,16 +6,34 @@
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 
-use crate::asteroid::ResetEvent;
+use crate::asteroid::{Asteroid, ResetEvent};
 use crate::collision::{CollisionEvent, CollisionState};
+use crate::continuous::{ContinuousPayload, LaunchContinuousDeflectorEvent, ThrustDirection};
+use crate::ephemeris::{CelestialBodyId, Ephemeris};
+use crate::interceptor::{DeflectionPayload, LaunchInterceptorEvent};
 use crate::outcome::TrajectoryOutcome;
 use crate::prediction::TrajectoryPath;
 use crate::render::SelectedBody;
 use crate::scenarios::CurrentScenario;
-use crate::types::{AU_TO_METERS, SECONDS_PER_DAY, SelectableBody, SimulationTime};
+use crate::types::{AU_TO_METERS, BodyState, SECONDS_PER_DAY, SelectableBody, SimulationTime};
 
 use super::icons;
+use super::radial_menu::DeflectionMethod;
 use super::{RadialMenuState, ScenarioDrawerState};
+
+/// Base interceptor speed in m/s (for flight time calculation).
+const BASE_INTERCEPTOR_SPEED: f64 = 15_000.0;
+
+/// All deflection methods available in the inline strip.
+const ALL_METHODS: [DeflectionMethod; 7] = [
+    DeflectionMethod::Kinetic,
+    DeflectionMethod::Nuclear,
+    DeflectionMethod::NuclearSplit,
+    DeflectionMethod::IonBeam,
+    DeflectionMethod::GravityTractor,
+    DeflectionMethod::LaserAblation,
+    DeflectionMethod::SolarSail,
+];
 
 /// Resource for banner state.
 #[derive(Resource, Default)]
@@ -98,6 +116,11 @@ pub fn banner_system(
     _drawer_state: ResMut<ScenarioDrawerState>,
     mut radial_menu_state: ResMut<RadialMenuState>,
     selected: Res<SelectedBody>,
+    asteroids: Query<&BodyState, With<Asteroid>>,
+    ephemeris: Res<Ephemeris>,
+    sim_time: Res<SimulationTime>,
+    mut launch_events: MessageWriter<LaunchInterceptorEvent>,
+    mut continuous_launch_events: MessageWriter<LaunchContinuousDeflectorEvent>,
 ) {
     let Some(ctx) = contexts.ctx_mut().ok() else {
         return;
@@ -122,6 +145,25 @@ pub fn banner_system(
                 time_to_impact,
                 impact_velocity,
             } => {
+                // Get asteroid body state for deflection
+                let asteroid_data = if let Some(SelectableBody::Asteroid(entity)) = selected.body {
+                    asteroids.get(entity).ok().map(|bs| (entity, bs.clone()))
+                } else {
+                    None
+                };
+
+                // Calculate flight time from Earth
+                let flight_time_days = if let Some((_, ref body_state)) = asteroid_data {
+                    let earth_pos = ephemeris
+                        .get_position_by_id(CelestialBodyId::Earth, sim_time.current)
+                        .unwrap_or(bevy::math::DVec2::new(AU_TO_METERS, 0.0));
+                    let distance = (body_state.pos - earth_pos).length();
+                    let flight_time_seconds = distance / BASE_INTERCEPTOR_SPEED;
+                    flight_time_seconds / SECONDS_PER_DAY
+                } else {
+                    0.0
+                };
+
                 render_collision_prediction_banner(
                     ctx,
                     *body_hit,
@@ -129,7 +171,10 @@ pub fn banner_system(
                     *impact_velocity,
                     &mut reset_events,
                     &mut radial_menu_state,
-                    &selected,
+                    asteroid_data,
+                    flight_time_days,
+                    &mut launch_events,
+                    &mut continuous_launch_events,
                 );
             }
             TrajectoryOutcome::Escape {
@@ -187,11 +232,11 @@ fn render_collision_notification(
         )
         .show(ctx, |ui| {
             ui.horizontal_centered(|ui| {
-                ui.label(
-                    egui::RichText::new(icons::WARNING)
-                        .size(20.0)
-                        .color(colors::COLLISION_BORDER),
-                );
+                ui.label(icons::icon_colored(
+                    icons::WARNING,
+                    18.0,
+                    colors::COLLISION_BORDER,
+                ));
                 ui.add_space(8.0);
 
                 ui.vertical(|ui| {
@@ -202,7 +247,7 @@ fn render_collision_notification(
                             collision.body_hit.name()
                         ))
                         .strong()
-                        .size(18.0)
+                        .size(16.0)
                         .color(egui::Color32::WHITE),
                     );
                     ui.label(
@@ -233,7 +278,8 @@ fn render_collision_notification(
         });
 }
 
-/// Render collision prediction banner.
+/// Render collision prediction banner with inline deflection strip.
+#[allow(clippy::too_many_arguments)]
 fn render_collision_prediction_banner(
     ctx: &egui::Context,
     body_hit: crate::ephemeris::CelestialBodyId,
@@ -241,7 +287,10 @@ fn render_collision_prediction_banner(
     impact_velocity: f64,
     reset_events: &mut MessageWriter<ResetEvent>,
     radial_menu_state: &mut RadialMenuState,
-    selected: &Res<SelectedBody>,
+    asteroid_data: Option<(Entity, BodyState)>,
+    flight_time_days: f64,
+    launch_events: &mut MessageWriter<LaunchInterceptorEvent>,
+    continuous_launch_events: &mut MessageWriter<LaunchContinuousDeflectorEvent>,
 ) {
     let days = time_to_impact / SECONDS_PER_DAY;
     let speed_km_s = impact_velocity / 1000.0;
@@ -255,11 +304,11 @@ fn render_collision_prediction_banner(
         )
         .show(ctx, |ui| {
             ui.horizontal_centered(|ui| {
-                ui.label(
-                    egui::RichText::new(icons::WARNING)
-                        .size(18.0)
-                        .color(colors::COLLISION_BORDER),
-                );
+                ui.label(icons::icon_colored(
+                    icons::WARNING,
+                    18.0,
+                    colors::COLLISION_BORDER,
+                ));
                 ui.add_space(8.0);
 
                 ui.label(
@@ -277,6 +326,56 @@ fn render_collision_prediction_banner(
 
                 ui.label(egui::RichText::new(format!("Impact: {:.1} km/s", speed_km_s)).size(14.0));
 
+                ui.separator();
+
+                // Inline deflection strip (if asteroid is selected)
+                if let Some((entity, ref body_state)) = asteroid_data {
+                    ui.label(egui::RichText::new("Deflect:").size(12.0));
+
+                    for method in ALL_METHODS.iter() {
+                        let icon_str = method.icon();
+                        let color = method.color();
+
+                        let btn = ui
+                            .add_sized(
+                                [28.0, 28.0],
+                                egui::Button::new(icons::icon_colored(
+                                    icon_str,
+                                    14.0,
+                                    egui::Color32::WHITE,
+                                ))
+                                .fill(egui::Color32::from_rgba_premultiplied(
+                                    color.r() / 2,
+                                    color.g() / 2,
+                                    color.b() / 2,
+                                    200,
+                                ))
+                                .stroke(egui::Stroke::new(1.0, color)),
+                            )
+                            .on_hover_text(method.name());
+
+                        if btn.clicked() {
+                            let flight_time_seconds = flight_time_days * SECONDS_PER_DAY;
+                            apply_deflection(
+                                entity,
+                                *method,
+                                body_state,
+                                flight_time_seconds,
+                                launch_events,
+                                continuous_launch_events,
+                            );
+                            // Also set radial menu state for potential right-click
+                            radial_menu_state.target = Some(entity);
+                        }
+                    }
+
+                    ui.label(
+                        egui::RichText::new(format!("~{:.0}d", flight_time_days))
+                            .weak()
+                            .size(11.0),
+                    );
+                }
+
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui
                         .add(
@@ -290,29 +389,6 @@ fn render_collision_prediction_banner(
                         .clicked()
                     {
                         reset_events.write(ResetEvent);
-                    }
-
-                    // Deflect button - opens radial menu
-                    if let Some(SelectableBody::Asteroid(entity)) = selected.body
-                        && ui
-                            .add(
-                                egui::Button::new(
-                                    egui::RichText::new("Deflect")
-                                        .size(14.0)
-                                        .color(egui::Color32::WHITE),
-                                )
-                                .fill(egui::Color32::from_rgb(85, 153, 221))
-                                .min_size(egui::vec2(70.0, 28.0)),
-                            )
-                            .clicked()
-                    {
-                        radial_menu_state.open = true;
-                        radial_menu_state.target = Some(entity);
-                        // Position will be set by context card or center of screen
-                        radial_menu_state.position = Vec2::new(
-                            ctx.viewport_rect().width() / 2.0,
-                            ctx.viewport_rect().height() / 2.0,
-                        );
                     }
                 });
             });
@@ -332,11 +408,11 @@ fn render_escape_banner(ctx: &egui::Context, v_infinity: f64, _direction: bevy::
         )
         .show(ctx, |ui| {
             ui.horizontal_centered(|ui| {
-                ui.label(
-                    egui::RichText::new(icons::ARROW_RIGHT)
-                        .size(18.0)
-                        .color(colors::ESCAPE_BORDER),
-                );
+                ui.label(icons::icon_colored(
+                    icons::ARROW_RIGHT,
+                    18.0,
+                    colors::ESCAPE_BORDER,
+                ));
                 ui.add_space(8.0);
 
                 ui.label(
@@ -381,11 +457,11 @@ fn render_stable_orbit_banner(
         )
         .show(ctx, |ui| {
             ui.horizontal_centered(|ui| {
-                ui.label(
-                    egui::RichText::new(icons::SUCCESS)
-                        .size(18.0)
-                        .color(colors::STABLE_BORDER),
-                );
+                ui.label(icons::icon_colored(
+                    icons::SUCCESS,
+                    18.0,
+                    colors::STABLE_BORDER,
+                ));
                 ui.add_space(8.0);
 
                 ui.label(
@@ -411,13 +487,115 @@ fn render_stable_orbit_banner(
 
                 if is_deflection_challenge {
                     ui.separator();
-                    ui.label(
-                        egui::RichText::new("* Earth is safe! *")
-                            .color(colors::STABLE_BORDER)
-                            .strong()
-                            .size(15.0),
-                    );
+                    ui.horizontal(|ui| {
+                        ui.label(icons::icon_colored(
+                            icons::SUCCESS,
+                            15.0,
+                            colors::STABLE_BORDER,
+                        ));
+                        ui.label(
+                            egui::RichText::new("Earth is safe!")
+                                .color(colors::STABLE_BORDER)
+                                .strong()
+                                .size(15.0),
+                        );
+                    });
                 }
             });
         });
+}
+
+/// Apply a deflection method with default parameters.
+fn apply_deflection(
+    target: Entity,
+    method: DeflectionMethod,
+    asteroid_state: &BodyState,
+    flight_time_seconds: f64,
+    launch_events: &mut MessageWriter<LaunchInterceptorEvent>,
+    continuous_launch_events: &mut MessageWriter<LaunchContinuousDeflectorEvent>,
+) {
+    // Default direction: retrograde (opposite to velocity)
+    let direction = -asteroid_state.vel.normalize_or_zero();
+
+    match method {
+        DeflectionMethod::Kinetic => {
+            launch_events.write(LaunchInterceptorEvent {
+                target,
+                payload: DeflectionPayload::Kinetic {
+                    mass_kg: 560.0,
+                    beta: 3.6,
+                },
+                direction: Some(direction),
+                flight_time: Some(flight_time_seconds),
+            });
+        }
+        DeflectionMethod::Nuclear => {
+            launch_events.write(LaunchInterceptorEvent {
+                target,
+                payload: DeflectionPayload::Nuclear { yield_kt: 100.0 },
+                direction: Some(direction),
+                flight_time: Some(flight_time_seconds),
+            });
+        }
+        DeflectionMethod::NuclearSplit => {
+            launch_events.write(LaunchInterceptorEvent {
+                target,
+                payload: DeflectionPayload::NuclearSplit {
+                    yield_kt: 500.0,
+                    split_ratio: 0.5,
+                },
+                direction: Some(direction),
+                flight_time: Some(flight_time_seconds),
+            });
+        }
+        DeflectionMethod::IonBeam => {
+            continuous_launch_events.write(LaunchContinuousDeflectorEvent {
+                target,
+                payload: ContinuousPayload::IonBeam {
+                    thrust_n: 0.1,
+                    fuel_mass_kg: 500.0,
+                    specific_impulse: 3500.0,
+                    hover_distance_m: 200.0,
+                    direction: ThrustDirection::Retrograde,
+                },
+                flight_time: flight_time_seconds,
+            });
+        }
+        DeflectionMethod::GravityTractor => {
+            continuous_launch_events.write(LaunchContinuousDeflectorEvent {
+                target,
+                payload: ContinuousPayload::GravityTractor {
+                    spacecraft_mass_kg: 20_000.0,
+                    hover_distance_m: 200.0,
+                    mission_duration: 10.0 * 365.25 * 86400.0,
+                    direction: ThrustDirection::Retrograde,
+                },
+                flight_time: flight_time_seconds,
+            });
+        }
+        DeflectionMethod::LaserAblation => {
+            continuous_launch_events.write(LaunchContinuousDeflectorEvent {
+                target,
+                payload: ContinuousPayload::LaserAblation {
+                    power_kw: 100.0,
+                    mission_duration: 12.0 * 30.44 * 86400.0,
+                    efficiency: 0.8,
+                    direction: ThrustDirection::Retrograde,
+                },
+                flight_time: flight_time_seconds,
+            });
+        }
+        DeflectionMethod::SolarSail => {
+            continuous_launch_events.write(LaunchContinuousDeflectorEvent {
+                target,
+                payload: ContinuousPayload::SolarSail {
+                    sail_area_m2: 10_000.0,
+                    mission_duration: 2.0 * 365.25 * 86400.0,
+                    reflectivity: 0.9,
+                    direction: ThrustDirection::SunPointing,
+                },
+                flight_time: flight_time_seconds,
+            });
+        }
+    }
 }

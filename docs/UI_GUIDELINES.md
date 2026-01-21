@@ -50,13 +50,26 @@ Our design philosophy draws from four primary sources:
 
 ## Typography
 
-### Font Stack
+### Font Choice: Inter
 
-Use the system font stack for optimal readability and platform integration:
+We embed **Inter** as the primary UI font. Inter was designed specifically for computer screens by Rasmus Andersson at Figma.
+
+**Why Inter:**
+- **Tall x-height** improves legibility at small sizes (11-14px)
+- **Open apertures** aid character recognition on dark backgrounds
+- **Optimized for screens** with careful hinting and rendering
+
+**Weight Selection:**
+We use **Inter Light (300)** for body text to compensate for halation—the phenomenon where light text on dark backgrounds appears heavier than intended. Research suggests using weight ~350 in dark mode for visual equivalence to 400 in light mode. Since Inter doesn't offer 350, Light (300) is the best choice.
+
+Note: Our backgrounds are dark blue-grey (#1a1a24), not pure black, which reduces halation compared to white-on-black. If Light appears too thin in practice, switching to Regular (400) is acceptable.
+
+**egui Limitation:**
+egui does not support variable font axes ([discussion #1862](https://github.com/emilk/egui/discussions/1862)). Fonts are treated as static shapes—we cannot adjust weight, optical size, or grade at runtime. This is why we embed pre-selected static font files.
 
 ```rust
 // Primary font (UI elements, labels)
-FontFamily::Proportional  // System default
+FontFamily::Proportional  // Inter Light (300)
 
 // Monospace (data values, coordinates, code-like content)
 FontFamily::Monospace     // System monospace
@@ -72,6 +85,42 @@ FontFamily::Monospace     // System monospace
 | Labels/hints | 12px | Regular | "Mass:" |
 | Micro text | 11px | Regular | "cont." (type indicators) |
 | Dock controls | 14-16px | Medium | Speed labels |
+
+### Dark Mode Typography Rules
+
+Our UI uses a dark background, which requires specific typography considerations:
+
+**1. Never use italics for readable content**
+- Italics have poor subpixel rendering on screens—angled strokes don't align with pixel grid
+- Light-on-dark makes this worse: italic text appears blurry and thin
+- **Use regular weight only**. For emphasis, use color, weight, or icons instead
+
+**2. Font weight for dark mode**
+- Light text on dark backgrounds appears heavier due to halation (light bleeding into dark)
+- Inter Light (300) is used as our base to compensate for this optical effect
+- Never use Thin (100) weights—strokes are too thin for dark backgrounds
+
+**3. Minimum sizes are larger than light mode**
+- 13px minimum for any text that must be read
+- 14px preferred for body text
+- 11-12px only for truly supplementary labels (like "cont." indicators)
+
+**4. Tinted backgrounds reduce contrast**
+- A semi-transparent colored overlay on dark backgrounds makes text HARDER to read
+- If you want visual separation, use: borders, spacing, or a DARKER background
+- Never rely on subtle color differences for visual hierarchy
+
+**5. Use off-white, not pure white**
+- Pure white (#FFFFFF) on dark backgrounds causes eye strain and "glowing" effect
+- Use off-white (#dcdce6) for primary text
+- Reserve brighter whites only for interactive elements on hover
+
+**What NOT to do:**
+- ❌ Italic text for any readable content
+- ❌ Semi-transparent colored backgrounds behind text
+- ❌ Text smaller than 13px for anything important
+- ❌ Light/thin font weights
+- ❌ Low contrast "subtle" text that users need to read
 
 ### Alignment Rules
 
@@ -136,11 +185,77 @@ These rules prevent common egui alignment bugs:
 
 ### Text Colors
 
-| Type | Color |
-|------|-------|
-| Primary text | `#dcdce6` (220, 220, 230) |
-| Secondary text | `#a0a0aa` (160, 160, 170) |
-| Disabled/hint | `#787882` (120, 120, 130) |
+| Type | Color | Usage |
+|------|-------|-------|
+| Primary text | `#dcdce6` (220, 220, 230) | Main labels, values, buttons |
+| Secondary text | `#b4b4be` (180, 180, 190) | Supplementary info, type labels, hints |
+| Disabled text | `#787882` (120, 120, 130) | **ONLY** for disabled/unavailable elements |
+
+### High-Contrast Text Principle
+
+**Use grey text ONLY for truly disabled elements.** All readable text must use primary or secondary colors. The "disabled grey" (120, 120, 130) should ONLY appear on elements that cannot be interacted with.
+
+Key guidelines:
+- Buttons that can be clicked should never use disabled grey
+- Supplementary information uses secondary text, not disabled grey
+- All readable text must have ≥4.5:1 contrast ratio
+- When in doubt, use primary text color
+- Never use italics—see "Dark Mode Typography Rules" above
+
+---
+
+## Icons
+
+### Phosphor Icon Font
+
+We use the [Phosphor](https://phosphoricons.com/) icon font via the `egui_phosphor` crate. All icons are defined in `src/ui/icons.rs` with semantic names.
+
+**Critical Rule: Always use Phosphor icons, never Unicode symbols or ASCII art.**
+
+| Bad | Good | Reason |
+|-----|------|--------|
+| `"*"` | `icons::ASTEROID` | ASCII asterisk renders as Inter glyph |
+| `"→"` | `icons::ARROW_RIGHT` | Unicode arrows may render incorrectly |
+| `"●"` | Use a Phosphor icon | Unicode symbols conflict with Inter |
+| `"✓"` | `icons::CHECK` | Phosphor has consistent styling |
+
+**Why this matters:**
+- Inter is our primary font for text readability
+- Inter renders ALL characters it has glyphs for, including some symbols
+- Phosphor icons use Private Use Area (PUA) characters that Inter doesn't have
+- Font fallback only works when the primary font lacks the glyph
+- Mixing symbol fonts creates inconsistent visual weight and style
+
+**Icon usage pattern:**
+```rust
+use crate::ui::icons;
+
+// Good: use the icon() helper function
+ui.label(icons::icon(icons::SUCCESS, 16.0));
+ui.label(icons::icon_colored(icons::WARNING, 16.0, Color32::RED));
+
+// Also good: semantic icon constant with RichText
+ui.label(egui::RichText::new(icons::SUCCESS).size(16.0));
+
+// Bad: raw Unicode or ASCII
+ui.label(egui::RichText::new("✓").size(16.0));
+ui.label(egui::RichText::new("*").size(16.0));
+```
+
+### Font Loading Order
+
+Icons use a **named font family** (`FontFamily::Name("phosphor")`) for explicit rendering, while text uses the Proportional family with Inter as primary.
+
+```
+Proportional: [Inter, ...system defaults...]  → renders all regular text
+Named "phosphor": [Phosphor]                  → renders icon characters explicitly
+```
+
+**Why explicit font family for icons:**
+- Font fallback is unreliable—system fonts have fallback glyphs for PUA codepoints
+- Using `FontFamily::Name("phosphor")` bypasses fallback entirely
+- The `icons::icon()` helper automatically uses the named family
+- UI systems wait one frame after font initialization to ensure the named family is registered
 
 ---
 
