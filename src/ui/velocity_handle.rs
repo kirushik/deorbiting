@@ -14,6 +14,7 @@ use bevy_egui::EguiContexts;
 
 use crate::asteroid::Asteroid;
 use crate::camera::MainCamera;
+use crate::collision::CollisionState;
 use crate::physics::IntegratorStates;
 use crate::prediction::PredictionState;
 use crate::render::z_layers;
@@ -103,16 +104,22 @@ fn handle_velocity_drag(
     mut prediction_state: ResMut<PredictionState>,
     mut contexts: EguiContexts,
 ) {
+    // Validate target entity still exists (could be despawned via collision)
+    if let Some(entity) = drag_state.target
+        && !asteroids.contains(entity) {
+            drag_state.dragging = false;
+            drag_state.target = None;
+            drag_state.auto_paused = false;
+        }
+
     // IMPORTANT: Only check egui wants pointer when NOT already dragging.
     // If we're dragging and mouse passes over an egui window, we still need
     // to process drag updates and mouse release.
-    if !drag_state.dragging {
-        if let Some(ctx) = contexts.try_ctx_mut() {
-            if ctx.wants_pointer_input() {
+    if !drag_state.dragging
+        && let Some(ctx) = contexts.try_ctx_mut()
+            && ctx.wants_pointer_input() {
                 return;
             }
-        }
-    }
 
     let Ok(window) = window_query.get_single() else {
         return;
@@ -212,9 +219,9 @@ fn handle_velocity_drag(
     }
 
     // Continue drag
-    if drag_state.dragging && mouse.pressed(MouseButton::Left) {
-        if let Some(target_entity) = drag_state.target {
-            if let Ok((_, transform, mut body_state)) = asteroids.get_mut(target_entity) {
+    if drag_state.dragging && mouse.pressed(MouseButton::Left)
+        && let Some(target_entity) = drag_state.target
+            && let Ok((_, transform, mut body_state)) = asteroids.get_mut(target_entity) {
                 let asteroid_render_pos = transform.translation.truncate();
 
                 // Vector from asteroid to cursor
@@ -239,26 +246,31 @@ fn handle_velocity_drag(
                     crate::prediction::mark_prediction_dirty(&mut prediction_state);
                 }
             }
-        }
-    }
 
     // End drag on mouse release
     if mouse.just_released(MouseButton::Left) && drag_state.dragging {
         if let Some(target_entity) = drag_state.target {
-            // Trigger integrator and prediction rebuild
-            integrator_states.remove(target_entity);
-            crate::prediction::mark_prediction_dirty(&mut prediction_state);
+            // Only update if entity still exists
+            if asteroids.contains(target_entity) {
+                integrator_states.remove(target_entity);
+                crate::prediction::mark_prediction_dirty(&mut prediction_state);
 
-            if let Ok((_, _, body_state)) = asteroids.get(target_entity) {
-                info!(
-                    "Velocity updated to {:.2} km/s",
-                    body_state.vel.length() / 1000.0
-                );
+                if let Ok((_, _, body_state)) = asteroids.get(target_entity) {
+                    info!(
+                        "Velocity updated to {:.2} km/s",
+                        body_state.vel.length() / 1000.0
+                    );
+                }
             }
         }
         drag_state.dragging = false;
         drag_state.target = None;
-        // Note: We keep auto_paused state - user can resume manually with Space
+
+        // Restore simulation state: if we auto-paused on drag start, unpause now
+        if drag_state.auto_paused {
+            sim_time.paused = false;
+            drag_state.auto_paused = false;
+        }
     }
 }
 
@@ -268,6 +280,7 @@ fn handle_velocity_drag(
 fn draw_velocity_handles(
     asteroids: Query<(Entity, &Transform, &BodyState), With<Asteroid>>,
     selected: Res<SelectedBody>,
+    collision_state: Res<CollisionState>,
     drag_state: Res<VelocityDragState>,
     mut gizmos: Gizmos,
 ) {
@@ -278,6 +291,10 @@ fn draw_velocity_handles(
     };
 
     for (entity, transform, body_state) in asteroids.iter() {
+        // Skip colliding entities (in one-frame window before despawn)
+        if collision_state.is_colliding(entity) {
+            continue;
+        }
         let vel_magnitude = body_state.vel.length();
 
         let base = Vec3::new(

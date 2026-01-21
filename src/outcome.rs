@@ -108,10 +108,17 @@ impl OrbitalElements {
 /// * `pos` - Position vector from Sun (meters)
 /// * `vel` - Velocity vector (m/s)
 /// * `gm` - Standard gravitational parameter (m³/s²), defaults to GM_SUN
-pub fn orbital_energy(pos: DVec2, vel: DVec2, gm: f64) -> f64 {
+///
+/// # Returns
+/// `None` if position is at or very near the origin (inside Sun)
+pub fn orbital_energy(pos: DVec2, vel: DVec2, gm: f64) -> Option<f64> {
     let r = pos.length();
+    // Guard against division by zero (position at Sun center)
+    if r < 1e6 {
+        return None; // Less than 1km from Sun center
+    }
     let v_sq = vel.length_squared();
-    0.5 * v_sq - gm / r
+    Some(0.5 * v_sq - gm / r)
 }
 
 /// Calculate specific angular momentum magnitude.
@@ -129,8 +136,16 @@ pub fn angular_momentum(pos: DVec2, vel: DVec2) -> f64 {
 /// * `pos` - Position vector from Sun (meters)
 /// * `vel` - Velocity vector (m/s)
 /// * `gm` - Standard gravitational parameter (m³/s²), defaults to GM_SUN
-pub fn compute_orbital_elements(pos: DVec2, vel: DVec2, gm: f64) -> OrbitalElements {
+///
+/// # Returns
+/// `None` if position is at or very near the origin (inside Sun)
+pub fn compute_orbital_elements(pos: DVec2, vel: DVec2, gm: f64) -> Option<OrbitalElements> {
     let r = pos.length();
+    // Guard against division by zero
+    if r < 1e6 {
+        return None; // Less than 1km from Sun center
+    }
+    
     let v = vel.length();
     let v_sq = v * v;
 
@@ -165,13 +180,13 @@ pub fn compute_orbital_elements(pos: DVec2, vel: DVec2, gm: f64) -> OrbitalEleme
         None
     };
 
-    OrbitalElements {
+    Some(OrbitalElements {
         semi_major_axis,
         eccentricity,
         energy,
         angular_momentum: h,
         period,
-    }
+    })
 }
 
 /// Determine trajectory outcome from prediction results.
@@ -201,18 +216,20 @@ pub fn detect_outcome(
     impact_velocity: Option<f64>,
 ) -> TrajectoryOutcome {
     // Case 1: Collision detected
-    if ends_in_collision {
-        if let Some(body) = collision_target {
+    if ends_in_collision
+        && let Some(body) = collision_target {
             return TrajectoryOutcome::Collision {
                 body_hit: body,
                 time_to_impact: prediction_time_span,
                 impact_velocity: impact_velocity.unwrap_or(final_vel.length()),
             };
         }
-    }
 
     // Compute orbital elements from initial state (relative to Sun)
-    let elements = compute_orbital_elements(initial_pos, initial_vel, GM_SUN);
+    // Returns None if position is at origin (shouldn't happen in practice)
+    let Some(elements) = compute_orbital_elements(initial_pos, initial_vel, GM_SUN) else {
+        return TrajectoryOutcome::InProgress;
+    };
 
     // Case 2: Escape trajectory (E > 0)
     if elements.is_hyperbolic() {
@@ -283,7 +300,7 @@ mod tests {
         let v_circular = (GM_SUN / r).sqrt();
         let vel = DVec2::new(0.0, v_circular);
 
-        let energy = orbital_energy(pos, vel, GM_SUN);
+        let energy = orbital_energy(pos, vel, GM_SUN).expect("valid position");
 
         // For circular orbit: E = -GM/(2r)
         let expected = -GM_SUN / (2.0 * r);
@@ -305,7 +322,7 @@ mod tests {
 
         // Test at exactly escape velocity
         let vel = DVec2::new(0.0, v_escape);
-        let energy = orbital_energy(pos, vel, GM_SUN);
+        let energy = orbital_energy(pos, vel, GM_SUN).expect("valid position");
         assert!(
             energy.abs() < 1e10,
             "Escape velocity should give E ≈ 0, got {energy}"
@@ -313,7 +330,7 @@ mod tests {
 
         // Test above escape velocity
         let vel_fast = DVec2::new(0.0, v_escape * 1.5);
-        let energy_fast = orbital_energy(pos, vel_fast, GM_SUN);
+        let energy_fast = orbital_energy(pos, vel_fast, GM_SUN).expect("valid position");
         assert!(
             energy_fast > 0.0,
             "Above escape velocity should give E > 0, got {energy_fast}"
@@ -328,7 +345,7 @@ mod tests {
         let v_circular = (GM_SUN / r).sqrt();
         let vel = DVec2::new(0.0, v_circular);
 
-        let elements = compute_orbital_elements(pos, vel, GM_SUN);
+        let elements = compute_orbital_elements(pos, vel, GM_SUN).expect("valid position");
 
         // Semi-major axis should be ~1 AU
         let a_error = (elements.semi_major_axis - r).abs() / r;
@@ -369,7 +386,7 @@ mod tests {
         let v_peri = (GM_SUN * (2.0 / r_peri - 1.0 / a)).sqrt();
         let vel = DVec2::new(0.0, v_peri);
 
-        let elements = compute_orbital_elements(pos, vel, GM_SUN);
+        let elements = compute_orbital_elements(pos, vel, GM_SUN).expect("valid position");
 
         // Check semi-major axis
         let a_error = (elements.semi_major_axis - a).abs() / a;
@@ -398,7 +415,7 @@ mod tests {
         // Velocity well above escape (50 km/s)
         let vel = DVec2::new(0.0, 50_000.0);
 
-        let elements = compute_orbital_elements(pos, vel, GM_SUN);
+        let elements = compute_orbital_elements(pos, vel, GM_SUN).expect("valid position");
 
         assert!(elements.is_hyperbolic(), "Should be hyperbolic trajectory");
         assert!(
@@ -413,6 +430,25 @@ mod tests {
         assert!(
             elements.v_infinity() > 0.0,
             "Should have excess velocity"
+        );
+    }
+
+
+    #[test]
+    fn test_orbital_energy_at_origin() {
+        // Test that orbital_energy returns None when position is at origin
+        let pos = DVec2::ZERO;
+        let vel = DVec2::new(1000.0, 0.0);
+        
+        assert!(
+            orbital_energy(pos, vel, GM_SUN).is_none(),
+            "Should return None for position at origin"
+        );
+        
+        // Also test compute_orbital_elements
+        assert!(
+            compute_orbital_elements(pos, vel, GM_SUN).is_none(),
+            "Should return None for position at origin"
         );
     }
 

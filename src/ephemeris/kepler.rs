@@ -45,7 +45,7 @@ impl KeplerOrbit {
     }
 
     /// Solve Kepler's equation M = E - e*sin(E) for eccentric anomaly E
-    /// using Newton's method.
+    /// using Newton's method with bisection fallback.
     ///
     /// # Arguments
     /// * `mean_anomaly` - Mean anomaly M in radians
@@ -54,39 +54,46 @@ impl KeplerOrbit {
     /// Eccentric anomaly E in radians
     ///
     /// # Robustness
-    /// Current implementation uses simple Newton's method which works well for
-    /// eccentricities up to ~0.95. For extremely high eccentricities (e > 0.97)
-    /// or near-parabolic orbits, Newton's method may converge slowly or oscillate.
-    ///
-    /// TODO: Add fallback to bisection or Halley's method if Newton fails to
-    /// converge within iteration limit. Consider returning Result<f64, KeplerError>
-    /// to handle convergence failures gracefully.
+    /// Uses Newton's method for fast convergence, falling back to bisection
+    /// when Newton oscillates or f'(E) is near zero (high eccentricity cases).
     pub fn solve_eccentric_anomaly(&self, mean_anomaly: f64) -> f64 {
         // Normalize mean anomaly to [0, 2π)
         let m = mean_anomaly.rem_euclid(std::f64::consts::TAU);
+        let e = self.eccentricity;
 
         // Initial guess: E = M for low eccentricity, π for high e
-        // TODO: Use more sophisticated initial guess for high eccentricity
-        // (e.g., Markley's or Mikkola's starting value)
-        let mut e_anomaly = if self.eccentricity < 0.8 {
+        let mut e_anomaly = if e < 0.8 {
             m
         } else {
             std::f64::consts::PI
         };
 
-        // Newton's method iteration
-        // TODO: Track convergence and fall back to bisection if oscillating
-        for _ in 0..50 {
+        // Newton's method iteration with fallback
+        let mut prev_delta = f64::INFINITY;
+        for iteration in 0..50 {
             let sin_e = e_anomaly.sin();
             let cos_e = e_anomaly.cos();
 
             // f(E) = E - e*sin(E) - M
-            let f = e_anomaly - self.eccentricity * sin_e - m;
+            let f = e_anomaly - e * sin_e - m;
             // f'(E) = 1 - e*cos(E)
-            let f_prime = 1.0 - self.eccentricity * cos_e;
+            let f_prime = 1.0 - e * cos_e;
 
-            // Newton step
+            // Guard against division by zero (f_prime near zero for high eccentricity)
+            if f_prime.abs() < 1e-12 {
+                // Fall back to bisection for this case
+                return self.solve_eccentric_anomaly_bisection(m);
+            }
+
             let delta = f / f_prime;
+
+            // Check for oscillation (Newton not converging)
+            if iteration > 5 && delta.abs() > prev_delta * 0.9 {
+                // Newton is oscillating, use bisection
+                return self.solve_eccentric_anomaly_bisection(m);
+            }
+            prev_delta = delta.abs();
+
             e_anomaly -= delta;
 
             if delta.abs() < 1e-12 {
@@ -94,7 +101,54 @@ impl KeplerOrbit {
             }
         }
 
+        // Final sanity check
+        if !e_anomaly.is_finite() {
+            return self.solve_eccentric_anomaly_bisection(m);
+        }
+
         e_anomaly
+    }
+
+
+    /// Bisection fallback for solving Kepler's equation when Newton fails.
+    /// Guaranteed to converge but slower than Newton's method.
+    fn solve_eccentric_anomaly_bisection(&self, mean_anomaly: f64) -> f64 {
+        let e = self.eccentricity;
+        
+        // f(E) = E - e*sin(E) - M, find root
+        let f = |e_anom: f64| e_anom - e * e_anom.sin() - mean_anomaly;
+        
+        // Bracket: E is always between M - e and M + e for elliptical orbits
+        let mut low = mean_anomaly - e;
+        let mut high = mean_anomaly + e;
+        
+        // Expand bracket if needed
+        while f(low) * f(high) > 0.0 {
+            low -= e;
+            high += e;
+            if (high - low) > 10.0 * std::f64::consts::TAU {
+                // Fallback to mean anomaly if bracketing fails
+                return mean_anomaly;
+            }
+        }
+        
+        // Bisection iteration
+        for _ in 0..100 {
+            let mid = 0.5 * (low + high);
+            let f_mid = f(mid);
+            
+            if f_mid.abs() < 1e-14 || (high - low) < 1e-14 {
+                return mid;
+            }
+            
+            if f(low) * f_mid < 0.0 {
+                high = mid;
+            } else {
+                low = mid;
+            }
+        }
+        
+        0.5 * (low + high)
     }
 
     /// Compute true anomaly from eccentric anomaly.

@@ -49,12 +49,11 @@ pub fn update_banner_state(
     sim_time: Res<SimulationTime>,
 ) {
     // Handle collision notifications from actual collisions
-    if sim_time.paused && banner_state.collision.is_none() {
-        if let Some(collision) = collision_state.pop_notification() {
+    if sim_time.paused && banner_state.collision.is_none()
+        && let Some(collision) = collision_state.pop_notification() {
             banner_state.collision = Some(collision);
             banner_state.collision_flash = 1.0;
         }
-    }
 
     // Clear collision notification when simulation resumes
     if !sim_time.paused {
@@ -242,8 +241,8 @@ fn render_collision_prediction_banner(
                     }
 
                     // Deflect button - opens radial menu
-                    if let Some(SelectableBody::Asteroid(entity)) = selected.body {
-                        if ui.add(egui::Button::new(
+                    if let Some(SelectableBody::Asteroid(entity)) = selected.body
+                        && ui.add(egui::Button::new(
                             egui::RichText::new("Deflect").size(14.0).color(egui::Color32::WHITE)
                         ).fill(egui::Color32::from_rgb(85, 153, 221)).min_size(egui::vec2(70.0, 28.0))).clicked() {
                             radial_menu_state.open = true;
@@ -254,7 +253,6 @@ fn render_collision_prediction_banner(
                                 ctx.screen_rect().height() / 2.0,
                             );
                         }
-                    }
                 });
             });
         });

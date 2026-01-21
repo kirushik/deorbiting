@@ -19,7 +19,7 @@ use crate::physics::{
 };
 use crate::render::z_layers;
 use crate::render::SelectedBody;
-use crate::types::{BodyState, InputSystemSet, SelectableBody, SimulationTime, AU_TO_METERS};
+use crate::types::{BodyState, InputSystemSet, SelectableBody, SimulationTime, AU_TO_METERS, ESCAPE_DISTANCE, CRASH_DISTANCE};
 use crate::ui::velocity_handle::VelocityDragState;
 
 /// Plugin providing trajectory prediction functionality.
@@ -768,9 +768,7 @@ fn predict_with_verlet_full(
             };
         }
 
-        // Check escape or crash
-        const ESCAPE_DISTANCE: f64 = 100.0 * 1.495978707e11; // 100 AU
-        const CRASH_DISTANCE: f64 = 1e9; // ~Sun radius
+        // Check escape or crash (using centralized constants)
         if pos.length() > ESCAPE_DISTANCE || pos.length() < CRASH_DISTANCE {
             return PredictionResult {
                 continuation: None,
@@ -887,7 +885,7 @@ fn predict_with_verlet_continue(
         step += 1;
 
         // Store points at interval
-        if step % point_interval == 0 {
+        if step.is_multiple_of(point_interval) {
             trajectory.points.push(TrajectoryPoint {
                 pos,
                 time: sim_t,
@@ -910,9 +908,7 @@ fn predict_with_verlet_continue(
             };
         }
 
-        // Check escape or crash
-        const ESCAPE_DISTANCE: f64 = 100.0 * 1.495978707e11; // 100 AU
-        const CRASH_DISTANCE: f64 = 1e9; // ~Sun radius
+        // Check escape or crash (using centralized constants)
         if pos.length() > ESCAPE_DISTANCE || pos.length() < CRASH_DISTANCE {
             return PredictionResult {
                 continuation: None,
@@ -1151,5 +1147,181 @@ mod tests {
         assert!((settings.max_time - 15.0 * 365.25 * 24.0 * 3600.0).abs() < 1.0);
         assert!(settings.update_interval > 0);
         assert_eq!(settings.point_interval, 20);
+    }
+
+
+    #[test]
+    fn test_trajectory_cache_empty_cannot_extend() {
+        let cache = TrajectoryCache::default();
+        let entity = Entity::from_raw(1);
+        // Empty cache cannot extend
+        assert!(!cache.can_extend(entity, 0));
+    }
+
+    #[test]
+    fn test_trajectory_cache_store_and_check() {
+        let mut cache = TrajectoryCache::default();
+        let entity = Entity::from_raw(1);
+        let deflector_hash = 12345u64;
+        
+        // Store continuation
+        let continuation = ContinuationState {
+            pos: DVec2::new(1e11, 0.0),
+            vel: DVec2::new(0.0, 3e4),
+            acc: DVec2::new(-0.006, 0.0),
+            dt: 3600.0,
+            sim_t: 0.0,
+            steps: 1000,
+        };
+        
+        cache.store_continuation(entity, continuation.clone(), deflector_hash, 0.0);
+        
+        // Can extend with same hash
+        assert!(cache.can_extend(entity, deflector_hash));
+        
+        // Cannot extend with different hash
+        assert!(!cache.can_extend(entity, deflector_hash + 1));
+        
+        // Other entity cannot extend
+        assert!(!cache.can_extend(Entity::from_raw(2), deflector_hash));
+    }
+
+    #[test]
+    fn test_trajectory_cache_invalidate_entity() {
+        let mut cache = TrajectoryCache::default();
+        let entity = Entity::from_raw(1);
+        
+        let continuation = ContinuationState {
+            pos: DVec2::new(1e11, 0.0),
+            vel: DVec2::new(0.0, 3e4),
+            acc: DVec2::ZERO,
+            dt: 3600.0,
+            sim_t: 0.0,
+            steps: 100,
+        };
+        
+        cache.store_continuation(entity, continuation, 0, 0.0);
+        assert!(cache.can_extend(entity, 0));
+        
+        cache.invalidate_entity(entity);
+        assert!(!cache.can_extend(entity, 0));
+    }
+
+    #[test]
+    fn test_trajectory_cache_mark_terminal() {
+        let mut cache = TrajectoryCache::default();
+        let entity = Entity::from_raw(1);
+        
+        let continuation = ContinuationState {
+            pos: DVec2::new(1e11, 0.0),
+            vel: DVec2::new(0.0, 3e4),
+            acc: DVec2::ZERO,
+            dt: 3600.0,
+            sim_t: 0.0,
+            steps: 100,
+        };
+        
+        cache.store_continuation(entity, continuation, 0, 0.0);
+        assert!(cache.can_extend(entity, 0));
+        
+        cache.mark_terminal(entity);
+        // Terminal entries cannot be extended
+        assert!(!cache.can_extend(entity, 0));
+    }
+
+    #[test]
+    fn test_trajectory_cache_cleanup_stale() {
+        let mut cache = TrajectoryCache::default();
+        
+        let e1 = Entity::from_raw(1);
+        let e2 = Entity::from_raw(2);
+        let e3 = Entity::from_raw(3);
+        
+        let cont = ContinuationState {
+            pos: DVec2::ZERO,
+            vel: DVec2::ZERO,
+            acc: DVec2::ZERO,
+            dt: 1.0,
+            sim_t: 0.0,
+            steps: 0,
+        };
+        
+        cache.store_continuation(e1, cont.clone(), 0, 0.0);
+        cache.store_continuation(e2, cont.clone(), 0, 0.0);
+        cache.store_continuation(e3, cont.clone(), 0, 0.0);
+        
+        // Cleanup - only e1 and e2 are valid
+        cache.cleanup_stale_entries(&[e1, e2]);
+        
+        assert!(cache.can_extend(e1, 0));
+        assert!(cache.can_extend(e2, 0));
+        assert!(!cache.can_extend(e3, 0)); // Was cleaned up
+    }
+
+    #[test]
+    fn test_prediction_budget_defaults() {
+        let budget = PredictionBudget::default();
+        
+        assert!(budget.target_micros > 0.0);
+        assert!(budget.steps_budget > 0);
+        assert!(budget.min_steps > 0);
+        assert!(budget.max_steps > budget.min_steps);
+        assert!(budget.ewma_alpha > 0.0 && budget.ewma_alpha < 1.0);
+    }
+
+    #[test]
+    fn test_prediction_budget_ewma_update() {
+        let mut budget = PredictionBudget::default();
+        let initial_cost = budget.step_cost_ewma;
+        
+        // Simulate measured performance - 2000 steps in 4000 microseconds = 2μs/step
+        budget.update_cost(2000, 4000.0);
+        
+        // EWMA should have moved towards the measured cost
+        // New = alpha * measured + (1-alpha) * old
+        // With alpha=0.2, measured=2.0, old=1.0:
+        // New = 0.2 * 2.0 + 0.8 * 1.0 = 1.2
+        let expected = budget.ewma_alpha * 2.0 + (1.0 - budget.ewma_alpha) * initial_cost;
+        assert!((budget.step_cost_ewma - expected).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_prediction_budget_get_extension_budget() {
+        let budget = PredictionBudget::default();
+        let ext_budget = budget.get_extension_budget();
+        
+        // Extension budget should be within bounds
+        assert!(ext_budget >= budget.min_steps);
+        assert!(ext_budget <= budget.max_steps);
+    }
+
+    #[test]
+    fn test_body_color_returns_rgb() {
+        let bodies = [
+            CelestialBodyId::Sun,
+            CelestialBodyId::Earth,
+            CelestialBodyId::Mars,
+            CelestialBodyId::Jupiter,
+        ];
+        
+        for body in bodies {
+            let (r, g, b) = body_color(body);
+            // All components should be in [0, 1]
+            assert!(r >= 0.0 && r <= 1.0, "Red out of range for {:?}", body);
+            assert!(g >= 0.0 && g <= 1.0, "Green out of range for {:?}", body);
+            assert!(b >= 0.0 && b <= 1.0, "Blue out of range for {:?}", body);
+        }
+    }
+
+    #[test]
+    fn test_trajectory_color_non_selected_dimmer() {
+        let selected = trajectory_color(0.5, false, None, true);
+        let non_selected = trajectory_color(0.5, false, None, false);
+        
+        let Color::Srgba(sel) = selected else { panic!("Expected Srgba"); };
+        let Color::Srgba(non_sel) = non_selected else { panic!("Expected Srgba"); };
+        
+        // Non-selected should have lower alpha
+        assert!(non_sel.alpha < sel.alpha, "Non-selected trajectory should be dimmer");
     }
 }

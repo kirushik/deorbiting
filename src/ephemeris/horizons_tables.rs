@@ -65,15 +65,14 @@ impl HorizonsTables {
 
             let table = EphemerisTable::load(&path)?;
 
-            if let Some(expected) = stable_body_id(*id) {
-                if table.body_id != expected {
+            if let Some(expected) = stable_body_id(*id)
+                && table.body_id != expected {
                     // Hard error: indicates wrong file ↔ body mapping (e.g. wrong filename or stale export).
                     return Err(EphemerisTableError::BodyIdMismatch {
                         expected,
                         got: table.body_id,
                     });
                 }
-            }
 
             tables.insert(*id, table);
         }
@@ -130,11 +129,10 @@ impl HorizonsTables {
         let mut result = [None; TABLE_BODY_COUNT];
 
         for (i, &id) in BODY_ORDER.iter().enumerate() {
-            if let Some(tbl) = self.tables.get(&id) {
-                if let Ok(pos) = tbl.sample_position(t) {
+            if let Some(tbl) = self.tables.get(&id)
+                && let Ok(pos) = tbl.sample_position(t) {
                     result[i] = Some(pos);
                 }
-            }
         }
 
         result

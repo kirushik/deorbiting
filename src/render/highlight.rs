@@ -79,11 +79,10 @@ fn find_body_at_cursor(
         let base_radius = (body.radius * crate::camera::RENDER_SCALE) as f32 * body.visual_scale;
         let hit_radius = base_radius.max(2.0) * 2.0; // At least 2 units, doubled for easier picking
 
-        if dist < hit_radius {
-            if closest.is_none_or(|(_, d)| dist < d) {
+        if dist < hit_radius
+            && closest.is_none_or(|(_, d)| dist < d) {
                 closest = Some((SelectableBody::Celestial(entity), dist));
             }
-        }
     }
 
     // Check asteroids
@@ -94,11 +93,10 @@ fn find_body_at_cursor(
         // Use asteroid visual radius for hit detection
         let hit_radius = visual.render_radius.max(2.0) * 2.0;
 
-        if dist < hit_radius {
-            if closest.is_none_or(|(_, d)| dist < d) {
+        if dist < hit_radius
+            && closest.is_none_or(|(_, d)| dist < d) {
                 closest = Some((SelectableBody::Asteroid(entity), dist));
             }
-        }
     }
 
     closest.map(|(body, _)| body)
@@ -121,12 +119,11 @@ fn detect_hover(
     }
 
     // Don't detect hover if egui wants the pointer
-    if let Some(ctx) = contexts.try_ctx_mut() {
-        if ctx.wants_pointer_input() {
+    if let Some(ctx) = contexts.try_ctx_mut()
+        && ctx.wants_pointer_input() {
             hovered.body = None;
             return;
         }
-    }
 
     let Ok(window) = window_query.get_single() else {
         return;
@@ -162,11 +159,10 @@ fn detect_selection(
     }
 
     // Don't process click if egui wants the pointer (clicking on UI)
-    if let Some(ctx) = contexts.try_ctx_mut() {
-        if ctx.wants_pointer_input() {
+    if let Some(ctx) = contexts.try_ctx_mut()
+        && ctx.wants_pointer_input() {
             return;
         }
-    }
 
     let Ok(window) = window_query.get_single() else {
         return;

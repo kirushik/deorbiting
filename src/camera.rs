@@ -179,11 +179,10 @@ fn camera_zoom(
     }
 
     // Skip zoom if egui wants the pointer (e.g., hovering over UI panel)
-    if let Some(ctx) = contexts.try_ctx_mut() {
-        if ctx.wants_pointer_input() {
+    if let Some(ctx) = contexts.try_ctx_mut()
+        && ctx.wants_pointer_input() {
             return;
         }
-    }
 
     let Ok(mut projection) = camera_query.get_single_mut() else {
         return;
@@ -212,11 +211,10 @@ fn camera_pan(
     }
 
     // Skip pan if egui wants the pointer (e.g., interacting with UI panel)
-    if let Some(ctx) = contexts.try_ctx_mut() {
-        if ctx.wants_pointer_input() {
+    if let Some(ctx) = contexts.try_ctx_mut()
+        && ctx.wants_pointer_input() {
             return;
         }
-    }
 
     let Ok((mut transform, projection)) = camera_query.get_single_mut() else {
         return;
@@ -324,5 +322,93 @@ fn animate_focus(
         let current = focus.start_position.lerp(target, eased);
         transform.translation.x = current.x;
         transform.translation.y = current.y;
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_camera_state_default_zoom() {
+        let state = CameraState::default();
+        assert!((state.zoom - DEFAULT_ZOOM).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_render_scale_is_positive() {
+        assert!(RENDER_SCALE > 0.0);
+        // 1e-9 maps physics (meters) to render units (gigameters)
+        assert!((RENDER_SCALE - 1e-9).abs() < 1e-15);
+    }
+
+    #[test]
+    fn test_zoom_bounds_valid() {
+        assert!(MIN_ZOOM > 0.0, "MIN_ZOOM must be positive");
+        assert!(MAX_ZOOM > MIN_ZOOM, "MAX_ZOOM must be greater than MIN_ZOOM");
+        assert!(DEFAULT_ZOOM >= MIN_ZOOM, "DEFAULT_ZOOM must be >= MIN_ZOOM");
+        assert!(DEFAULT_ZOOM <= MAX_ZOOM, "DEFAULT_ZOOM must be <= MAX_ZOOM");
+    }
+
+    #[test]
+    fn test_click_tracker_default() {
+        let tracker = ClickTracker::default();
+        // Initial click time should be negative (no previous click)
+        assert!(tracker.last_click_time < 0.0);
+        assert_eq!(tracker.last_click_pos, Vec2::ZERO);
+    }
+
+    #[test]
+    fn test_camera_focus_default_inactive() {
+        let focus = CameraFocus::default();
+        // No active target initially
+        assert!(focus.target_position.is_none());
+        assert_eq!(focus.progress, 0.0);
+        assert_eq!(focus.start_position, Vec2::ZERO);
+        // Duration should be reasonable (0.1s to 2.0s)
+        assert!(focus.duration > 0.1 && focus.duration < 2.0);
+    }
+
+    #[test]
+    fn test_double_click_threshold_reasonable() {
+        // Double-click time should be between 0.1 and 1.0 seconds
+        assert!(DOUBLE_CLICK_TIME >= 0.1, "Double-click time too short");
+        assert!(DOUBLE_CLICK_TIME <= 1.0, "Double-click time too long");
+    }
+
+    #[test]
+    fn test_physics_to_render_scaling() {
+        // 1 AU in meters
+        let pos_meters = 1.495978707e11_f64;
+        let pos_render = pos_meters * RENDER_SCALE;
+        // Should be approximately 149.6 render units
+        assert!((pos_render - 149.6).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_render_to_physics_scaling() {
+        let pos_render = 149.6_f64; // ~1 AU in render units
+        let pos_meters = pos_render / RENDER_SCALE;
+        // Should be approximately 1 AU
+        let au = 1.495978707e11_f64;
+        assert!((pos_meters - au).abs() / au < 0.001); // Within 0.1%
+    }
+
+    #[test]
+    fn test_zoom_speed_reasonable() {
+        // ZOOM_SPEED should be small enough for fine control
+        assert!(ZOOM_SPEED > 0.0);
+        assert!(ZOOM_SPEED < 1.0, "Zoom speed should be less than 100% per scroll");
+        // Typical values are around 0.05-0.2
+        assert!(ZOOM_SPEED <= 0.3);
+    }
+
+    #[test]
+    fn test_viewport_height_positive() {
+        assert!(VIEWPORT_HEIGHT > 0.0);
+        // Should show a meaningful portion of the inner solar system
+        // 500 render units ≈ 3.3 AU
+        assert!(VIEWPORT_HEIGHT >= 100.0);
     }
 }

@@ -8,6 +8,7 @@ use bevy_egui::{egui, EguiContexts};
 
 use crate::asteroid::{Asteroid, AsteroidName};
 use crate::camera::{MainCamera, RENDER_SCALE};
+use crate::collision::CollisionState;
 use crate::continuous::{ContinuousDeflector, ContinuousDeflectorState};
 use crate::ephemeris::{get_trivia, CelestialBodyData, CelestialBodyId, Ephemeris};
 use crate::physics::IntegratorStates;
@@ -173,7 +174,8 @@ fn smart_card_position(ctx: &egui::Context, screen_pos: Vec2, velocity_dir: Opti
 pub fn context_card_system(
     mut commands: Commands,
     mut contexts: EguiContexts,
-    selected: Res<SelectedBody>,
+    mut selected: ResMut<SelectedBody>,
+    collision_state: Res<CollisionState>,
     camera_query: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
     celestial_bodies: Query<(Entity, &CelestialBody)>,
     mut asteroids: Query<(Entity, &AsteroidName, &mut BodyState, &Transform), With<Asteroid>>,
@@ -216,6 +218,10 @@ pub fn context_card_system(
             }
         }
         Some(SelectableBody::Asteroid(entity)) => {
+            // Skip rendering if asteroid is colliding (in one-frame window before despawn)
+            if collision_state.is_colliding(entity) {
+                return;
+            }
             if let Ok((_, name, mut body_state, transform)) = asteroids.get_mut(entity) {
                 let render_pos = transform.translation.truncate();
 
@@ -245,6 +251,7 @@ pub fn context_card_system(
                     if result.delete_clicked {
                         commands.entity(entity).despawn();
                         integrator_states.remove(entity);
+                        selected.body = None;
                     }
 
                     if result.deflect_clicked {

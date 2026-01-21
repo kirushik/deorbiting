@@ -136,11 +136,19 @@ fn handle_launch_event(
         // Determine deflection direction
         let direction = event.direction.unwrap_or_else(|| {
             // Default: retrograde (opposite to asteroid velocity)
-            -asteroid_state.vel.normalize_or_zero()
+            let vel_dir = -asteroid_state.vel.normalize_or_zero();
+            // Fallback to radial direction from Sun if asteroid is stationary
+            if vel_dir == DVec2::ZERO {
+                asteroid_state.pos.normalize_or_zero()
+            } else {
+                vel_dir
+            }
         });
 
-        // Flight time (default 90 days)
-        let flight_time = event.flight_time.unwrap_or(90.0 * 86400.0);
+        // Flight time (default 90 days, must be positive)
+        let flight_time = event.flight_time
+            .filter(|&t| t > 0.0 && t.is_finite())
+            .unwrap_or(90.0 * 86400.0);
 
         // Create interceptor entity
         let interceptor = Interceptor {
@@ -355,9 +363,12 @@ fn handle_asteroid_splitting(
     trajectories: Query<&TrajectoryPath, With<Asteroid>>,
 ) {
     for event in events.read() {
+        // Validate split ratio to prevent negative or impossible masses
+        let split_ratio = event.split_ratio.clamp(0.01, 0.99);
+        
         // Calculate fragment masses
-        let mass1 = event.mass * event.split_ratio;
-        let mass2 = event.mass * (1.0 - event.split_ratio);
+        let mass1 = event.mass * split_ratio;
+        let mass2 = event.mass * (1.0 - split_ratio);
 
         // Calculate separation velocity from nuclear explosion
         let separation_speed = DeflectionPayload::calculate_separation_velocity(event.yield_kt, event.mass);

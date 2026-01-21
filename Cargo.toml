@@ -13,6 +13,7 @@ wide = "0.7"
 
 [dev-dependencies]
 approx = "0.5"
+proptest = "1.4"
 particular = { version = "0.7", features = ["parallel"] }
 rayon = "1.10"
 

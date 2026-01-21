@@ -7,6 +7,9 @@
 mod gravity;
 mod integrator;
 
+#[cfg(test)]
+mod proptest_physics;
+
 use std::collections::HashMap;
 
 use bevy::prelude::*;
@@ -27,11 +30,6 @@ use crate::ephemeris::Ephemeris;
 use crate::render::SelectedBody;
 use crate::types::{BodyState, SimulationTime, SECONDS_PER_DAY};
 
-/// Plugin providing physics simulation for asteroids.
-///
-/// Adds systems for:
-/// - Physics integration (IAS15) in FixedUpdate
-/// - Integrator state management
 /// System set for physics simulation, used for ordering with collision detection.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PhysicsSet;
@@ -42,7 +40,9 @@ impl Plugin for PhysicsPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(IAS15Config::default())
             .insert_resource(IntegratorStates::default())
-            .add_systems(FixedUpdate, physics_step.in_set(PhysicsSet));
+            .add_systems(FixedUpdate, physics_step.in_set(PhysicsSet))
+            // Clean up integrator states when asteroids are despawned
+            .add_systems(PostUpdate, cleanup_integrator_states);
     }
 }
 

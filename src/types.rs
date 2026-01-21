@@ -15,8 +15,6 @@ pub enum InputSystemSet {
     PositionDrag,
 }
 
-/// Physical constants (SI units)
-
 /// Gravitational constant (m³·kg⁻¹·s⁻²)
 pub const G: f64 = 6.67430e-11;
 
@@ -46,6 +44,14 @@ pub const SECONDS_PER_DAY: f64 = 86400.0;
 /// J2000.0 epoch as Unix timestamp (January 1, 2000, 12:00 TT)
 /// Note: This is approximate; TT differs from UTC by leap seconds
 pub const J2000_UNIX: i64 = 946728000;
+
+/// Distance beyond which a trajectory is considered to have escaped the solar system (meters).
+/// 100 AU is well beyond Neptune's orbit.
+pub const ESCAPE_DISTANCE: f64 = 100.0 * AU_TO_METERS;
+
+/// Distance at which a trajectory is considered to have crashed into the Sun (meters).
+/// Approximately the Sun's radius (696,000 km).
+pub const CRASH_DISTANCE: f64 = 6.96e8;
 
 /// Physical state of a body in the simulation.
 /// Uses f64 (DVec2) for physics accuracy over solar system scales.
@@ -202,7 +208,7 @@ pub fn j2000_seconds_to_date_string(j2000_seconds: f64) -> String {
 /// Convert days since Unix epoch to year, month, day
 fn days_to_ymd(days: i64) -> (i32, u32, u32) {
     // Algorithm for Gregorian calendar
-    let mut remaining_days = days + 719468; // Days from year 0 to 1970
+    let remaining_days = days + 719468; // Days from year 0 to 1970
 
     let era = if remaining_days >= 0 {
         remaining_days / 146097

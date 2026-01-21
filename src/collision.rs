@@ -270,4 +270,103 @@ mod tests {
 
         assert!((event.impact_speed_km_s() - 10.0).abs() < 0.001);
     }
+
+
+    #[test]
+    fn test_collision_event_time_days() {
+        let event = CollisionEvent {
+            asteroid_name: "Test".to_string(),
+            body_hit: CelestialBodyId::Earth,
+            impact_position: DVec2::ZERO,
+            impact_velocity: DVec2::ZERO,
+            time: SECONDS_PER_DAY * 365.25, // 1 year in seconds
+        };
+        
+        let days = event.time_days();
+        assert!((days - 365.25).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_collision_state_default() {
+        let state = CollisionState::default();
+        assert!(!state.has_pending());
+        assert!(state.pending_notifications.is_empty());
+        assert!(state.colliding_entities.is_empty());
+    }
+
+    #[test]
+    fn test_collision_state_multiple_entities_independent() {
+        let mut state = CollisionState::default();
+        
+        let e1 = Entity::from_raw(1);
+        let e2 = Entity::from_raw(2);
+        let e3 = Entity::from_raw(3);
+        
+        // Add e1 and e2 as colliding
+        state.push_collision(e1, make_event("A1"));
+        state.push_collision(e2, make_event("A2"));
+        
+        // e3 should not be affected
+        assert!(!state.is_colliding(e3));
+        assert!(state.is_colliding(e1));
+        assert!(state.is_colliding(e2));
+        
+        // Pop one notification - entities should still be colliding
+        let _ = state.pop_notification();
+        assert!(state.is_colliding(e1));
+        assert!(state.is_colliding(e2));
+    }
+
+    #[test]
+    fn test_collision_event_velocity_vector() {
+        // Test that velocity vector components are preserved
+        let event = CollisionEvent {
+            asteroid_name: "Test".to_string(),
+            body_hit: CelestialBodyId::Mars,
+            impact_position: DVec2::new(1e11, 2e11),
+            impact_velocity: DVec2::new(3000.0, 4000.0), // 5 km/s total
+            time: 100.0,
+        };
+        
+        // Velocity magnitude: sqrt(3^2 + 4^2) = 5 km/s
+        assert!((event.impact_speed_km_s() - 5.0).abs() < 0.001);
+        // Check components preserved
+        assert_eq!(event.impact_velocity.x, 3000.0);
+        assert_eq!(event.impact_velocity.y, 4000.0);
+    }
+
+    #[test]
+    fn test_collision_state_pop_returns_none_when_empty() {
+        let mut state = CollisionState::default();
+        assert!(state.pop_notification().is_none());
+        
+        // Add one and pop it
+        state.push_collision(Entity::from_raw(1), make_event("A"));
+        assert!(state.pop_notification().is_some());
+        
+        // Should be empty again
+        assert!(state.pop_notification().is_none());
+    }
+
+    #[test]
+    fn test_collision_event_different_bodies() {
+        // Test events for different celestial bodies
+        let bodies = [
+            CelestialBodyId::Sun,
+            CelestialBodyId::Mercury,
+            CelestialBodyId::Earth,
+            CelestialBodyId::Jupiter,
+        ];
+        
+        for body in bodies {
+            let event = CollisionEvent {
+                asteroid_name: format!("Asteroid-{:?}", body),
+                body_hit: body,
+                impact_position: DVec2::ZERO,
+                impact_velocity: DVec2::new(1000.0, 0.0),
+                time: 0.0,
+            };
+            assert_eq!(event.body_hit, body);
+        }
+    }
 }

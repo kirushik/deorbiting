@@ -265,8 +265,10 @@ pub fn compute_thrust_direction(
 
 /// Thrust direction options for continuous deflection.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Default)]
 pub enum ThrustDirection {
     /// Opposite to velocity (slows asteroid down - default for deflection)
+    #[default]
     Retrograde,
     /// Same as velocity (speeds asteroid up)
     Prograde,
@@ -280,11 +282,6 @@ pub enum ThrustDirection {
     Custom(DVec2),
 }
 
-impl Default for ThrustDirection {
-    fn default() -> Self {
-        ThrustDirection::Retrograde
-    }
-}
 
 #[cfg(test)]
 mod tests {

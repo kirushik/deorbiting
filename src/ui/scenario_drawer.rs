@@ -106,14 +106,13 @@ pub fn scenario_drawer_system(
         });
 
     // Close on click outside
-    if drawer_state.open && ctx.input(|i| i.pointer.any_pressed()) {
-        if let Some(pos) = ctx.input(|i| i.pointer.hover_pos()) {
+    if drawer_state.open && ctx.input(|i| i.pointer.any_pressed())
+        && let Some(pos) = ctx.input(|i| i.pointer.hover_pos()) {
             let drawer_top = ctx.screen_rect().height() - dock_height - visible_height;
             if pos.y < drawer_top {
                 drawer_state.open = false;
             }
         }
-    }
 }
 
 /// System to handle keyboard shortcuts for the drawer.

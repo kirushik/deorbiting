@@ -14,12 +14,14 @@ Visual representation of orbits, trajectories, and celestial bodies with accurat
  - [Architecture Overview](./docs/ARCHITECTURE.md) - Split-world pattern, ECS components, coordinate systems
  - [Physics Specification](./docs/PHYSICS.md) - IAS15 integrator, time system, gravity model
  - [Ephemeris & Orbital Elements](./docs/EPHEMERIS.md) - Kepler solver, J2000 orbital elements
+  - [Ephemeris Tables Usage](./docs/EPHEMERIS_TABLES.md) - Description of the optional ephemeris tables usage for planets' and moons' trajectories
  - [UI Specification](./docs/UI.md) - Time controls, velocity handle, panels, overlays
  - [UI/UX Guidelines](./docs/UI_GUIDELINES.md) - Design principles, typography, colors, interaction patterns
 
 ### Implementation Guides (_how_ to build)
  - [Implementation Roadmap](./docs/ROADMAP.md) - High-level phase descriptions
  - [Implementation Checklist](./docs/CHECKLIST.md) - **Detailed coding tasks with checkboxes**
+ - [Testing Guide](./docs/TESTING.md) - Testing strategies and best practices
 
 ### Serena Memories (_why_ decisions were made)
 Use Serena's memory system to persist and retrieve design rationale across sessions:

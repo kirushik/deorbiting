@@ -202,14 +202,13 @@ pub fn radial_menu_system(
         });
 
     // Close on click outside
-    if ctx.input(|i| i.pointer.any_pressed()) {
-        if let Some(pos) = ctx.input(|i| i.pointer.hover_pos()) {
+    if ctx.input(|i| i.pointer.any_pressed())
+        && let Some(pos) = ctx.input(|i| i.pointer.hover_pos()) {
             let dist = ((pos.x - center.x).powi(2) + (pos.y - center.y).powi(2)).sqrt();
             if dist > radius + 60.0 {
                 menu_state.open = false;
             }
         }
-    }
 
     // Close on Escape
     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {

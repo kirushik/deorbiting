@@ -10,6 +10,13 @@ use crate::types::GM_SUN;
 
 use crate::ephemeris::{CelestialBodyId, GravitySources, GravitySourcesFull};
 
+/// Minimum squared distance threshold for gravity calculations (meters²).
+///
+/// Below this threshold, gravitational acceleration is clamped to avoid
+/// numerical singularities. 1e6 m² = 1 km² is a safe threshold that
+/// prevents NaN/Inf while allowing realistic close approaches.
+const SINGULARITY_THRESHOLD_SQ: f64 = 1e6;
+
 /// Compute gravitational acceleration at a given position and time.
 ///
 /// Uses all gravity sources from the ephemeris (Sun, planets, moons).
@@ -46,9 +53,8 @@ pub fn compute_acceleration_from_sources(pos: DVec2, sources: &GravitySources) -
         let delta = body_pos - pos;
         let r_squared = delta.length_squared();
 
-        // Avoid singularity at very small distances.
-        // 1.0 meter threshold is safe - no real orbits that close.
-        if r_squared > 1.0 {
+        // Avoid singularity at very small distances
+        if r_squared > SINGULARITY_THRESHOLD_SQ {
             let r = r_squared.sqrt();
             // a = GM/r² in the direction of delta (toward the body)
             // delta/r gives the unit vector

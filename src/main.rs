@@ -6,37 +6,21 @@
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
 
-mod asteroid;
-mod camera;
-mod collision;
-mod continuous;
-mod ephemeris;
-mod input;
-mod interceptor;
-mod outcome;
-mod physics;
-mod prediction;
-mod render;
-mod scenarios;
-mod time;
-mod types;
-mod ui;
-
-use asteroid::{handle_reset, AsteroidCounter, ResetEvent};
-use camera::CameraPlugin;
-use collision::CollisionPlugin;
-use continuous::ContinuousPlugin;
-use ephemeris::Ephemeris;
-use input::InputPlugin;
-use interceptor::InterceptorPlugin;
-use physics::PhysicsPlugin;
-use prediction::PredictionPlugin;
-use render::RenderPlugin;
-use scenarios::ScenarioPlugin;
-use time::TimePlugin;
-use types::SimulationTime;
-use ui::velocity_handle::VelocityHandlePlugin;
-use ui::UiPlugin;
+use deorbiting::asteroid::{handle_reset, AsteroidCounter, ResetEvent};
+use deorbiting::camera::CameraPlugin;
+use deorbiting::collision::CollisionPlugin;
+use deorbiting::continuous::ContinuousPlugin;
+use deorbiting::ephemeris::Ephemeris;
+use deorbiting::input::InputPlugin;
+use deorbiting::interceptor::InterceptorPlugin;
+use deorbiting::physics::PhysicsPlugin;
+use deorbiting::prediction::PredictionPlugin;
+use deorbiting::render::RenderPlugin;
+use deorbiting::scenarios::ScenarioPlugin;
+use deorbiting::time::TimePlugin;
+use deorbiting::types::SimulationTime;
+use deorbiting::ui::velocity_handle::VelocityHandlePlugin;
+use deorbiting::ui::UiPlugin;
 
 fn main() {
     let mut app = App::new();
@@ -44,8 +28,8 @@ fn main() {
     app.add_plugins(DefaultPlugins)
         .add_plugins(EguiPlugin)
         // Diagnostic plugins for performance monitoring
-        .add_plugins(bevy::diagnostic::FrameTimeDiagnosticsPlugin::default())
-        .add_plugins(bevy::diagnostic::EntityCountDiagnosticsPlugin::default())
+        .add_plugins(bevy::diagnostic::FrameTimeDiagnosticsPlugin)
+        .add_plugins(bevy::diagnostic::EntityCountDiagnosticsPlugin)
         // Insert resources before plugins that depend on them
         .insert_resource(Ephemeris::default())
         .insert_resource(SimulationTime::default())

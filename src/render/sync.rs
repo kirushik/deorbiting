@@ -12,10 +12,6 @@ use crate::render::bodies::CelestialBody;
 use crate::render::z_layers;
 use crate::types::{BodyState, SimulationTime};
 
-/// System set label for position sync (runs before scaling/distortion).
-#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct SyncPositionsSet;
-
 /// Sync celestial body render positions from ephemeris data.
 ///
 /// This system reads physics positions from the Ephemeris resource and

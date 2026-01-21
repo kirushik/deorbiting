@@ -13,7 +13,7 @@ use bevy::math::DVec2;
 use bevy::prelude::*;
 
 use crate::asteroid::{
-    spawn_asteroid_at_position, Asteroid, AsteroidCounter, AsteroidVisual,
+    spawn_asteroid_at_position, Asteroid, AsteroidCounter,
 };
 use crate::camera::{MainCamera, RENDER_SCALE};
 use crate::collision::CollisionState;
@@ -207,7 +207,7 @@ fn handle_load_scenario_event(
         // 8. Update current scenario resource
         current_scenario.id = scenario.id;
 
-        // 8. Position camera
+        // 9. Position camera
         if let Ok((mut transform, mut projection)) = camera_query.get_single_mut() {
             let target_pos = match &scenario.camera_target {
                 CameraTarget::Sun => DVec2::ZERO,
@@ -227,7 +227,7 @@ fn handle_load_scenario_event(
             }
         }
 
-        // 9. Trigger trajectory recalculation
+        // 10. Trigger trajectory recalculation
         mark_prediction_dirty(&mut prediction_state);
 
         info!(

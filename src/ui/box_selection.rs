@@ -99,11 +99,10 @@ pub fn box_selection_input(
     // Start box selection on left mouse button press (only if not over UI)
     if mouse.just_pressed(MouseButton::Left) && !box_state.active {
         // Don't start if egui wants the pointer
-        if let Some(ctx) = contexts.try_ctx_mut() {
-            if ctx.wants_pointer_input() {
+        if let Some(ctx) = contexts.try_ctx_mut()
+            && ctx.wants_pointer_input() {
                 return;
             }
-        }
 
         // Check if clicking on empty space (not on an asteroid)
         let click_on_asteroid = asteroids.iter().any(|(_, transform, visual)| {
@@ -151,7 +150,12 @@ pub fn box_selection_input(
                         // Calculate distance to box center
                         let box_center = (world_min + world_max) / 2.0;
                         let dist = (pos - box_center).length();
-                        Some((entity, dist))
+                        // Filter out NaN distances
+                        if dist.is_finite() {
+                            Some((entity, dist))
+                        } else {
+                            None
+                        }
                     } else {
                         None
                     }
@@ -160,7 +164,10 @@ pub fn box_selection_input(
 
             // Select the asteroid closest to the center of the box
             if !asteroids_in_box.is_empty() {
-                asteroids_in_box.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+                // Sort with NaN-safe comparison
+                asteroids_in_box.sort_by(|a, b| {
+                    a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
+                });
                 selected.body = Some(SelectableBody::Asteroid(asteroids_in_box[0].0));
             }
         }

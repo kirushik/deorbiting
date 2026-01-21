@@ -118,13 +118,11 @@ impl ContinuousDeflector {
 
     /// Get remaining fuel fraction (0.0 - 1.0) for fuel-based methods.
     pub fn fuel_fraction(&self) -> Option<f64> {
-        if let ContinuousDeflectorState::Operating { fuel_consumed, .. } = &self.state {
-            if let Some(initial) = self.payload.initial_fuel() {
-                if initial > 0.0 {
+        if let ContinuousDeflectorState::Operating { fuel_consumed, .. } = &self.state
+            && let Some(initial) = self.payload.initial_fuel()
+                && initial > 0.0 {
                     return Some(1.0 - (fuel_consumed / initial).min(1.0));
                 }
-            }
-        }
         None
     }
 }
@@ -318,7 +316,7 @@ pub fn compute_continuous_thrust(
     asteroid_pos: DVec2,
     asteroid_vel: DVec2,
     asteroid_mass: f64,
-    sim_time: f64,
+    _sim_time: f64,
     deflectors: &[(Entity, &ContinuousDeflector)],
 ) -> DVec2 {
     let mut total_acc = DVec2::ZERO;
@@ -485,7 +483,7 @@ mod tests {
 
     #[test]
     fn test_fuel_fraction() {
-        let mut deflector = ContinuousDeflector {
+        let deflector = ContinuousDeflector {
             target: Entity::PLACEHOLDER,
             payload: ContinuousPayload::IonBeam {
                 thrust_n: 0.1,

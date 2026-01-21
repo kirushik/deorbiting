@@ -39,6 +39,9 @@ pub enum EphemerisTableError {
     #[error("invalid ephemeris table (empty samples)")]
     Empty,
 
+    #[error("invalid step size: {0} (must be positive)")]
+    InvalidStepSize(f64),
+
     #[error("requested time {time} outside table range [{start}, {end}]")]
     OutOfRange { time: f64, start: f64, end: f64 },
 }
@@ -70,6 +73,11 @@ impl EphemerisTable {
         let start_t0 = r.read_f64_le()?;
         let count = r.read_u32_le()? as usize;
         let _reserved = r.read_u32_le()?;
+
+        // Validate step size to prevent division by zero
+        if step_seconds <= 0.0 || !step_seconds.is_finite() {
+            return Err(EphemerisTableError::InvalidStepSize(step_seconds));
+        }
 
         if count == 0 {
             return Err(EphemerisTableError::Empty);

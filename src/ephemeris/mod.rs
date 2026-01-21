@@ -12,6 +12,9 @@ pub mod horizons_tables;
 pub mod kepler;
 pub mod table;
 
+#[cfg(test)]
+mod proptest_ephemeris;
+
 pub use data::{get_trivia, CelestialBodyData, CelestialBodyId, CelestialBodyTrivia, all_bodies};
 
 use crate::types::G;
@@ -20,13 +23,18 @@ use bevy::prelude::*;
 use std::collections::HashMap;
 use std::sync::RwLock;
 
-/// Multiplier for collision detection radius.
+/// Multiplier for planet collision detection radius.
 ///
 /// For gameplay purposes, we detect collision when an asteroid enters
 /// the "danger zone" around a celestial body, not just its physical surface.
 /// This makes the game playable while representing realistic intervention thresholds.
 ///
 /// At 50x, Earth's danger zone is ~320,000 km (about the Moon's orbital distance).
+///
+/// Note: The Sun uses a separate 2x multiplier (see `SUN_COLLISION_MULT` in
+/// `get_gravity_sources_full`). This is because the Sun is already huge
+/// (696,000 km radius), and a 2x multiplier creates a ~1.4M km danger zone
+/// which is reasonable without making it dominate the inner solar system.
 pub const COLLISION_MULTIPLIER: f64 = 50.0;
 
 /// Total number of gravity sources in the solar system model.
@@ -208,8 +216,8 @@ impl Ephemeris {
         //
         // If `time` is outside the table range, we fall back to Kepler but apply a per-body
         // offset so the transition is continuous at the boundary (for planets only).
-        if let Some(h) = &self.horizons {
-            if let Some(tbl) = h.table(id) {
+        if let Some(h) = &self.horizons
+            && let Some(tbl) = h.table(id) {
                 let start = tbl.start_time();
                 let end = tbl.end_time();
 
@@ -236,7 +244,6 @@ impl Ephemeris {
                 // For `time < start`, we intentionally fall back to Kepler without offsets.
                 // Tables are forward-only by design; negative times are not guaranteed.
             }
-        }
 
         // No table available: pure Kepler model.
         self.get_kepler_position_by_id(id, time)
@@ -261,8 +268,8 @@ impl Ephemeris {
         //
         // If `time` is outside the table range, we fall back to Kepler but apply a per-body
         // offset so the transition is continuous at the boundary.
-        if let Some(h) = &self.horizons {
-            if let Some(tbl) = h.table(id) {
+        if let Some(h) = &self.horizons
+            && let Some(tbl) = h.table(id) {
                 let start = tbl.start_time();
                 let end = tbl.end_time();
 
@@ -282,7 +289,6 @@ impl Ephemeris {
                 // For `time < start`, we intentionally fall back to Kepler without offsets.
                 // Tables are forward-only by design; negative times are not guaranteed.
             }
-        }
 
         // No table available: pure Kepler model.
         self.get_kepler_velocity_by_id(id, time)
@@ -296,6 +302,9 @@ impl Ephemeris {
     ///
     /// This function returns a fixed-size array to avoid heap allocations.
     /// Uses pre-computed GM cache and batched position queries for performance.
+    ///
+    /// If a body's position lookup fails, it is logged and the body's GM is set to 0
+    /// (effectively excluding it from gravity calculations).
     ///
     /// # Arguments
     /// * `time` - Time in seconds since J2000 epoch
@@ -311,35 +320,45 @@ impl Ephemeris {
         // Try batched table sampling for bodies 1-8 (planets only, moons are decorative)
         if let Some(h) = &self.horizons {
             let positions = h.sample_all_positions(time);
-            for i in 0..8 {
+            for (i, table_pos) in positions.iter().enumerate() {
                 let body_idx = i + 1; // Skip Sun
-                if let Some(pos) = positions[i] {
+                if let Some(pos) = *table_pos {
                     result[body_idx] = (pos, self.gm_cache[body_idx]);
                 } else {
                     // Fallback to individual query (outside table range or missing table)
                     let id = BODY_ORDER[body_idx];
-                    let pos = self.get_position_by_id(id, time).unwrap_or(DVec2::ZERO);
-                    result[body_idx] = (pos, self.gm_cache[body_idx]);
+                    if let Some(pos) = self.get_position_by_id(id, time) {
+                        result[body_idx] = (pos, self.gm_cache[body_idx]);
+                    } else {
+                        // Position lookup failed - exclude from gravity (GM = 0)
+                        warn_once!(
+                            "Failed to get position for {:?} at time {:.1}, excluding from gravity",
+                            id,
+                            time
+                        );
+                        result[body_idx] = (DVec2::ZERO, 0.0);
+                    }
                 }
             }
         } else {
             // No tables: use Kepler for all bodies
             for i in 1..GRAVITY_SOURCE_COUNT {
                 let id = BODY_ORDER[i];
-                let pos = self.get_position_by_id(id, time).unwrap_or(DVec2::ZERO);
-                result[i] = (pos, self.gm_cache[i]);
+                if let Some(pos) = self.get_position_by_id(id, time) {
+                    result[i] = (pos, self.gm_cache[i]);
+                } else {
+                    // Position lookup failed - exclude from gravity (GM = 0)
+                    warn_once!(
+                        "Failed to get position for {:?} at time {:.1}, excluding from gravity",
+                        id,
+                        time
+                    );
+                    result[i] = (DVec2::ZERO, 0.0);
+                }
             }
         }
 
         result
-    }
-
-    /// Helper to get a single gravity source for a body.
-    #[inline]
-    fn gravity_source_for(&self, id: CelestialBodyId, time: f64) -> GravitySource {
-        let pos = self.get_position_by_id(id, time).unwrap_or(DVec2::ZERO);
-        let gm = self.body_data.get(&id).map(|d| G * d.mass).unwrap_or(0.0);
-        (pos, gm)
     }
 
     /// Get all gravity sources with their IDs at a given time.
@@ -372,15 +391,21 @@ impl Ephemeris {
     }
 
     /// Helper to get a single gravity source with ID for a body.
+    /// Returns GM=0 if position lookup fails.
     #[inline]
     fn gravity_source_with_id_for(&self, id: CelestialBodyId, time: f64) -> GravitySourceWithId {
-        let pos = if id == CelestialBodyId::Sun {
-            DVec2::ZERO
+        if id == CelestialBodyId::Sun {
+            let gm = self.body_data.get(&id).map(|d| G * d.mass).unwrap_or(0.0);
+            return (id, DVec2::ZERO, gm);
+        }
+        
+        if let Some(pos) = self.get_position_by_id(id, time) {
+            let gm = self.body_data.get(&id).map(|d| G * d.mass).unwrap_or(0.0);
+            (id, pos, gm)
         } else {
-            self.get_position_by_id(id, time).unwrap_or(DVec2::ZERO)
-        };
-        let gm = self.body_data.get(&id).map(|d| G * d.mass).unwrap_or(0.0);
-        (id, pos, gm)
+            // Position lookup failed - exclude from gravity
+            (id, DVec2::ZERO, 0.0)
+        }
     }
 
     /// Get all gravity sources with full data in a SINGLE ephemeris pass.
@@ -393,6 +418,9 @@ impl Ephemeris {
     ///
     /// Use this in trajectory prediction loops where you need all three pieces
     /// of information per timestep.
+    ///
+    /// If a body's position lookup fails, it is logged and the body's GM is set to 0
+    /// (effectively excluding it from gravity calculations).
     ///
     /// # Arguments
     /// * `time` - Time in seconds since J2000 epoch
@@ -426,40 +454,70 @@ impl Ephemeris {
         // Planets (indices 1-8) - batch position lookup where possible
         if let Some(h) = &self.horizons {
             let positions = h.sample_all_positions(time);
-            for i in 0..8 {
+            for (i, table_pos) in positions.iter().enumerate() {
                 let body_idx = i + 1;
                 let id = BODY_ORDER[body_idx];
-                let pos = positions[i].unwrap_or_else(|| {
-                    self.get_position_by_id(id, time).unwrap_or(DVec2::ZERO)
-                });
                 let collision_radius = self
                     .body_data
                     .get(&id)
                     .map(|d| d.radius * COLLISION_MULTIPLIER)
                     .unwrap_or(0.0);
-                result[body_idx] = GravitySourceFull {
-                    id,
-                    pos,
-                    gm: self.gm_cache[body_idx],
-                    collision_radius,
-                };
+
+                let pos_opt = table_pos.or_else(|| self.get_position_by_id(id, time));
+                
+                if let Some(pos) = pos_opt {
+                    result[body_idx] = GravitySourceFull {
+                        id,
+                        pos,
+                        gm: self.gm_cache[body_idx],
+                        collision_radius,
+                    };
+                } else {
+                    // Position lookup failed - exclude from gravity (GM = 0)
+                    warn_once!(
+                        "Failed to get position for {:?} at time {:.1}, excluding from gravity",
+                        id,
+                        time
+                    );
+                    result[body_idx] = GravitySourceFull {
+                        id,
+                        pos: DVec2::ZERO,
+                        gm: 0.0, // Exclude from gravity
+                        collision_radius: 0.0, // No collision with missing body
+                    };
+                }
             }
         } else {
             // No tables: use Kepler for all bodies
             for i in 1..GRAVITY_SOURCE_COUNT {
                 let id = BODY_ORDER[i];
-                let pos = self.get_position_by_id(id, time).unwrap_or(DVec2::ZERO);
                 let collision_radius = self
                     .body_data
                     .get(&id)
                     .map(|d| d.radius * COLLISION_MULTIPLIER)
                     .unwrap_or(0.0);
-                result[i] = GravitySourceFull {
-                    id,
-                    pos,
-                    gm: self.gm_cache[i],
-                    collision_radius,
-                };
+                    
+                if let Some(pos) = self.get_position_by_id(id, time) {
+                    result[i] = GravitySourceFull {
+                        id,
+                        pos,
+                        gm: self.gm_cache[i],
+                        collision_radius,
+                    };
+                } else {
+                    // Position lookup failed - exclude from gravity (GM = 0)
+                    warn_once!(
+                        "Failed to get position for {:?} at time {:.1}, excluding from gravity",
+                        id,
+                        time
+                    );
+                    result[i] = GravitySourceFull {
+                        id,
+                        pos: DVec2::ZERO,
+                        gm: 0.0, // Exclude from gravity
+                        collision_radius: 0.0, // No collision with missing body
+                    };
+                }
             }
         }
 
@@ -480,22 +538,19 @@ impl Ephemeris {
     /// Some(CelestialBodyId) if collision detected, None otherwise.
     pub fn check_collision(&self, pos: DVec2, time: f64) -> Option<CelestialBodyId> {
         // Check Sun (use smaller multiplier - Sun is already huge)
-        if let Some(sun_data) = self.body_data.get(&CelestialBodyId::Sun) {
-            if pos.length() < sun_data.radius * 2.0 {
+        if let Some(sun_data) = self.body_data.get(&CelestialBodyId::Sun)
+            && pos.length() < sun_data.radius * 2.0 {
                 return Some(CelestialBodyId::Sun);
             }
-        }
 
         // Check planets - use full COLLISION_MULTIPLIER for danger zone
         // (Moons are decorative only - no collision detection)
         for &id in CelestialBodyId::PLANETS {
             if let (Some(body_pos), Some(data)) =
                 (self.get_position_by_id(id, time), self.body_data.get(&id))
-            {
-                if (pos - body_pos).length() < data.radius * COLLISION_MULTIPLIER {
+                && (pos - body_pos).length() < data.radius * COLLISION_MULTIPLIER {
                     return Some(id);
                 }
-            }
         }
 
         None
@@ -553,11 +608,10 @@ impl Ephemeris {
         t_end: f64,
     ) -> Option<StateOffset2> {
         // First, try the cache.
-        if let Ok(guard) = self.horizons_fallback_offsets.read() {
-            if let Some(offset) = guard.get(&id).copied() {
+        if let Ok(guard) = self.horizons_fallback_offsets.read()
+            && let Some(offset) = guard.get(&id).copied() {
                 return Some(offset);
             }
-        }
 
         let h = self.horizons.as_ref()?;
         let tbl = h.table(id)?;
