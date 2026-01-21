@@ -59,7 +59,7 @@ pub struct InterceptorRegistry {
 }
 
 /// Event to launch a new interceptor.
-#[derive(Event)]
+#[derive(Message)]
 pub struct LaunchInterceptorEvent {
     /// Target asteroid entity.
     pub target: Entity,
@@ -72,7 +72,7 @@ pub struct LaunchInterceptorEvent {
 }
 
 /// Event to split an asteroid into two fragments.
-#[derive(Event)]
+#[derive(Message)]
 pub struct SplitAsteroidEvent {
     /// The asteroid entity to split.
     pub target: Entity,
@@ -98,8 +98,8 @@ pub struct InterceptorPlugin;
 impl Plugin for InterceptorPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<InterceptorRegistry>()
-            .add_event::<LaunchInterceptorEvent>()
-            .add_event::<SplitAsteroidEvent>()
+            .init_resource::<Messages<LaunchInterceptorEvent>>()
+            .init_resource::<Messages<SplitAsteroidEvent>>()
             .add_systems(
                 Update,
                 (
@@ -116,7 +116,7 @@ impl Plugin for InterceptorPlugin {
 #[allow(clippy::too_many_arguments)]
 fn handle_launch_event(
     mut commands: Commands,
-    mut events: EventReader<LaunchInterceptorEvent>,
+    mut events: MessageReader<LaunchInterceptorEvent>,
     mut registry: ResMut<InterceptorRegistry>,
     sim_time: Res<SimulationTime>,
     ephemeris: Res<Ephemeris>,
@@ -183,7 +183,7 @@ fn update_interceptors(
     mut asteroids: Query<(&mut BodyState, &AsteroidName), With<Asteroid>>,
     mut integrator_states: ResMut<IntegratorStates>,
     mut prediction_state: ResMut<PredictionState>,
-    mut split_events: EventWriter<SplitAsteroidEvent>,
+    mut split_events: MessageWriter<SplitAsteroidEvent>,
     sim_time: Res<SimulationTime>,
 ) {
     for (entity, mut interceptor) in interceptors.iter_mut() {
@@ -210,7 +210,7 @@ fn update_interceptors(
             } = &interceptor.payload
             {
                 // Send splitting event instead of applying delta-v
-                split_events.send(SplitAsteroidEvent {
+                split_events.write(SplitAsteroidEvent {
                     target: interceptor.target,
                     position: asteroid_state.pos,
                     velocity: asteroid_state.vel,
@@ -360,7 +360,7 @@ pub fn optimal_deflection_direction(asteroid_vel: DVec2, _lead_time: f64) -> DVe
 #[allow(clippy::too_many_arguments)]
 fn handle_asteroid_splitting(
     mut commands: Commands,
-    mut events: EventReader<SplitAsteroidEvent>,
+    mut events: MessageReader<SplitAsteroidEvent>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut counter: ResMut<AsteroidCounter>,
@@ -407,7 +407,7 @@ fn handle_asteroid_splitting(
         let _original_trajectory = trajectories.get(event.target).ok();
 
         // Despawn original asteroid
-        commands.entity(event.target).despawn_recursive();
+        commands.entity(event.target).despawn();
 
         // Spawn fragment 1 with unique color
         counter.0 += 1;

@@ -12,6 +12,8 @@ use crate::asteroid::{Asteroid, ResetEvent};
 use crate::camera::{MAX_ZOOM, MIN_ZOOM, MainCamera, RENDER_SCALE, ZOOM_SPEED};
 use crate::physics::IntegratorStates;
 use crate::prediction::{PredictionState, mark_prediction_dirty};
+use bevy_egui::EguiPrimaryContextPass;
+
 use crate::render::SelectedBody;
 use crate::types::{BodyState, InputSystemSet, SelectableBody, SimulationTime};
 use crate::ui::velocity_handle::VelocityDragState;
@@ -33,17 +35,17 @@ pub struct InputPlugin;
 impl Plugin for InputPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<DragState>()
-            // Configure system ordering: velocity drag runs before position drag
+            // Configure system ordering for EguiPrimaryContextPass: velocity drag runs before position drag
             .configure_sets(
-                Update,
+                EguiPrimaryContextPass,
                 InputSystemSet::PositionDrag.after(InputSystemSet::VelocityDrag),
             )
+            // Keyboard shortcuts don't use egui - run in Update
+            .add_systems(Update, keyboard_shortcuts)
+            // Asteroid drag uses egui - run in EguiPrimaryContextPass
             .add_systems(
-                Update,
-                (
-                    keyboard_shortcuts,
-                    handle_asteroid_drag.in_set(InputSystemSet::PositionDrag),
-                ),
+                EguiPrimaryContextPass,
+                handle_asteroid_drag.in_set(InputSystemSet::PositionDrag),
             );
     }
 }
@@ -53,7 +55,7 @@ fn keyboard_shortcuts(
     keys: Res<ButtonInput<KeyCode>>,
     mut sim_time: ResMut<SimulationTime>,
     mut camera_query: Query<&mut Projection, With<MainCamera>>,
-    mut reset_events: EventWriter<ResetEvent>,
+    mut reset_events: MessageWriter<ResetEvent>,
 ) {
     // Space: toggle pause
     if keys.just_pressed(KeyCode::Space) {
@@ -65,7 +67,7 @@ fn keyboard_shortcuts(
     }
 
     // Handle zoom with keyboard
-    let Ok(mut projection) = camera_query.get_single_mut() else {
+    let Ok(mut projection) = camera_query.single_mut() else {
         return;
     };
 
@@ -116,7 +118,7 @@ fn keyboard_shortcuts(
 
     // R: reset simulation (time, asteroids, collision state)
     if keys.just_pressed(KeyCode::KeyR) {
-        reset_events.send(ResetEvent);
+        reset_events.write(ResetEvent);
     }
 }
 
@@ -153,17 +155,17 @@ fn handle_asteroid_drag(
     // If we're dragging and mouse passes over an egui window, we still need
     // to process drag updates and mouse release.
     if drag_state.dragging.is_none()
-        && let Some(ctx) = contexts.try_ctx_mut()
+        && let Ok(ctx) = contexts.ctx_mut()
         && ctx.wants_pointer_input()
     {
         return;
     }
 
-    let Ok(window) = window_query.get_single() else {
+    let Ok(window) = window_query.single() else {
         return;
     };
 
-    let Ok((camera, camera_transform)) = camera_query.get_single() else {
+    let Ok((camera, camera_transform)) = camera_query.single() else {
         return;
     };
 
@@ -266,7 +268,7 @@ mod tests {
     #[test]
     fn test_drag_state_tracks_entity() {
         let mut state = DragState::default();
-        let entity = Entity::from_raw(42);
+        let entity = Entity::from_bits(42);
         state.dragging = Some(entity);
         assert_eq!(state.dragging, Some(entity));
     }

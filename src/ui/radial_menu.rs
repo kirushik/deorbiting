@@ -115,8 +115,8 @@ const ALL_METHODS: [DeflectionMethod; 7] = [
 pub fn radial_menu_system(
     mut contexts: EguiContexts,
     mut menu_state: ResMut<RadialMenuState>,
-    mut launch_events: EventWriter<LaunchInterceptorEvent>,
-    mut continuous_launch_events: EventWriter<LaunchContinuousDeflectorEvent>,
+    mut launch_events: MessageWriter<LaunchInterceptorEvent>,
+    mut continuous_launch_events: MessageWriter<LaunchContinuousDeflectorEvent>,
     asteroids: Query<&BodyState, With<Asteroid>>,
     ephemeris: Res<Ephemeris>,
     sim_time: Res<SimulationTime>,
@@ -135,7 +135,7 @@ pub fn radial_menu_system(
         return;
     };
 
-    let Some(ctx) = contexts.try_ctx_mut() else {
+    let Some(ctx) = contexts.ctx_mut().ok() else {
         return;
     };
 
@@ -265,8 +265,13 @@ fn render_method_button(
     let accent_color = method.color();
 
     // Draw button
-    ui.painter()
-        .rect(rect, 6.0, bg_color, egui::Stroke::new(2.0, accent_color));
+    ui.painter().rect(
+        rect,
+        6.0,
+        bg_color,
+        egui::Stroke::new(2.0, accent_color),
+        egui::StrokeKind::Middle,
+    );
 
     // Keyboard shortcut badge (top-left corner)
     ui.painter().text(
@@ -318,15 +323,15 @@ fn apply_deflection(
     method: DeflectionMethod,
     asteroid_state: &BodyState,
     flight_time_seconds: f64,
-    launch_events: &mut EventWriter<LaunchInterceptorEvent>,
-    continuous_launch_events: &mut EventWriter<LaunchContinuousDeflectorEvent>,
+    launch_events: &mut MessageWriter<LaunchInterceptorEvent>,
+    continuous_launch_events: &mut MessageWriter<LaunchContinuousDeflectorEvent>,
 ) {
     // Default direction: retrograde (opposite to velocity)
     let direction = -asteroid_state.vel.normalize_or_zero();
 
     match method {
         DeflectionMethod::Kinetic => {
-            launch_events.send(LaunchInterceptorEvent {
+            launch_events.write(LaunchInterceptorEvent {
                 target,
                 payload: DeflectionPayload::Kinetic {
                     mass_kg: 560.0,
@@ -337,7 +342,7 @@ fn apply_deflection(
             });
         }
         DeflectionMethod::Nuclear => {
-            launch_events.send(LaunchInterceptorEvent {
+            launch_events.write(LaunchInterceptorEvent {
                 target,
                 payload: DeflectionPayload::Nuclear { yield_kt: 100.0 },
                 direction: Some(direction),
@@ -345,7 +350,7 @@ fn apply_deflection(
             });
         }
         DeflectionMethod::NuclearSplit => {
-            launch_events.send(LaunchInterceptorEvent {
+            launch_events.write(LaunchInterceptorEvent {
                 target,
                 payload: DeflectionPayload::NuclearSplit {
                     yield_kt: 500.0,
@@ -356,7 +361,7 @@ fn apply_deflection(
             });
         }
         DeflectionMethod::IonBeam => {
-            continuous_launch_events.send(LaunchContinuousDeflectorEvent {
+            continuous_launch_events.write(LaunchContinuousDeflectorEvent {
                 target,
                 payload: ContinuousPayload::IonBeam {
                     thrust_n: 0.1,
@@ -369,7 +374,7 @@ fn apply_deflection(
             });
         }
         DeflectionMethod::GravityTractor => {
-            continuous_launch_events.send(LaunchContinuousDeflectorEvent {
+            continuous_launch_events.write(LaunchContinuousDeflectorEvent {
                 target,
                 payload: ContinuousPayload::GravityTractor {
                     spacecraft_mass_kg: 20_000.0,
@@ -381,7 +386,7 @@ fn apply_deflection(
             });
         }
         DeflectionMethod::LaserAblation => {
-            continuous_launch_events.send(LaunchContinuousDeflectorEvent {
+            continuous_launch_events.write(LaunchContinuousDeflectorEvent {
                 target,
                 payload: ContinuousPayload::LaserAblation {
                     power_kw: 100.0,
@@ -393,7 +398,7 @@ fn apply_deflection(
             });
         }
         DeflectionMethod::SolarSail => {
-            continuous_launch_events.send(LaunchContinuousDeflectorEvent {
+            continuous_launch_events.write(LaunchContinuousDeflectorEvent {
                 target,
                 payload: ContinuousPayload::SolarSail {
                     sail_area_m2: 10_000.0,

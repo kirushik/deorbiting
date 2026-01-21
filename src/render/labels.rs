@@ -5,6 +5,8 @@
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 
+use bevy_egui::EguiPrimaryContextPass;
+
 use crate::camera::MainCamera;
 use crate::ephemeris::data::CelestialBodyId;
 use crate::render::bodies::CelestialBody;
@@ -15,7 +17,8 @@ pub struct LabelPlugin;
 impl Plugin for LabelPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<LabelSettings>()
-            .add_systems(Update, draw_body_labels);
+            // Labels use egui - run in EguiPrimaryContextPass
+            .add_systems(EguiPrimaryContextPass, draw_body_labels);
     }
 }
 
@@ -70,7 +73,7 @@ fn draw_body_labels(
         return;
     }
 
-    let Ok((camera, camera_transform, projection)) = camera.get_single() else {
+    let Ok((camera, camera_transform, projection)) = camera.single() else {
         return;
     };
 
@@ -80,10 +83,14 @@ fn draw_body_labels(
         _ => return,
     };
 
+    let Some(ctx) = egui_ctx.ctx_mut().ok() else {
+        return;
+    };
+
     egui::Area::new(egui::Id::new("body_labels"))
         .fixed_pos(egui::pos2(0.0, 0.0))
         .order(egui::Order::Background)
-        .show(egui_ctx.ctx_mut(), |ui| {
+        .show(ctx, |ui| {
             let painter = ui.painter();
 
             for (body, transform) in bodies.iter() {

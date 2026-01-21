@@ -723,7 +723,7 @@ mod tests {
         let mut eph = Ephemeris::new();
 
         // Create fake entities (in real usage these come from Bevy)
-        let fake_entity = Entity::from_raw(42);
+        let fake_entity = Entity::from_bits(42);
 
         eph.register(fake_entity, CelestialBodyId::Earth);
 

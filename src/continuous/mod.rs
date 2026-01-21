@@ -134,7 +134,7 @@ pub struct ContinuousDeflectorRegistry {
 }
 
 /// Event to launch a new continuous deflector.
-#[derive(Event)]
+#[derive(Message)]
 pub struct LaunchContinuousDeflectorEvent {
     /// Target asteroid entity.
     pub target: Entity,
@@ -150,10 +150,11 @@ pub struct ContinuousPlugin;
 impl Plugin for ContinuousPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ContinuousDeflectorRegistry>()
-            .add_event::<LaunchContinuousDeflectorEvent>()
+            .init_resource::<Messages<LaunchContinuousDeflectorEvent>>()
+            .add_systems(Update, handle_launch_event)
             .add_systems(
                 Update,
-                (handle_launch_event, update_continuous_deflectors).chain(),
+                update_continuous_deflectors.after(handle_launch_event),
             );
     }
 }
@@ -161,7 +162,7 @@ impl Plugin for ContinuousPlugin {
 /// Handle launch events to spawn new continuous deflectors.
 fn handle_launch_event(
     mut commands: Commands,
-    mut events: EventReader<LaunchContinuousDeflectorEvent>,
+    mut events: MessageReader<LaunchContinuousDeflectorEvent>,
     mut registry: ResMut<ContinuousDeflectorRegistry>,
     sim_time: Res<SimulationTime>,
     asteroids: Query<&BodyState, With<Asteroid>>,
@@ -518,7 +519,7 @@ mod tests {
     #[test]
     fn test_compute_continuous_thrust_single() {
         let deflector = ContinuousDeflector {
-            target: Entity::from_raw(1),
+            target: Entity::PLACEHOLDER,
             payload: ContinuousPayload::IonBeam {
                 thrust_n: 0.1, // 100 mN
                 fuel_mass_kg: 100.0,
@@ -535,13 +536,13 @@ mod tests {
             },
         };
 
-        let target = Entity::from_raw(1);
+        let target = Entity::PLACEHOLDER;
         let pos = DVec2::new(AU_TO_METERS, 0.0);
         let vel = DVec2::new(0.0, 30000.0); // ~30 km/s circular velocity
         let mass = 1e10; // 10 billion kg
 
         let deflectors: Vec<(Entity, &ContinuousDeflector)> =
-            vec![(Entity::from_raw(2), &deflector)];
+            vec![(Entity::PLACEHOLDER, &deflector)];
         let acc = compute_continuous_thrust(target, pos, vel, mass, 0.0, &deflectors);
 
         // Acceleration should be opposite to velocity (retrograde)
@@ -555,7 +556,7 @@ mod tests {
     #[test]
     fn test_compute_continuous_thrust_non_operating() {
         let deflector = ContinuousDeflector {
-            target: Entity::from_raw(1),
+            target: Entity::PLACEHOLDER,
             payload: ContinuousPayload::ion_beam_default(),
             launch_time: 0.0,
             launch_position: DVec2::ZERO,
@@ -564,13 +565,13 @@ mod tests {
             },
         };
 
-        let target = Entity::from_raw(1);
+        let target = Entity::PLACEHOLDER;
         let pos = DVec2::new(AU_TO_METERS, 0.0);
         let vel = DVec2::new(0.0, 30000.0);
         let mass = 1e10;
 
         let deflectors: Vec<(Entity, &ContinuousDeflector)> =
-            vec![(Entity::from_raw(2), &deflector)];
+            vec![(Entity::PLACEHOLDER, &deflector)];
         let acc = compute_continuous_thrust(target, pos, vel, mass, 0.0, &deflectors);
 
         // Non-operating deflector should not contribute thrust

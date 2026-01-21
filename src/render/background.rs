@@ -22,9 +22,10 @@ impl Plugin for BackgroundPlugin {
 /// Spawn lighting for the scene.
 fn spawn_lighting(mut commands: Commands) {
     // Ambient light for general visibility
-    commands.insert_resource(AmbientLight {
+    commands.spawn(AmbientLight {
         color: Color::WHITE,
         brightness: 200.0,
+        affects_lightmapped_meshes: true,
     });
 
     // Directional light from "above" the ecliptic plane

@@ -11,13 +11,13 @@ use bevy_egui::{EguiContexts, egui};
 pub struct FontsInitialized(pub bool);
 
 /// System to initialize Phosphor icon fonts.
-/// Must run once when EguiContext is first available.
+/// Runs in EguiPrimaryContextPass where the egui context is guaranteed to be ready.
 pub fn setup_fonts(mut contexts: EguiContexts, mut initialized: ResMut<FontsInitialized>) {
     if initialized.0 {
         return;
     }
 
-    let Some(ctx) = contexts.try_ctx_mut() else {
+    let Ok(ctx) = contexts.ctx_mut() else {
         return;
     };
 

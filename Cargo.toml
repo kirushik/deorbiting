@@ -4,18 +4,17 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy = "0.15"
-bevy_egui = "0.31"
-egui-phosphor = { version = "0.7", features = ["regular", "fill"] }
+bevy = "0.18"
+bevy_egui = "0.39"
+egui-phosphor = { version = "0.11", features = ["regular", "fill"] }
 thiserror = "2"
-rand = "0.8"
-wide = "0.7"
+wide = "1.1"
 
 [dev-dependencies]
 approx = "0.5"
-proptest = "1.4"
+proptest = "1.9"
 particular = { version = "0.7", features = ["parallel"] }
-rayon = "1.10"
+rayon = "1.11"
 
 [lints.clippy]
 type_complexity = "allow"

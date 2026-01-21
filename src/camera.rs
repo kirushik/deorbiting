@@ -3,11 +3,13 @@
 //! Provides zoom, pan, and focus controls for viewing the solar system.
 
 use bevy::{
+    camera::ScalingMode,
     input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll},
     prelude::*,
-    render::camera::ScalingMode,
     window::PrimaryWindow,
 };
+
+use bevy_egui::EguiPrimaryContextPass;
 
 use crate::input::DragState;
 
@@ -95,7 +97,7 @@ impl Default for ClickTracker {
 }
 
 /// Event to focus camera on an entity.
-#[derive(Event)]
+#[derive(Message)]
 pub struct FocusOnEntityEvent {
     pub entity: Entity,
 }
@@ -117,24 +119,21 @@ impl Plugin for CameraPlugin {
         app.init_resource::<CameraState>()
             .init_resource::<CameraFocus>()
             .init_resource::<ClickTracker>()
-            .add_event::<FocusOnEntityEvent>()
+            .init_resource::<Messages<FocusOnEntityEvent>>()
             .add_systems(Startup, setup_camera)
+            // Camera zoom and pan use egui - run in EguiPrimaryContextPass
+            .add_systems(EguiPrimaryContextPass, (camera_zoom, camera_pan))
+            // These don't use egui - run in Update
             .add_systems(
                 Update,
-                (
-                    camera_zoom,
-                    camera_pan,
-                    detect_double_click,
-                    animate_focus,
-                    handle_focus_events,
-                ),
+                (detect_double_click, animate_focus, handle_focus_events),
             );
     }
 }
 
 /// Handle FocusOnEntityEvent by starting camera animation to entity position.
 fn handle_focus_events(
-    mut events: EventReader<FocusOnEntityEvent>,
+    mut events: MessageReader<FocusOnEntityEvent>,
     mut focus: ResMut<CameraFocus>,
     camera_query: Query<&Transform, With<MainCamera>>,
     entity_transforms: Query<&Transform, Without<MainCamera>>,
@@ -145,7 +144,7 @@ fn handle_focus_events(
 
             // Get current camera position
             let current_pos = camera_query
-                .get_single()
+                .single()
                 .map(|t| t.translation.truncate())
                 .unwrap_or(Vec2::ZERO);
 
@@ -188,13 +187,13 @@ fn camera_zoom(
     }
 
     // Skip zoom if egui wants the pointer (e.g., hovering over UI panel)
-    if let Some(ctx) = contexts.try_ctx_mut()
+    if let Ok(ctx) = contexts.ctx_mut()
         && ctx.wants_pointer_input()
     {
         return;
     }
 
-    let Ok(mut projection) = camera_query.get_single_mut() else {
+    let Ok(mut projection) = camera_query.single_mut() else {
         return;
     };
 
@@ -221,13 +220,13 @@ fn camera_pan(
     }
 
     // Skip pan if egui wants the pointer (e.g., interacting with UI panel)
-    if let Some(ctx) = contexts.try_ctx_mut()
+    if let Ok(ctx) = contexts.ctx_mut()
         && ctx.wants_pointer_input()
     {
         return;
     }
 
-    let Ok((mut transform, projection)) = camera_query.get_single_mut() else {
+    let Ok((mut transform, projection)) = camera_query.single_mut() else {
         return;
     };
 
@@ -264,7 +263,7 @@ fn detect_double_click(
         return;
     }
 
-    let Ok(window) = window_query.get_single() else {
+    let Ok(window) = window_query.single() else {
         return;
     };
 
@@ -272,7 +271,7 @@ fn detect_double_click(
         return;
     };
 
-    let Ok((camera, camera_global_transform, camera_transform)) = camera_query.get_single() else {
+    let Ok((camera, camera_global_transform, camera_transform)) = camera_query.single() else {
         return;
     };
 
@@ -312,7 +311,7 @@ fn animate_focus(
         return;
     };
 
-    let Ok(mut transform) = camera_query.get_single_mut() else {
+    let Ok(mut transform) = camera_query.single_mut() else {
         return;
     };
 

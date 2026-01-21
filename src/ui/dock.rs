@@ -44,16 +44,16 @@ pub struct HelpTooltipState {
 pub fn dock_system(
     mut contexts: EguiContexts,
     mut sim_time: ResMut<SimulationTime>,
-    mut reset_events: EventWriter<ResetEvent>,
+    mut reset_events: MessageWriter<ResetEvent>,
     current_scenario: Res<CurrentScenario>,
     mut drawer_state: ResMut<ScenarioDrawerState>,
     mut help_state: ResMut<HelpTooltipState>,
     asteroids: Query<(Entity, &AsteroidName, &AsteroidVisual), With<Asteroid>>,
     mut selected: ResMut<SelectedBody>,
     mut placement_mode: ResMut<super::AsteroidPlacementMode>,
-    mut camera_focus_events: EventWriter<crate::camera::FocusOnEntityEvent>,
+    mut camera_focus_events: MessageWriter<crate::camera::FocusOnEntityEvent>,
 ) {
-    let Some(ctx) = contexts.try_ctx_mut() else {
+    let Some(ctx) = contexts.ctx_mut().ok() else {
         return;
     };
 
@@ -62,9 +62,9 @@ pub fn dock_system(
     egui::TopBottomPanel::bottom("dock")
         .exact_height(dock_height)
         .frame(
-            egui::Frame::none()
+            egui::Frame::NONE
                 .fill(colors::DOCK_BG)
-                .inner_margin(egui::Margin::symmetric(20.0, 12.0)),
+                .inner_margin(egui::Margin::symmetric(20, 12)),
         )
         .show(ctx, |ui| {
             // Use a single horizontal_centered layout - NO nested horizontals!
@@ -224,7 +224,7 @@ pub fn dock_system(
                         if response.double_clicked() {
                             // Double-click centers camera on asteroid
                             camera_focus_events
-                                .send(crate::camera::FocusOnEntityEvent { entity: *entity });
+                                .write(crate::camera::FocusOnEntityEvent { entity: *entity });
                         }
                     }
                 }
@@ -293,7 +293,7 @@ pub fn dock_system(
                         .on_hover_text("Reset scenario (R)")
                         .clicked()
                     {
-                        reset_events.send(ResetEvent);
+                        reset_events.write(ResetEvent);
                     }
                 });
             });
@@ -321,7 +321,7 @@ fn render_help_overlay(ctx: &egui::Context) {
         .resizable(false)
         .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(-70.0, -70.0))
         .frame(
-            egui::Frame::none()
+            egui::Frame::NONE
                 .fill(egui::Color32::from_rgba_premultiplied(26, 26, 36, 245))
                 .inner_margin(16.0)
                 .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(60, 60, 80))),

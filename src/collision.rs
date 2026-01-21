@@ -22,7 +22,7 @@ use crate::types::{SECONDS_PER_DAY, SelectableBody, SimulationTime};
 ///
 /// This event is sent when collision is detected, allowing UI systems
 /// to display impact information. The asteroid is destroyed after the event.
-#[derive(Event, Clone, Debug)]
+#[derive(Message, Clone, Debug)]
 pub struct CollisionEvent {
     /// Name of the asteroid that collided (entity is destroyed).
     pub asteroid_name: String,
@@ -107,7 +107,7 @@ impl CollisionState {
 pub fn handle_collision_response(
     commands: &mut Commands,
     collision_state: &mut CollisionState,
-    collision_events: &mut EventWriter<CollisionEvent>,
+    collision_events: &mut MessageWriter<'_, CollisionEvent>,
     selected: &mut SelectedBody,
     sim_time: &mut SimulationTime,
     entity: Entity,
@@ -144,7 +144,7 @@ pub fn handle_collision_response(
     }
 
     // Fire event for any other listeners
-    collision_events.send(event.clone());
+    collision_events.write(event.clone());
 
     // Pause simulation
     sim_time.paused = true;
@@ -164,7 +164,7 @@ pub struct CollisionPlugin;
 
 impl Plugin for CollisionPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<CollisionEvent>()
+        app.init_resource::<Messages<CollisionEvent>>()
             .insert_resource(CollisionState::default());
     }
 }
@@ -191,9 +191,9 @@ mod tests {
         let event2 = make_event("Asteroid-2");
         let event3 = make_event("Asteroid-3");
 
-        state.push_collision(Entity::from_raw(1), event1);
-        state.push_collision(Entity::from_raw(2), event2);
-        state.push_collision(Entity::from_raw(3), event3);
+        state.push_collision(Entity::from_bits(1), event1);
+        state.push_collision(Entity::from_bits(2), event2);
+        state.push_collision(Entity::from_bits(3), event3);
 
         // Should have 3 pending
         assert!(state.has_pending());
@@ -218,9 +218,9 @@ mod tests {
     fn test_collision_state_colliding_entities() {
         let mut state = CollisionState::default();
 
-        let entity1 = Entity::from_raw(1);
-        let entity2 = Entity::from_raw(2);
-        let entity3 = Entity::from_raw(3);
+        let entity1 = Entity::from_bits(1);
+        let entity2 = Entity::from_bits(2);
+        let entity3 = Entity::from_bits(3);
 
         // Initially no entities are colliding
         assert!(!state.is_colliding(entity1));
@@ -241,19 +241,19 @@ mod tests {
     fn test_collision_state_clear() {
         let mut state = CollisionState::default();
 
-        state.push_collision(Entity::from_raw(1), make_event("A1"));
-        state.push_collision(Entity::from_raw(2), make_event("A2"));
+        state.push_collision(Entity::from_bits(1), make_event("A1"));
+        state.push_collision(Entity::from_bits(2), make_event("A2"));
 
         assert!(state.has_pending());
-        assert!(state.is_colliding(Entity::from_raw(1)));
-        assert!(state.is_colliding(Entity::from_raw(2)));
+        assert!(state.is_colliding(Entity::from_bits(1)));
+        assert!(state.is_colliding(Entity::from_bits(2)));
 
         state.clear();
 
         // Everything should be cleared
         assert!(!state.has_pending());
-        assert!(!state.is_colliding(Entity::from_raw(1)));
-        assert!(!state.is_colliding(Entity::from_raw(2)));
+        assert!(!state.is_colliding(Entity::from_bits(1)));
+        assert!(!state.is_colliding(Entity::from_bits(2)));
         assert!(state.pending_notifications.is_empty());
         assert!(state.colliding_entities.is_empty());
     }
@@ -297,9 +297,9 @@ mod tests {
     fn test_collision_state_multiple_entities_independent() {
         let mut state = CollisionState::default();
 
-        let e1 = Entity::from_raw(1);
-        let e2 = Entity::from_raw(2);
-        let e3 = Entity::from_raw(3);
+        let e1 = Entity::from_bits(1);
+        let e2 = Entity::from_bits(2);
+        let e3 = Entity::from_bits(3);
 
         // Add e1 and e2 as colliding
         state.push_collision(e1, make_event("A1"));
@@ -340,7 +340,7 @@ mod tests {
         assert!(state.pop_notification().is_none());
 
         // Add one and pop it
-        state.push_collision(Entity::from_raw(1), make_event("A"));
+        state.push_collision(Entity::from_bits(1), make_event("A"));
         assert!(state.pop_notification().is_some());
 
         // Should be empty again

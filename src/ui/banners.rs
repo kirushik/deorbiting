@@ -94,12 +94,12 @@ pub fn banner_system(
     mut contexts: EguiContexts,
     banner_state: Res<BannerState>,
     current_scenario: Res<CurrentScenario>,
-    mut reset_events: EventWriter<ResetEvent>,
+    mut reset_events: MessageWriter<ResetEvent>,
     _drawer_state: ResMut<ScenarioDrawerState>,
     mut radial_menu_state: ResMut<RadialMenuState>,
     selected: Res<SelectedBody>,
 ) {
-    let Some(ctx) = contexts.try_ctx_mut() else {
+    let Some(ctx) = contexts.ctx_mut().ok() else {
         return;
     };
 
@@ -162,7 +162,7 @@ fn render_collision_notification(
     ctx: &egui::Context,
     collision: &CollisionEvent,
     flash_progress: f32,
-    reset_events: &mut EventWriter<ResetEvent>,
+    reset_events: &mut MessageWriter<ResetEvent>,
 ) {
     // Flash effect
     if flash_progress > 0.0 {
@@ -171,7 +171,7 @@ fn render_collision_notification(
             .fixed_pos(egui::pos2(0.0, 0.0))
             .show(ctx, |ui| {
                 ui.painter().rect_filled(
-                    ui.ctx().screen_rect(),
+                    ui.ctx().viewport_rect(),
                     0.0,
                     egui::Color32::from_rgba_unmultiplied(255, 0, 0, alpha),
                 );
@@ -180,9 +180,9 @@ fn render_collision_notification(
 
     egui::TopBottomPanel::top("collision_notification")
         .frame(
-            egui::Frame::none()
+            egui::Frame::NONE
                 .fill(egui::Color32::from_rgba_premultiplied(60, 20, 20, 250))
-                .inner_margin(egui::Margin::symmetric(16.0, 12.0))
+                .inner_margin(egui::Margin::symmetric(16, 12))
                 .stroke(egui::Stroke::new(2.0, colors::COLLISION_BORDER)),
         )
         .show(ctx, |ui| {
@@ -226,7 +226,7 @@ fn render_collision_notification(
                         )
                         .clicked()
                     {
-                        reset_events.send(ResetEvent);
+                        reset_events.write(ResetEvent);
                     }
                 });
             });
@@ -239,7 +239,7 @@ fn render_collision_prediction_banner(
     body_hit: crate::ephemeris::CelestialBodyId,
     time_to_impact: f64,
     impact_velocity: f64,
-    reset_events: &mut EventWriter<ResetEvent>,
+    reset_events: &mut MessageWriter<ResetEvent>,
     radial_menu_state: &mut RadialMenuState,
     selected: &Res<SelectedBody>,
 ) {
@@ -248,9 +248,9 @@ fn render_collision_prediction_banner(
 
     egui::TopBottomPanel::top("collision_banner")
         .frame(
-            egui::Frame::none()
+            egui::Frame::NONE
                 .fill(colors::COLLISION_BG)
-                .inner_margin(egui::Margin::symmetric(16.0, 8.0))
+                .inner_margin(egui::Margin::symmetric(16, 8))
                 .stroke(egui::Stroke::new(1.0, colors::COLLISION_BORDER)),
         )
         .show(ctx, |ui| {
@@ -289,7 +289,7 @@ fn render_collision_prediction_banner(
                         )
                         .clicked()
                     {
-                        reset_events.send(ResetEvent);
+                        reset_events.write(ResetEvent);
                     }
 
                     // Deflect button - opens radial menu
@@ -310,8 +310,8 @@ fn render_collision_prediction_banner(
                         radial_menu_state.target = Some(entity);
                         // Position will be set by context card or center of screen
                         radial_menu_state.position = Vec2::new(
-                            ctx.screen_rect().width() / 2.0,
-                            ctx.screen_rect().height() / 2.0,
+                            ctx.viewport_rect().width() / 2.0,
+                            ctx.viewport_rect().height() / 2.0,
                         );
                     }
                 });
@@ -325,9 +325,9 @@ fn render_escape_banner(ctx: &egui::Context, v_infinity: f64, _direction: bevy::
 
     egui::TopBottomPanel::top("escape_banner")
         .frame(
-            egui::Frame::none()
+            egui::Frame::NONE
                 .fill(colors::ESCAPE_BG)
-                .inner_margin(egui::Margin::symmetric(16.0, 8.0))
+                .inner_margin(egui::Margin::symmetric(16, 8))
                 .stroke(egui::Stroke::new(1.0, colors::ESCAPE_BORDER)),
         )
         .show(ctx, |ui| {
@@ -374,9 +374,9 @@ fn render_stable_orbit_banner(
 
     egui::TopBottomPanel::top("stable_banner")
         .frame(
-            egui::Frame::none()
+            egui::Frame::NONE
                 .fill(colors::STABLE_BG)
-                .inner_margin(egui::Margin::symmetric(16.0, 8.0))
+                .inner_margin(egui::Margin::symmetric(16, 8))
                 .stroke(egui::Stroke::new(1.0, colors::STABLE_BORDER)),
         )
         .show(ctx, |ui| {

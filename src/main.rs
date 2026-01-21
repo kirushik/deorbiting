@@ -26,16 +26,16 @@ fn main() {
     let mut app = App::new();
 
     app.add_plugins(DefaultPlugins)
-        .add_plugins(EguiPlugin)
+        .add_plugins(EguiPlugin::default())
         // Diagnostic plugins for performance monitoring
-        .add_plugins(bevy::diagnostic::FrameTimeDiagnosticsPlugin)
-        .add_plugins(bevy::diagnostic::EntityCountDiagnosticsPlugin)
+        .add_plugins(bevy::diagnostic::FrameTimeDiagnosticsPlugin::default())
+        .add_plugins(bevy::diagnostic::EntityCountDiagnosticsPlugin::default())
         // Insert resources before plugins that depend on them
         .insert_resource(Ephemeris::default())
         .insert_resource(SimulationTime::default())
         .insert_resource(AsteroidCounter::default())
-        // Register events
-        .add_event::<ResetEvent>()
+        // Register message channels
+        .init_resource::<Messages<ResetEvent>>()
         // Add simulation plugins
         .add_plugins((
             CameraPlugin,

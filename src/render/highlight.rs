@@ -11,6 +11,8 @@ use crate::camera::MainCamera;
 use crate::input::DragState;
 use crate::render::bodies::CelestialBody;
 use crate::render::z_layers;
+use bevy_egui::EguiPrimaryContextPass;
+
 use crate::types::{InputSystemSet, SelectableBody};
 use crate::ui::velocity_handle::VelocityDragState;
 
@@ -21,18 +23,21 @@ impl Plugin for HighlightPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<HoveredBody>()
             .init_resource::<SelectedBody>()
+            // Detection systems use egui - run in EguiPrimaryContextPass
+            .add_systems(
+                EguiPrimaryContextPass,
+                (detect_hover, detect_selection)
+                    .chain()
+                    .after(InputSystemSet::VelocityDrag),
+            )
+            // Drawing systems use gizmos, not egui - run in Update
             .add_systems(
                 Update,
                 (
-                    detect_hover,
-                    detect_selection,
                     draw_persistent_asteroid_markers,
                     draw_hover_highlight,
                     draw_selection_highlight,
-                )
-                    .chain()
-                    // Run after velocity drag so it can check if drag started
-                    .after(InputSystemSet::VelocityDrag),
+                ),
             );
     }
 }
@@ -119,18 +124,18 @@ fn detect_hover(
     }
 
     // Don't detect hover if egui wants the pointer
-    if let Some(ctx) = contexts.try_ctx_mut()
+    if let Ok(ctx) = contexts.ctx_mut()
         && ctx.wants_pointer_input()
     {
         hovered.body = None;
         return;
     }
 
-    let Ok(window) = window_query.get_single() else {
+    let Ok(window) = window_query.single() else {
         return;
     };
 
-    let Ok((camera, camera_transform)) = camera_query.get_single() else {
+    let Ok((camera, camera_transform)) = camera_query.single() else {
         return;
     };
 
@@ -166,17 +171,17 @@ fn detect_selection(
     }
 
     // Don't process click if egui wants the pointer (clicking on UI)
-    if let Some(ctx) = contexts.try_ctx_mut()
+    if let Ok(ctx) = contexts.ctx_mut()
         && ctx.wants_pointer_input()
     {
         return;
     }
 
-    let Ok(window) = window_query.get_single() else {
+    let Ok(window) = window_query.single() else {
         return;
     };
 
-    let Ok((camera, camera_transform)) = camera_query.get_single() else {
+    let Ok((camera, camera_transform)) = camera_query.single() else {
         return;
     };
 

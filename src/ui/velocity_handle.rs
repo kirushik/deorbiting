@@ -19,6 +19,8 @@ use crate::physics::IntegratorStates;
 use crate::prediction::PredictionState;
 use crate::render::SelectedBody;
 use crate::render::z_layers;
+use bevy_egui::EguiPrimaryContextPass;
+
 use crate::types::{BodyState, InputSystemSet, SelectableBody, SimulationTime};
 
 /// Plugin for velocity handle interaction.
@@ -26,13 +28,14 @@ pub struct VelocityHandlePlugin;
 
 impl Plugin for VelocityHandlePlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<VelocityDragState>().add_systems(
-            Update,
-            (
+        app.init_resource::<VelocityDragState>()
+            // Velocity drag uses egui - run in EguiPrimaryContextPass
+            .add_systems(
+                EguiPrimaryContextPass,
                 handle_velocity_drag.in_set(InputSystemSet::VelocityDrag),
-                draw_velocity_handles,
-            ),
-        );
+            )
+            // Drawing handles uses gizmos, not egui - run in Update
+            .add_systems(Update, draw_velocity_handles);
     }
 }
 
@@ -117,17 +120,17 @@ fn handle_velocity_drag(
     // If we're dragging and mouse passes over an egui window, we still need
     // to process drag updates and mouse release.
     if !drag_state.dragging
-        && let Some(ctx) = contexts.try_ctx_mut()
+        && let Some(ctx) = contexts.ctx_mut().ok()
         && ctx.wants_pointer_input()
     {
         return;
     }
 
-    let Ok(window) = window_query.get_single() else {
+    let Ok(window) = window_query.single() else {
         return;
     };
 
-    let Ok((camera, camera_transform)) = camera_query.get_single() else {
+    let Ok((camera, camera_transform)) = camera_query.single() else {
         return;
     };
 
@@ -162,7 +165,7 @@ fn handle_velocity_drag(
     }
 
     // Set cursor based on state
-    if let Some(ctx) = contexts.try_ctx_mut() {
+    if let Ok(ctx) = contexts.ctx_mut() {
         if drag_state.dragging {
             ctx.set_cursor_icon(bevy_egui::egui::CursorIcon::Grabbing);
         } else if hovering_arrow {

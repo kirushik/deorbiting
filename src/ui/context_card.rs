@@ -44,18 +44,18 @@ const EARTH_RADIUS: f64 = 6.371e6; // meters
 /// Format mass in appropriate units (Earth/Jupiter/Solar masses).
 fn format_mass(mass_kg: f64) -> String {
     if mass_kg >= SOLAR_MASS * 0.001 {
-        format!("{:.3} M☉", mass_kg / SOLAR_MASS)
+        format!("{:.3} Solar masses", mass_kg / SOLAR_MASS)
     } else if mass_kg >= JUPITER_MASS * 0.1 {
-        format!("{:.2} Mⱼ", mass_kg / JUPITER_MASS)
+        format!("{:.2} Jupiter masses", mass_kg / JUPITER_MASS)
     } else {
-        format!("{:.3} M⊕", mass_kg / EARTH_MASS)
+        format!("{:.3} Earth masses", mass_kg / EARTH_MASS)
     }
 }
 
 /// Format radius in appropriate units.
 fn format_radius(radius_m: f64) -> String {
     if radius_m >= EARTH_RADIUS * 0.5 {
-        format!("{:.2} R⊕", radius_m / EARTH_RADIUS)
+        format!("{:.2} Earth radii", radius_m / EARTH_RADIUS)
     } else {
         format!("{:.0} km", radius_m / 1000.0)
     }
@@ -78,7 +78,7 @@ fn smart_card_position(
     screen_pos: Vec2,
     velocity_dir: Option<Vec2>,
 ) -> egui::Pos2 {
-    let screen = ctx.screen_rect();
+    let screen = ctx.viewport_rect();
     let usable_bottom = screen.bottom() - DOCK_HEIGHT - 10.0;
 
     // Define 8 candidate positions: E, NE, N, NW, W, SW, S, SE
@@ -197,11 +197,11 @@ pub fn context_card_system(
     mut integrator_states: ResMut<IntegratorStates>,
     mut radial_menu_state: ResMut<RadialMenuState>,
 ) {
-    let Some(ctx) = contexts.try_ctx_mut() else {
+    let Some(ctx) = contexts.ctx_mut().ok() else {
         return;
     };
 
-    let Ok((camera, camera_transform)) = camera_query.get_single() else {
+    let Ok((camera, camera_transform)) = camera_query.single() else {
         return;
     };
 
@@ -316,11 +316,11 @@ fn render_celestial_card(
         .collapsible(false)
         .fixed_pos(card_pos)
         .frame(
-            egui::Frame::none()
+            egui::Frame::NONE
                 .fill(colors::CARD_BG)
                 .inner_margin(12.0)
                 .stroke(egui::Stroke::new(1.0, colors::CARD_BORDER))
-                .rounding(4.0),
+                .corner_radius(4.0),
         )
         .show(ctx, |ui| {
             ui.set_max_width(190.0);
@@ -482,11 +482,11 @@ fn render_asteroid_card(
         .collapsible(false)
         .fixed_pos(card_pos)
         .frame(
-            egui::Frame::none()
+            egui::Frame::NONE
                 .fill(colors::CARD_BG)
                 .inner_margin(12.0)
                 .stroke(egui::Stroke::new(1.0, colors::CARD_BORDER))
-                .rounding(4.0),
+                .corner_radius(4.0),
         )
         .show(ctx, |ui| {
             ui.set_max_width(200.0);

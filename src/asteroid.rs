@@ -24,7 +24,7 @@ use crate::types::{AU_TO_METERS, BodyState, G};
 ///
 /// This is the intended "clean slate" behavior since asteroid positions
 /// are time-dependent (an asteroid at position X only makes sense at time T).
-#[derive(Event)]
+#[derive(Message)]
 pub struct ResetEvent;
 
 /// Marker component identifying an entity as a simulated asteroid.
@@ -380,8 +380,8 @@ pub fn spawn_initial_asteroid(
 /// Reloads the current scenario by sending a LoadScenarioEvent.
 /// This gives a "clean slate" - all user modifications are lost.
 pub fn handle_reset(
-    mut reset_events: EventReader<ResetEvent>,
-    mut load_events: EventWriter<crate::scenarios::LoadScenarioEvent>,
+    mut reset_events: MessageReader<ResetEvent>,
+    mut load_events: MessageWriter<crate::scenarios::LoadScenarioEvent>,
     current_scenario: Res<crate::scenarios::CurrentScenario>,
 ) {
     // Only process if there's a reset event
@@ -398,7 +398,7 @@ pub fn handle_reset(
     );
 
     // Send event to reload the current scenario
-    load_events.send(crate::scenarios::LoadScenarioEvent {
+    load_events.write(crate::scenarios::LoadScenarioEvent {
         scenario_id: current_scenario.id,
     });
 }

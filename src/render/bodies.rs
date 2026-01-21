@@ -6,8 +6,8 @@ use std::f32::consts::PI;
 
 use bevy::{
     math::DVec2,
+    mesh::{Indices, PrimitiveTopology},
     prelude::*,
-    render::mesh::{Indices, PrimitiveTopology},
 };
 
 use crate::camera::RENDER_SCALE;

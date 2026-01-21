@@ -103,7 +103,7 @@ pub struct ScenarioMenuState {
 }
 
 /// Event to trigger loading a scenario.
-#[derive(Event)]
+#[derive(Message)]
 pub struct LoadScenarioEvent {
     /// ID of the scenario to load.
     pub scenario_id: &'static str,
@@ -116,7 +116,7 @@ impl Plugin for ScenarioPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<CurrentScenario>()
             .init_resource::<ScenarioMenuState>()
-            .add_event::<LoadScenarioEvent>()
+            .init_resource::<Messages<LoadScenarioEvent>>()
             .add_systems(Startup, load_default_scenario)
             .add_systems(Update, handle_load_scenario_event);
     }
@@ -131,7 +131,7 @@ fn load_default_scenario(mut current: ResMut<CurrentScenario>) {
 #[allow(clippy::too_many_arguments)]
 fn handle_load_scenario_event(
     mut commands: Commands,
-    mut events: EventReader<LoadScenarioEvent>,
+    mut events: MessageReader<LoadScenarioEvent>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut counter: ResMut<AsteroidCounter>,
@@ -206,7 +206,7 @@ fn handle_load_scenario_event(
         current_scenario.id = scenario.id;
 
         // 9. Position camera
-        if let Ok((mut transform, mut projection)) = camera_query.get_single_mut() {
+        if let Ok((mut transform, mut projection)) = camera_query.single_mut() {
             let target_pos = match &scenario.camera_target {
                 CameraTarget::Sun => DVec2::ZERO,
                 CameraTarget::Body(id) => ephemeris

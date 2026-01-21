@@ -34,7 +34,7 @@ pub fn scenario_drawer_system(
     mut contexts: EguiContexts,
     mut drawer_state: ResMut<ScenarioDrawerState>,
     current_scenario: Res<CurrentScenario>,
-    mut load_events: EventWriter<LoadScenarioEvent>,
+    mut load_events: MessageWriter<LoadScenarioEvent>,
     time: Res<Time>,
 ) {
     // Animate drawer open/close (~150ms duration)
@@ -48,7 +48,7 @@ pub fn scenario_drawer_system(
         return;
     }
 
-    let Some(ctx) = contexts.try_ctx_mut() else {
+    let Some(ctx) = contexts.ctx_mut().ok() else {
         return;
     };
 
@@ -59,16 +59,16 @@ pub fn scenario_drawer_system(
     egui::Area::new(egui::Id::new("scenario_drawer"))
         .fixed_pos(egui::pos2(
             0.0,
-            ctx.screen_rect().height() - dock_height - visible_height,
+            ctx.viewport_rect().height() - dock_height - visible_height,
         ))
         .show(ctx, |ui| {
-            let frame = egui::Frame::none()
+            let frame = egui::Frame::NONE
                 .fill(colors::DRAWER_BG)
-                .inner_margin(egui::Margin::symmetric(20.0, 16.0))
+                .inner_margin(egui::Margin::symmetric(20, 16))
                 .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(60, 60, 80)));
 
             frame.show(ui, |ui| {
-                ui.set_min_width(ctx.screen_rect().width());
+                ui.set_min_width(ctx.viewport_rect().width());
                 ui.set_min_height(drawer_height);
 
                 // Header
@@ -108,7 +108,7 @@ pub fn scenario_drawer_system(
                                     scenario.description,
                                     is_current,
                                 ) {
-                                    load_events.send(LoadScenarioEvent {
+                                    load_events.write(LoadScenarioEvent {
                                         scenario_id: scenario.id,
                                     });
                                     drawer_state.open = false;
@@ -124,7 +124,7 @@ pub fn scenario_drawer_system(
         && ctx.input(|i| i.pointer.any_pressed())
         && let Some(pos) = ctx.input(|i| i.pointer.hover_pos())
     {
-        let drawer_top = ctx.screen_rect().height() - dock_height - visible_height;
+        let drawer_top = ctx.viewport_rect().height() - dock_height - visible_height;
         if pos.y < drawer_top {
             drawer_state.open = false;
         }
@@ -178,6 +178,7 @@ fn render_scenario_card(
                 colors::CARD_BORDER
             },
         ),
+        egui::StrokeKind::Middle,
     );
 
     let inner_rect = rect.shrink(10.0);

@@ -16,6 +16,7 @@ pub mod velocity_handle;
 mod asteroid_placement;
 
 use bevy::prelude::*;
+use bevy_egui::EguiPrimaryContextPass;
 
 pub use banners::BannerState;
 // context_card exports are used internally
@@ -42,17 +43,18 @@ impl Plugin for UiPlugin {
             .init_resource::<ActiveNotification>()
             .init_resource::<icons::FontsInitialized>()
             .init_resource::<box_selection::BoxSelectionState>()
-            // Add systems
+            // Font initialization runs in EguiPrimaryContextPass when context is ready
+            .add_systems(EguiPrimaryContextPass, icons::setup_fonts)
+            // Keyboard shortcuts don't need egui context - can stay in Update
+            .add_systems(Update, scenario_drawer::scenario_drawer_keyboard)
+            // UI systems run in EguiPrimaryContextPass when context is valid
             .add_systems(
-                Update,
+                EguiPrimaryContextPass,
                 (
-                    // Font initialization (runs once)
-                    icons::setup_fonts,
                     // Dock (bottom bar with all controls)
                     dock::dock_system,
                     // Scenario drawer (slides up from dock)
                     scenario_drawer::scenario_drawer_system,
-                    scenario_drawer::scenario_drawer_keyboard,
                     // Context card (floating info near selection)
                     context_card::context_card_system,
                     // Radial deflection menu
@@ -61,6 +63,11 @@ impl Plugin for UiPlugin {
                     banners::update_banner_state,
                     banners::animate_banners,
                     banners::banner_system,
+                ),
+            )
+            .add_systems(
+                EguiPrimaryContextPass,
+                (
                     // Asteroid placement (click-to-spawn)
                     handle_asteroid_placement,
                     update_placement_cursor,

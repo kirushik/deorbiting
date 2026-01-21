@@ -38,7 +38,7 @@ pub fn handle_asteroid_placement(
     }
 
     // Don't interact if egui wants the pointer
-    if let Some(ctx) = contexts.try_ctx_mut()
+    if let Ok(ctx) = contexts.ctx_mut()
         && ctx.wants_pointer_input()
     {
         return;
@@ -46,11 +46,11 @@ pub fn handle_asteroid_placement(
 
     // Handle click to place asteroid
     if mouse.just_pressed(MouseButton::Left) {
-        let Ok(window) = window_query.get_single() else {
+        let Ok(window) = window_query.single() else {
             return;
         };
 
-        let Ok((camera, camera_transform)) = camera_query.get_single() else {
+        let Ok((camera, camera_transform)) = camera_query.single() else {
             return;
         };
 
@@ -105,7 +105,7 @@ pub fn update_placement_cursor(
 ) {
     // Set cursor hint through egui when placement mode is active
     if placement_mode.active
-        && let Some(ctx) = contexts.try_ctx_mut()
+        && let Ok(ctx) = contexts.ctx_mut()
     {
         ctx.set_cursor_icon(bevy_egui::egui::CursorIcon::Crosshair);
     }

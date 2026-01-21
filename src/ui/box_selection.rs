@@ -75,11 +75,11 @@ pub fn box_selection_input(
         return;
     }
 
-    let Ok(window) = window_query.get_single() else {
+    let Ok(window) = window_query.single() else {
         return;
     };
 
-    let Ok((camera, camera_transform)) = camera_query.get_single() else {
+    let Ok((camera, camera_transform)) = camera_query.single() else {
         return;
     };
 
@@ -99,7 +99,7 @@ pub fn box_selection_input(
     // Start box selection on left mouse button press (only if not over UI)
     if mouse.just_pressed(MouseButton::Left) && !box_state.active {
         // Don't start if egui wants the pointer
-        if let Some(ctx) = contexts.try_ctx_mut()
+        if let Ok(ctx) = contexts.ctx_mut()
             && ctx.wants_pointer_input()
         {
             return;
@@ -177,7 +177,8 @@ pub fn box_selection_input(
     if box_state.active
         && (mouse.just_pressed(MouseButton::Right)
             || contexts
-                .try_ctx_mut()
+                .ctx_mut()
+                .ok()
                 .map(|ctx| ctx.input(|i| i.key_pressed(egui::Key::Escape)))
                 .unwrap_or(false))
     {

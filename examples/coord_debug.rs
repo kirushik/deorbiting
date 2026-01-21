@@ -3,8 +3,8 @@
 //! This example sets up a camera like the main app and tests
 //! what happens when we convert screen coordinates to world coordinates.
 
+use bevy::camera::ScalingMode;
 use bevy::prelude::*;
-use bevy::render::camera::ScalingMode;
 
 const VIEWPORT_HEIGHT: f32 = 20.0;
 const DEFAULT_ZOOM: f32 = 1.0;
@@ -52,11 +52,11 @@ fn track_cursor(
     window_query: Query<&Window>,
     camera_query: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
 ) {
-    let Ok(window) = window_query.get_single() else {
+    let Ok(window) = window_query.single() else {
         return;
     };
 
-    let Ok((camera, camera_transform)) = camera_query.get_single() else {
+    let Ok((camera, camera_transform)) = camera_query.single() else {
         return;
     };
 

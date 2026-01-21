@@ -98,7 +98,7 @@ fn physics_step(
     config: Res<IAS15Config>,
     time: Res<Time>,
     mut collision_state: ResMut<CollisionState>,
-    mut collision_events: EventWriter<CollisionEvent>,
+    mut collision_events: MessageWriter<CollisionEvent>,
     mut selected: ResMut<SelectedBody>,
 ) {
     // Skip if simulation is paused

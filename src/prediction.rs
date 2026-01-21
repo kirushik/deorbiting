@@ -1174,7 +1174,7 @@ mod tests {
     #[test]
     fn test_trajectory_cache_empty_cannot_extend() {
         let cache = TrajectoryCache::default();
-        let entity = Entity::from_raw(1);
+        let entity = Entity::from_bits(1);
         // Empty cache cannot extend
         assert!(!cache.can_extend(entity, 0));
     }
@@ -1182,7 +1182,7 @@ mod tests {
     #[test]
     fn test_trajectory_cache_store_and_check() {
         let mut cache = TrajectoryCache::default();
-        let entity = Entity::from_raw(1);
+        let entity = Entity::from_bits(1);
         let deflector_hash = 12345u64;
 
         // Store continuation
@@ -1204,13 +1204,13 @@ mod tests {
         assert!(!cache.can_extend(entity, deflector_hash + 1));
 
         // Other entity cannot extend
-        assert!(!cache.can_extend(Entity::from_raw(2), deflector_hash));
+        assert!(!cache.can_extend(Entity::from_bits(2), deflector_hash));
     }
 
     #[test]
     fn test_trajectory_cache_invalidate_entity() {
         let mut cache = TrajectoryCache::default();
-        let entity = Entity::from_raw(1);
+        let entity = Entity::from_bits(1);
 
         let continuation = ContinuationState {
             pos: DVec2::new(1e11, 0.0),
@@ -1231,7 +1231,7 @@ mod tests {
     #[test]
     fn test_trajectory_cache_mark_terminal() {
         let mut cache = TrajectoryCache::default();
-        let entity = Entity::from_raw(1);
+        let entity = Entity::from_bits(1);
 
         let continuation = ContinuationState {
             pos: DVec2::new(1e11, 0.0),
@@ -1254,9 +1254,9 @@ mod tests {
     fn test_trajectory_cache_cleanup_stale() {
         let mut cache = TrajectoryCache::default();
 
-        let e1 = Entity::from_raw(1);
-        let e2 = Entity::from_raw(2);
-        let e3 = Entity::from_raw(3);
+        let e1 = Entity::from_bits(1);
+        let e2 = Entity::from_bits(2);
+        let e3 = Entity::from_bits(3);
 
         let cont = ContinuationState {
             pos: DVec2::ZERO,
