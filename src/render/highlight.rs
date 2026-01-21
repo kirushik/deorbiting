@@ -23,7 +23,13 @@ impl Plugin for HighlightPlugin {
             .init_resource::<SelectedBody>()
             .add_systems(
                 Update,
-                (detect_hover, detect_selection, draw_hover_highlight, draw_selection_highlight)
+                (
+                    detect_hover,
+                    detect_selection,
+                    draw_persistent_asteroid_markers,
+                    draw_hover_highlight,
+                    draw_selection_highlight,
+                )
                     .chain()
                     // Run after velocity drag so it can check if drag started
                     .after(InputSystemSet::VelocityDrag),
@@ -256,5 +262,54 @@ fn draw_highlight_ring_at(gizmos: &mut Gizmos, center_2d: Vec2, base_radius: f32
         let p1 = center + Vec3::new(ring_radius * t1.cos(), ring_radius * t1.sin(), 0.0);
 
         gizmos.line(p0, p1, color);
+    }
+}
+
+
+/// Draw persistent visibility markers for ALL asteroids.
+/// These markers ensure asteroids remain visible at any zoom level,
+/// even when not selected or hovered. Uses each asteroid's unique indicator color.
+fn draw_persistent_asteroid_markers(
+    mut gizmos: Gizmos,
+    asteroids: Query<(Entity, &Transform, &AsteroidVisual), With<Asteroid>>,
+    selected: Res<SelectedBody>,
+    hovered: Res<HoveredBody>,
+) {
+    use crate::asteroid::indicator_color_from_material;
+
+    for (entity, transform, visual) in asteroids.iter() {
+        // Skip if this asteroid is selected or hovered (those have their own highlights)
+        let is_selected = matches!(selected.body, Some(SelectableBody::Asteroid(e)) if e == entity);
+        let is_hovered = matches!(hovered.body, Some(SelectableBody::Asteroid(e)) if e == entity);
+
+        if is_selected || is_hovered {
+            continue;
+        }
+
+        // Get the vibrant indicator color for this asteroid (with reduced alpha)
+        let indicator = indicator_color_from_material(visual.color);
+        let marker_color = indicator.with_alpha(0.5);
+
+        let center_2d = transform.translation.truncate();
+
+        // Use actual scaled size from transform (matches what's rendered)
+        // Add 50% padding for visibility ring
+        let actual_radius = visual.render_radius * transform.scale.x;
+        let marker_radius = actual_radius.max(1.5) * 1.5;
+
+        // Draw the marker ring at UI layer
+        let center = Vec3::new(center_2d.x, center_2d.y, z_layers::UI_HANDLES - 0.1);
+
+        // Use same segment count as selection highlight for consistency
+        let segments = 32;
+        for i in 0..segments {
+            let t0 = (i as f32 / segments as f32) * std::f32::consts::TAU;
+            let t1 = ((i + 1) as f32 / segments as f32) * std::f32::consts::TAU;
+
+            let p0 = center + Vec3::new(marker_radius * t0.cos(), marker_radius * t0.sin(), 0.0);
+            let p1 = center + Vec3::new(marker_radius * t1.cos(), marker_radius * t1.sin(), 0.0);
+
+            gizmos.line(p0, p1, marker_color);
+        }
     }
 }

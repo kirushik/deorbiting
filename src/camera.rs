@@ -94,6 +94,12 @@ impl Default for ClickTracker {
     }
 }
 
+/// Event to focus camera on an entity.
+#[derive(Event)]
+pub struct FocusOnEntityEvent {
+    pub entity: Entity,
+}
+
 /// Maximum time between clicks to count as double-click (seconds).
 const DOUBLE_CLICK_TIME: f64 = 0.3;
 
@@ -111,8 +117,34 @@ impl Plugin for CameraPlugin {
         app.init_resource::<CameraState>()
             .init_resource::<CameraFocus>()
             .init_resource::<ClickTracker>()
+            .add_event::<FocusOnEntityEvent>()
             .add_systems(Startup, setup_camera)
-            .add_systems(Update, (camera_zoom, camera_pan, detect_double_click, animate_focus));
+            .add_systems(Update, (camera_zoom, camera_pan, detect_double_click, animate_focus, handle_focus_events));
+    }
+}
+
+/// Handle FocusOnEntityEvent by starting camera animation to entity position.
+fn handle_focus_events(
+    mut events: EventReader<FocusOnEntityEvent>,
+    mut focus: ResMut<CameraFocus>,
+    camera_query: Query<&Transform, With<MainCamera>>,
+    entity_transforms: Query<&Transform, Without<MainCamera>>,
+) {
+    for event in events.read() {
+        if let Ok(entity_transform) = entity_transforms.get(event.entity) {
+            let target_pos = entity_transform.translation.truncate();
+
+            // Get current camera position
+            let current_pos = camera_query
+                .get_single()
+                .map(|t| t.translation.truncate())
+                .unwrap_or(Vec2::ZERO);
+
+            // Start focus animation
+            focus.target_position = Some(target_pos);
+            focus.start_position = current_pos;
+            focus.progress = 0.0;
+        }
     }
 }
 

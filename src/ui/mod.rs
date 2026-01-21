@@ -19,7 +19,7 @@ use bevy::prelude::*;
 
 pub use banners::BannerState;
 // context_card exports are used internally
-pub use dock::{AsteroidListState, HelpTooltipState};
+pub use dock::HelpTooltipState;
 pub use radial_menu::RadialMenuState;
 pub use scenario_drawer::ScenarioDrawerState;
 
@@ -42,7 +42,6 @@ impl Plugin for UiPlugin {
             .init_resource::<ActiveNotification>()
             .init_resource::<icons::FontsInitialized>()
             .init_resource::<box_selection::BoxSelectionState>()
-            .init_resource::<AsteroidListState>()
             // Add systems
             .add_systems(
                 Update,

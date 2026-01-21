@@ -50,8 +50,8 @@ pub fn sync_asteroid_positions(
     // Target screen-space size: asteroids appear as ~0.8% of viewport height
     // This keeps them visible as markers without dominating the view
     const TARGET_SCREEN_FRACTION: f32 = 0.008;
-    const VIEWPORT_HEIGHT: f32 = 20.0; // Same as in scaling.rs
-    
+    const VIEWPORT_HEIGHT: f32 = 20.0; // Scaling reference (not camera viewport)
+
     let viewport_size = VIEWPORT_HEIGHT * camera.zoom;
     let target_size = viewport_size * TARGET_SCREEN_FRACTION;
     

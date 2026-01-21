@@ -37,9 +37,9 @@ pub fn scenario_drawer_system(
     mut load_events: EventWriter<LoadScenarioEvent>,
     time: Res<Time>,
 ) {
-    // Animate drawer open/close
+    // Animate drawer open/close (~150ms duration)
     let target = if drawer_state.open { 1.0 } else { 0.0 };
-    let speed = 8.0;
+    let speed = 12.0; // Higher = faster, 12.0 ≈ 150ms to 90% completion
     let delta = target - drawer_state.animation_progress;
     drawer_state.animation_progress += delta * speed * time.delta_secs();
     drawer_state.animation_progress = drawer_state.animation_progress.clamp(0.0, 1.0);
@@ -72,7 +72,8 @@ pub fn scenario_drawer_system(
                 ui.horizontal(|ui| {
                     ui.label(egui::RichText::new("Select Scenario").size(18.0).strong());
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.add(egui::Button::new(egui::RichText::new("X").size(16.0))
+                        use crate::ui::icons;
+                        if ui.add(egui::Button::new(egui::RichText::new(icons::CLOSE).size(16.0))
                             .min_size(egui::vec2(28.0, 28.0)))
                             .on_hover_text("Close (Esc)").clicked() {
                             drawer_state.open = false;
@@ -164,12 +165,12 @@ fn render_scenario_card(
 
     let inner_rect = rect.shrink(10.0);
 
-    // Icon (text symbol)
+    // Icon (Phosphor icon)
     ui.painter().text(
         egui::pos2(inner_rect.center().x, inner_rect.top() + 22.0),
         egui::Align2::CENTER_CENTER,
         icon,
-        egui::FontId::monospace(28.0),
+        egui::FontId::proportional(28.0),
         icon_color,
     );
 

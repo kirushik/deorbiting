@@ -70,15 +70,20 @@ fn velocity_to_arrow_length(vel_magnitude: f64) -> f32 {
 }
 
 /// Convert arrow length back to velocity magnitude.
+/// Caps at MAX_LENGTH for consistency with velocity_to_arrow_length.
 fn arrow_length_to_velocity(length: f32) -> f64 {
     const MIN_LENGTH: f32 = 1.0;
+    const MAX_LENGTH: f32 = 30.0; // Must match velocity_to_arrow_length
     const SCALE_FACTOR: f32 = 3.5;
 
-    if length <= MIN_LENGTH {
+    // Cap input length to match visual display limits
+    let capped_length = length.clamp(MIN_LENGTH, MAX_LENGTH);
+
+    if capped_length <= MIN_LENGTH {
         return 0.0;
     }
 
-    let sqrt_v_km_s = (length - MIN_LENGTH) / SCALE_FACTOR;
+    let sqrt_v_km_s = (capped_length - MIN_LENGTH) / SCALE_FACTOR;
     (sqrt_v_km_s * sqrt_v_km_s) as f64 * 1000.0
 }
 
@@ -124,6 +129,37 @@ fn handle_velocity_drag(
     let Ok(world_pos) = camera.viewport_to_world_2d(camera_transform, cursor_pos) else {
         return;
     };
+
+    // Check hover state for cursor feedback
+    let hover_radius = 4.0;
+    let mut hovering_arrow = false;
+
+    for (_, transform, body_state) in asteroids.iter() {
+        let asteroid_render_pos = transform.translation.truncate();
+        let vel_magnitude = body_state.vel.length();
+        let arrow_length = velocity_to_arrow_length(vel_magnitude);
+        let direction = if vel_magnitude < 1.0 {
+            Vec2::X
+        } else {
+            let vel_dir = body_state.vel.normalize_or_zero();
+            Vec2::new(vel_dir.x as f32, vel_dir.y as f32)
+        };
+        let tip_pos = asteroid_render_pos + direction * arrow_length;
+
+        if (world_pos - tip_pos).length() < hover_radius {
+            hovering_arrow = true;
+            break;
+        }
+    }
+
+    // Set cursor based on state
+    if let Some(ctx) = contexts.try_ctx_mut() {
+        if drag_state.dragging {
+            ctx.set_cursor_icon(bevy_egui::egui::CursorIcon::Grabbing);
+        } else if hovering_arrow {
+            ctx.set_cursor_icon(bevy_egui::egui::CursorIcon::Grab);
+        }
+    }
 
     // Start drag on mouse down near ANY asteroid's arrow tip
     if mouse.just_pressed(MouseButton::Left) && !drag_state.dragging {

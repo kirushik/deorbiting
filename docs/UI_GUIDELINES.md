@@ -79,6 +79,38 @@ FontFamily::Monospace     // System monospace
 - **Numeric alignment**: Right-align numbers for easy comparison
 - **Consistent line-height**: Use 1.4× for body text, 1.2× for headings
 
+### Toolbar/Dock Layout Rules
+
+These rules prevent common egui alignment bugs:
+
+1. **Single Layout Level**
+   - A toolbar should be ONE `horizontal_centered()` layout
+   - NEVER nest `ui.horizontal()` inside it—this breaks vertical centering
+   - Group elements by adjusting spacing, not by nesting containers
+
+2. **Fixed-Width Stable Elements**
+   - Any element with changing content MUST have fixed width
+   - Date displays: use fixed-width container (e.g., 120px)
+   - Prevents layout "jumping" when content changes
+
+3. **Uniform Element Height**
+   - ALL toolbar elements use the same height constant
+   - Use `ui.add_sized([width, HEIGHT], widget)` for explicit sizing
+   - Labels, buttons, separators—all same height
+
+4. **Element Sizing Pattern**
+   ```rust
+   // GOOD: explicit size, no nesting
+   ui.add_sized([120.0, HEIGHT], egui::Label::new(text));
+   ui.add_sized([42.0, HEIGHT], egui::Button::new(icon));
+
+   // BAD: nested horizontal breaks centering
+   ui.horizontal(|ui| {  // DON'T DO THIS
+       ui.add(button1);
+       ui.add(button2);
+   });
+   ```
+
 ---
 
 ## Color Palette

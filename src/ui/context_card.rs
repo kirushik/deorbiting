@@ -30,42 +30,107 @@ mod colors {
 /// Card dimensions for positioning calculations.
 const CARD_WIDTH: f32 = 200.0;
 const CARD_HEIGHT: f32 = 180.0; // Approximate height
-const CARD_MARGIN: f32 = 20.0; // Distance from object
+const CARD_MARGIN: f32 = 25.0; // Distance from object
 const DOCK_HEIGHT: f32 = 56.0;
+const VELOCITY_ARROW_LENGTH: f32 = 35.0; // Approximate max arrow length to avoid
 
-/// Calculate smart card position based on screen position.
-/// Positions the card to avoid obstructing the selected object.
-fn smart_card_position(ctx: &egui::Context, screen_pos: Vec2) -> egui::Pos2 {
-    let screen_rect = ctx.screen_rect();
+/// 8-position label placement algorithm.
+/// Tries 8 candidate positions around the object and picks the best one.
+/// Based on cartographic label placement principles.
+fn smart_card_position(ctx: &egui::Context, screen_pos: Vec2, velocity_dir: Option<Vec2>) -> egui::Pos2 {
+    let screen = ctx.screen_rect();
+    let usable_bottom = screen.bottom() - DOCK_HEIGHT - 10.0;
 
-    // Calculate which side has more space
-    let space_right = screen_rect.right() - screen_pos.x;
-    let space_left = screen_pos.x - screen_rect.left();
+    // Define 8 candidate positions: E, NE, N, NW, W, SW, S, SE
+    // Each is (offset_x, offset_y) from screen_pos to card's top-left corner
+    let candidates: [(f32, f32, &str); 8] = [
+        (CARD_MARGIN, -CARD_HEIGHT / 2.0, "E"),                           // East (right-center)
+        (CARD_MARGIN, -CARD_HEIGHT - CARD_MARGIN, "NE"),                  // Northeast
+        (-CARD_WIDTH / 2.0, -CARD_HEIGHT - CARD_MARGIN, "N"),             // North (top-center)
+        (-CARD_WIDTH - CARD_MARGIN, -CARD_HEIGHT - CARD_MARGIN, "NW"),    // Northwest
+        (-CARD_WIDTH - CARD_MARGIN, -CARD_HEIGHT / 2.0, "W"),             // West (left-center)
+        (-CARD_WIDTH - CARD_MARGIN, CARD_MARGIN, "SW"),                   // Southwest
+        (-CARD_WIDTH / 2.0, CARD_MARGIN, "S"),                            // South (bottom-center)
+        (CARD_MARGIN, CARD_MARGIN, "SE"),                                 // Southeast
+    ];
 
-    // Prefer positioning to the right, unless there's not enough space
-    let offset_x = if space_right > CARD_WIDTH + CARD_MARGIN * 2.0 {
-        CARD_MARGIN // Place to the right
-    } else if space_left > CARD_WIDTH + CARD_MARGIN * 2.0 {
-        -(CARD_WIDTH + CARD_MARGIN) // Place to the left
-    } else {
-        // Center horizontally if neither side has enough space
-        -CARD_WIDTH / 2.0
-    };
+    let mut best_score = f32::MIN;
+    let mut best_pos = egui::pos2(screen_pos.x + CARD_MARGIN, screen_pos.y - CARD_HEIGHT / 2.0);
 
-    // Vertical positioning: try to center on object, but clamp to screen
-    let mut offset_y = -CARD_HEIGHT / 2.0;
+    for (offset_x, offset_y, _name) in candidates {
+        let card_left = screen_pos.x + offset_x;
+        let card_top = screen_pos.y + offset_y;
+        let card_right = card_left + CARD_WIDTH;
+        let card_bottom = card_top + CARD_HEIGHT;
 
-    // Ensure card doesn't go off top
-    if screen_pos.y + offset_y < screen_rect.top() + CARD_MARGIN {
-        offset_y = screen_rect.top() + CARD_MARGIN - screen_pos.y;
+        let mut score: f32 = 100.0;
+
+        // Penalty: off-screen left
+        if card_left < screen.left() {
+            score -= (screen.left() - card_left) * 2.0;
+        }
+        // Penalty: off-screen right
+        if card_right > screen.right() {
+            score -= (card_right - screen.right()) * 2.0;
+        }
+        // Penalty: off-screen top
+        if card_top < screen.top() {
+            score -= (screen.top() - card_top) * 2.0;
+        }
+        // Penalty: overlaps dock area
+        if card_bottom > usable_bottom {
+            score -= (card_bottom - usable_bottom) * 3.0;
+        }
+
+        // Penalty: overlaps velocity arrow zone
+        if let Some(vel_dir) = velocity_dir {
+            // Calculate the velocity arrow endpoint
+            let arrow_end_x = screen_pos.x + vel_dir.x * VELOCITY_ARROW_LENGTH;
+            let arrow_end_y = screen_pos.y + vel_dir.y * VELOCITY_ARROW_LENGTH;
+
+            // Check if arrow endpoint or midpoint is inside the card
+            let arrow_mid_x = screen_pos.x + vel_dir.x * VELOCITY_ARROW_LENGTH * 0.5;
+            let arrow_mid_y = screen_pos.y + vel_dir.y * VELOCITY_ARROW_LENGTH * 0.5;
+
+            let endpoint_inside = arrow_end_x >= card_left && arrow_end_x <= card_right
+                && arrow_end_y >= card_top && arrow_end_y <= card_bottom;
+            let midpoint_inside = arrow_mid_x >= card_left && arrow_mid_x <= card_right
+                && arrow_mid_y >= card_top && arrow_mid_y <= card_bottom;
+
+            if endpoint_inside {
+                score -= 80.0; // Heavy penalty - this blocks the drag handle
+            }
+            if midpoint_inside {
+                score -= 40.0; // Medium penalty
+            }
+
+            // Bonus: position is on opposite side from velocity
+            let card_center_x = card_left + CARD_WIDTH / 2.0;
+            let card_center_y = card_top + CARD_HEIGHT / 2.0;
+            let to_card_x = card_center_x - screen_pos.x;
+            let to_card_y = card_center_y - screen_pos.y;
+            let dot = to_card_x * vel_dir.x + to_card_y * vel_dir.y;
+            if dot < 0.0 {
+                score += 20.0; // Bonus for being on opposite side
+            }
+        }
+
+        // Slight preference for right side (reading direction)
+        if offset_x > 0.0 {
+            score += 5.0;
+        }
+
+        if score > best_score {
+            best_score = score;
+            best_pos = egui::pos2(card_left, card_top);
+        }
     }
 
-    // Ensure card doesn't go off bottom (above dock)
-    if screen_pos.y + offset_y + CARD_HEIGHT > screen_rect.bottom() - DOCK_HEIGHT - CARD_MARGIN {
-        offset_y = screen_rect.bottom() - DOCK_HEIGHT - CARD_MARGIN - CARD_HEIGHT - screen_pos.y;
-    }
+    // Final clamp to ensure card stays on screen
+    let final_x = best_pos.x.clamp(screen.left() + 5.0, screen.right() - CARD_WIDTH - 5.0);
+    let final_y = best_pos.y.clamp(screen.top() + 5.0, usable_bottom - CARD_HEIGHT);
 
-    egui::pos2(screen_pos.x + offset_x, screen_pos.y + offset_y)
+    egui::pos2(final_x, final_y)
 }
 
 /// System to render the context card near selected objects.
@@ -102,7 +167,7 @@ pub fn context_card_system(
                     );
 
                     if let Ok(screen_pos) = camera.world_to_viewport(camera_transform, render_pos.extend(0.0)) {
-                        render_celestial_card(ctx, body, pos.length(), screen_pos);
+                        render_celestial_card(ctx, body, pos.length(), screen_pos, None);
                     }
                 }
             }
@@ -117,12 +182,21 @@ pub fn context_card_system(
                         d.target == entity && (d.is_operating() || matches!(d.state, ContinuousDeflectorState::EnRoute { .. }))
                     });
 
+                    // Get velocity direction for smart card positioning
+                    let vel_dir = if body_state.vel.length() > 1.0 {
+                        let normalized = body_state.vel.normalize();
+                        Some(Vec2::new(normalized.x as f32, normalized.y as f32))
+                    } else {
+                        None
+                    };
+
                     let result = render_asteroid_card(
                         ctx,
                         &name.0,
                         &mut body_state,
                         screen_pos,
                         active_deflector,
+                        vel_dir,
                     );
 
                     if result.delete_clicked {
@@ -154,9 +228,10 @@ fn render_celestial_card(
     body: &CelestialBody,
     distance_from_sun: f64,
     screen_pos: Vec2,
+    velocity_dir: Option<Vec2>,
 ) {
     // Smart positioning to avoid obstructing the object
-    let card_pos = smart_card_position(ctx, screen_pos);
+    let card_pos = smart_card_position(ctx, screen_pos, velocity_dir);
 
     egui::Window::new("Selected Body")
         .title_bar(false)
@@ -201,6 +276,7 @@ fn render_asteroid_card(
     body_state: &mut BodyState,
     screen_pos: Vec2,
     active_deflector: Option<&ContinuousDeflector>,
+    velocity_dir: Option<Vec2>,
 ) -> AsteroidCardResult {
     use crate::ui::icons;
 
@@ -209,8 +285,8 @@ fn render_asteroid_card(
         deflect_clicked: false,
     };
 
-    // Smart positioning to avoid obstructing the object
-    let card_pos = smart_card_position(ctx, screen_pos);
+    // Smart positioning to avoid obstructing the object AND velocity arrow
+    let card_pos = smart_card_position(ctx, screen_pos, velocity_dir);
 
     egui::Window::new("Asteroid")
         .title_bar(false)
@@ -313,6 +389,8 @@ fn render_asteroid_card(
 
 /// Render active deflection mission status.
 fn render_deflection_status(ui: &mut egui::Ui, deflector: &ContinuousDeflector) {
+    use crate::ui::icons;
+
     ui.label(egui::RichText::new("ACTIVE DEFLECTION").strong().size(12.0).color(colors::SUCCESS));
 
     let (icon, method_name) = deflector_display(&deflector.payload);
@@ -323,7 +401,7 @@ fn render_deflection_status(ui: &mut egui::Ui, deflector: &ContinuousDeflector) 
 
     match &deflector.state {
         ContinuousDeflectorState::EnRoute { .. } => {
-            ui.label(egui::RichText::new("[...] En route").weak().size(12.0));
+            ui.label(egui::RichText::new(format!("{} En route", icons::CLOCK)).weak().size(12.0));
         }
         ContinuousDeflectorState::Operating { fuel_consumed, accumulated_delta_v, .. } => {
             // Fuel bar if applicable
@@ -340,15 +418,15 @@ fn render_deflection_status(ui: &mut egui::Ui, deflector: &ContinuousDeflector) 
             ui.label(format!("Dv: +{:.4} mm/s", accumulated_delta_v * 1000.0));
         }
         ContinuousDeflectorState::FuelDepleted { total_delta_v, .. } => {
-            ui.label(egui::RichText::new("[E] Fuel depleted").weak().size(12.0));
+            ui.label(egui::RichText::new(format!("{} Fuel depleted", icons::FUEL)).weak().size(12.0));
             ui.label(format!("Total Dv: {:.4} mm/s", total_delta_v * 1000.0));
         }
         ContinuousDeflectorState::Complete { total_delta_v, .. } => {
-            ui.label(egui::RichText::new("[OK] Complete").color(colors::SUCCESS).size(12.0));
+            ui.label(egui::RichText::new(format!("{} Complete", icons::SUCCESS)).color(colors::SUCCESS).size(12.0));
             ui.label(format!("Total Dv: {:.4} mm/s", total_delta_v * 1000.0));
         }
         ContinuousDeflectorState::Cancelled => {
-            ui.label(egui::RichText::new("[X] Cancelled").color(colors::DANGER).size(12.0));
+            ui.label(egui::RichText::new(format!("{} Cancelled", icons::CLOSE)).color(colors::DANGER).size(12.0));
         }
     }
 }

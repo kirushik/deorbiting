@@ -389,8 +389,10 @@ fn handle_asteroid_splitting(
         // Despawn original asteroid
         commands.entity(event.target).despawn_recursive();
 
-        // Spawn fragment 1
+        // Spawn fragment 1 with unique color
+        counter.0 += 1;
         let name1 = format!("{} Fragment A", event.original_name);
+        let color1 = crate::asteroid::asteroid_color(counter.0);
         let entity1 = spawn_asteroid(
             &mut commands,
             &mut meshes,
@@ -399,10 +401,13 @@ fn handle_asteroid_splitting(
             pos1,
             vel1,
             mass1,
+            color1,
         );
 
-        // Spawn fragment 2
+        // Spawn fragment 2 with unique color
+        counter.0 += 1;
         let name2 = format!("{} Fragment B", event.original_name);
+        let color2 = crate::asteroid::asteroid_color(counter.0);
         let entity2 = spawn_asteroid(
             &mut commands,
             &mut meshes,
@@ -411,10 +416,8 @@ fn handle_asteroid_splitting(
             pos2,
             vel2,
             mass2,
+            color2,
         );
-
-        // Increment counter for the new asteroids
-        counter.0 += 2;
 
         // Mark predictions dirty
         mark_prediction_dirty(&mut prediction_state);

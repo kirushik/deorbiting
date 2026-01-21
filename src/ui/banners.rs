@@ -14,6 +14,7 @@ use crate::render::SelectedBody;
 use crate::scenarios::CurrentScenario;
 use crate::types::{SelectableBody, SimulationTime, AU_TO_METERS, SECONDS_PER_DAY};
 
+use super::icons;
 use super::{RadialMenuState, ScenarioDrawerState};
 
 /// Resource for banner state.
@@ -173,7 +174,7 @@ fn render_collision_notification(
         )
         .show(ctx, |ui| {
             ui.horizontal_centered(|ui| {
-                ui.label(egui::RichText::new("[!!!]").size(20.0).color(colors::COLLISION_BORDER).monospace());
+                ui.label(egui::RichText::new(icons::WARNING).size(20.0).color(colors::COLLISION_BORDER));
                 ui.add_space(8.0);
 
                 ui.vertical(|ui| {
@@ -219,7 +220,7 @@ fn render_collision_prediction_banner(
         )
         .show(ctx, |ui| {
             ui.horizontal_centered(|ui| {
-                ui.label(egui::RichText::new("[!]").size(18.0).color(colors::COLLISION_BORDER).monospace());
+                ui.label(egui::RichText::new(icons::WARNING).size(18.0).color(colors::COLLISION_BORDER));
                 ui.add_space(8.0);
 
                 ui.label(
@@ -272,7 +273,7 @@ fn render_escape_banner(ctx: &egui::Context, v_infinity: f64, _direction: bevy::
         )
         .show(ctx, |ui| {
             ui.horizontal_centered(|ui| {
-                ui.label(egui::RichText::new("-->").size(18.0).color(colors::ESCAPE_BORDER).monospace());
+                ui.label(egui::RichText::new(icons::ARROW_RIGHT).size(18.0).color(colors::ESCAPE_BORDER));
                 ui.add_space(8.0);
 
                 ui.label(
@@ -313,7 +314,7 @@ fn render_stable_orbit_banner(
         )
         .show(ctx, |ui| {
             ui.horizontal_centered(|ui| {
-                ui.label(egui::RichText::new("[OK]").size(18.0).color(colors::STABLE_BORDER).monospace());
+                ui.label(egui::RichText::new(icons::SUCCESS).size(18.0).color(colors::STABLE_BORDER));
                 ui.add_space(8.0);
 
                 ui.label(

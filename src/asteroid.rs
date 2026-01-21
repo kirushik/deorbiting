@@ -42,6 +42,63 @@ pub struct AsteroidName(pub String);
 #[derive(Resource, Default)]
 pub struct AsteroidCounter(pub u32);
 
+/// Color palette for differentiating asteroids.
+/// Warm, earthy tones that are visible against dark space.
+const ASTEROID_COLORS: [Color; 6] = [
+    Color::srgb(0.75, 0.55, 0.40), // Terracotta
+    Color::srgb(0.60, 0.65, 0.70), // Steel blue-gray
+    Color::srgb(0.70, 0.60, 0.45), // Sandy brown
+    Color::srgb(0.55, 0.60, 0.55), // Sage green-gray
+    Color::srgb(0.65, 0.50, 0.50), // Dusty rose
+    Color::srgb(0.70, 0.70, 0.55), // Khaki
+];
+
+/// Vibrant indicator colors for UI elements and rings.
+/// More saturated versions that are easily distinguishable.
+const ASTEROID_INDICATOR_COLORS: [Color; 6] = [
+    Color::srgb(1.0, 0.55, 0.25),  // Bright orange (from terracotta)
+    Color::srgb(0.35, 0.75, 1.0),  // Bright cyan (from steel blue)
+    Color::srgb(1.0, 0.82, 0.25),  // Gold (from sandy brown)
+    Color::srgb(0.25, 0.95, 0.55), // Bright green (from sage)
+    Color::srgb(1.0, 0.40, 0.65),  // Bright pink (from dusty rose)
+    Color::srgb(0.75, 1.0, 0.25),  // Lime (from khaki)
+];
+
+/// Get a color for an asteroid based on its index.
+pub fn asteroid_color(index: u32) -> Color {
+    ASTEROID_COLORS[(index as usize) % ASTEROID_COLORS.len()]
+}
+
+/// Get a vibrant indicator color for an asteroid based on its index.
+/// Used for UI buttons and visibility rings.
+pub fn asteroid_indicator_color(index: u32) -> Color {
+    ASTEROID_INDICATOR_COLORS[(index as usize) % ASTEROID_INDICATOR_COLORS.len()]
+}
+
+/// Map a material color to its corresponding indicator color.
+/// Returns the vibrant version of the given asteroid color.
+pub fn indicator_color_from_material(material_color: Color) -> Color {
+    // Find matching material color and return corresponding indicator
+    for (i, &mat_color) in ASTEROID_COLORS.iter().enumerate() {
+        // Compare RGB values (with tolerance for floating point)
+        let mat_rgba = mat_color.to_srgba();
+        let test_rgba = material_color.to_srgba();
+        if (mat_rgba.red - test_rgba.red).abs() < 0.01
+            && (mat_rgba.green - test_rgba.green).abs() < 0.01
+            && (mat_rgba.blue - test_rgba.blue).abs() < 0.01
+        {
+            return ASTEROID_INDICATOR_COLORS[i];
+        }
+    }
+    // Fallback: brighten the original color
+    let rgba = material_color.to_srgba();
+    Color::srgb(
+        (rgba.red * 1.3).min(1.0),
+        (rgba.green * 1.3).min(1.0),
+        (rgba.blue * 1.3).min(1.0),
+    )
+}
+
 /// Visual properties for asteroid rendering.
 #[derive(Component, Clone, Debug)]
 pub struct AsteroidVisual {
@@ -70,6 +127,7 @@ impl Default for AsteroidVisual {
 /// * `pos` - Initial position in meters from solar system barycenter
 /// * `vel` - Initial velocity in m/s
 /// * `mass` - Mass in kg (primarily for display; negligible for gravity)
+/// * `color` - Color for this asteroid (from palette)
 ///
 /// # Returns
 /// The spawned asteroid's Entity ID
@@ -81,13 +139,17 @@ pub fn spawn_asteroid(
     pos: DVec2,
     vel: DVec2,
     mass: f64,
+    color: Color,
 ) -> Entity {
-    let visual = AsteroidVisual::default();
+    let visual = AsteroidVisual {
+        render_radius: 2.0,
+        color,
+    };
 
     // Create sphere mesh
     let mesh = meshes.add(Sphere::new(visual.render_radius));
 
-    // Create material (non-emissive gray)
+    // Create material with asteroid's color
     let material = materials.add(StandardMaterial {
         base_color: visual.color,
         perceptual_roughness: 0.8,
@@ -141,13 +203,14 @@ pub fn spawn_asteroid_at_position(
     counter.0 += 1;
     let name = format!("Asteroid {}", counter.0);
     let mass = 1e12; // Default mass: 1 trillion kg
+    let color = asteroid_color(counter.0);
 
     info!(
         "Spawning {} at ({:.2e}, {:.2e}) m",
         name, pos.x, pos.y
     );
 
-    spawn_asteroid(commands, meshes, materials, name, pos, vel, mass)
+    spawn_asteroid(commands, meshes, materials, name, pos, vel, mass, color)
 }
 
 /// Calculate position and velocity for an Earth intercept trajectory.

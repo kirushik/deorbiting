@@ -127,19 +127,9 @@ struct ContinuationState {
     steps: usize,
 }
 
-/// Cache for incremental trajectory extension.
-///
-/// Instead of recomputing the entire trajectory from scratch on each update,
-/// we cache the integrator state and continue from where we left off.
-/// This enables efficient computation of very long trajectories (12+ years)
-/// while maintaining responsive updates.
-#[derive(Resource, Default)]
-pub struct TrajectoryCache {
-    /// Entity whose trajectory is cached
-    entity: Option<Entity>,
-    /// Initial state (pos, vel) at prediction start - for invalidation
-    initial_pos: DVec2,
-    initial_vel: DVec2,
+/// Per-entity cache entry for trajectory prediction.
+#[derive(Clone, Debug, Default)]
+struct EntityCacheEntry {
     /// Continuation state for extending trajectory
     continuation: Option<ContinuationState>,
     /// Whether trajectory reached a terminal state (collision or escape)
@@ -150,45 +140,77 @@ pub struct TrajectoryCache {
     prediction_start_time: f64,
 }
 
+/// Cache for incremental trajectory extension for ALL asteroids.
+///
+/// Instead of recomputing the entire trajectory from scratch on each update,
+/// we cache the integrator state for each asteroid and continue from where we left off.
+/// This enables efficient computation of very long trajectories (12+ years)
+/// while maintaining responsive updates.
+#[derive(Resource, Default)]
+pub struct TrajectoryCache {
+    /// Per-entity cache entries
+    entries: std::collections::HashMap<Entity, EntityCacheEntry>,
+}
+
 impl TrajectoryCache {
-    /// Check if the cache is valid for the given entity and state.
-    fn is_valid_for(&self, entity: Entity, pos: DVec2, vel: DVec2, deflector_hash: u64) -> bool {
-        self.entity == Some(entity)
-            && self.initial_pos == pos
-            && self.initial_vel == vel
-            && self.deflector_hash == deflector_hash
-            && !self.is_terminal
+    /// Check if the cache can be used for incremental extension.
+    ///
+    /// Cache is valid if:
+    /// - Entry exists for this entity
+    /// - Has continuation state (not terminal)
+    /// - Deflector configuration hasn't changed
+    fn can_extend(&self, entity: Entity, deflector_hash: u64) -> bool {
+        if let Some(entry) = self.entries.get(&entity) {
+            entry.continuation.is_some()
+                && entry.deflector_hash == deflector_hash
+                && !entry.is_terminal
+        } else {
+            false
+        }
     }
 
-    /// Invalidate the cache.
+    /// Get the continuation state for an entity.
+    fn get_continuation(&self, entity: Entity) -> Option<&ContinuationState> {
+        self.entries.get(&entity).and_then(|e| e.continuation.as_ref())
+    }
+
+    /// Invalidate the cache for a specific entity.
+    fn invalidate_entity(&mut self, entity: Entity) {
+        self.entries.remove(&entity);
+    }
+
+    /// Invalidate the entire cache (all entities).
+    #[allow(dead_code)]
     fn invalidate(&mut self) {
-        self.entity = None;
-        self.continuation = None;
-        self.is_terminal = false;
+        self.entries.clear();
+    }
+
+    /// Clean up entries for entities that no longer exist.
+    fn cleanup_stale_entries(&mut self, valid_entities: &[Entity]) {
+        self.entries.retain(|entity, _| valid_entities.contains(entity));
     }
 
     /// Store the continuation state for later extension.
     fn store_continuation(
         &mut self,
         entity: Entity,
-        initial_pos: DVec2,
-        initial_vel: DVec2,
         continuation: ContinuationState,
         deflector_hash: u64,
         start_time: f64,
     ) {
-        self.entity = Some(entity);
-        self.initial_pos = initial_pos;
-        self.initial_vel = initial_vel;
-        self.continuation = Some(continuation);
-        self.deflector_hash = deflector_hash;
-        self.prediction_start_time = start_time;
+        let entry = self.entries.entry(entity).or_default();
+        entry.continuation = Some(continuation);
+        entry.deflector_hash = deflector_hash;
+        entry.prediction_start_time = start_time;
+        entry.is_terminal = false;
     }
 
-    /// Mark the trajectory as terminal (collision or escape reached).
-    fn mark_terminal(&mut self) {
-        self.is_terminal = true;
-        self.continuation = None;
+    /// Mark the trajectory for an entity as terminal (collision or escape reached).
+    fn mark_terminal(&mut self, entity: Entity) {
+        if let Some(entry) = self.entries.get_mut(&entity) {
+            entry.is_terminal = true;
+            entry.continuation = None;
+        }
     }
 }
 
@@ -354,7 +376,7 @@ fn find_dominant_body_from_sources(pos: DVec2, sources: &GravitySourcesWithId) -
     }
 }
 
-/// Compute trajectory prediction for the selected asteroid.
+/// Compute trajectory prediction for ALL asteroids.
 ///
 /// Uses Velocity Verlet integrator for all trajectory visualization.
 /// This provides consistent, fast results suitable for interactive use.
@@ -383,176 +405,192 @@ fn predict_trajectory(
     // Increment frame counter
     state.frame_counter += 1;
 
-    // Get selected asteroid entity
-    let Some(SelectableBody::Asteroid(selected_entity)) = selected.body else {
-        cache.invalidate();
-        return;
+    // Check if we're in interactive drag mode (either position or velocity)
+    let is_dragging = velocity_drag.dragging || position_drag.dragging.is_some();
+
+    // Determine which entity is being dragged (if any)
+    let dragging_entity = position_drag.dragging;
+
+    // Get the selected asteroid entity (for potential future prioritization)
+    let _selected_entity = match selected.body {
+        Some(SelectableBody::Asteroid(entity)) => Some(entity),
+        _ => None,
     };
 
-    // Find the selected asteroid
-    let Ok((_, body_state, mut trajectory)) = asteroids.get_mut(selected_entity) else {
-        cache.invalidate();
-        return;
-    };
+    // Collect all asteroid entities for cache cleanup
+    let all_entities: Vec<Entity> = asteroids.iter().map(|(e, _, _)| e).collect();
+    cache.cleanup_stale_entries(&all_entities);
 
-    // Skip if velocity is essentially zero
-    if body_state.vel.length() < 1.0 {
-        trajectory.points.clear();
-        cache.invalidate();
+    // If nothing to process, just update state
+    if all_entities.is_empty() {
         state.needs_update = false;
         state.frame_counter = 0;
         state.last_sim_time = sim_time.current;
         return;
     }
 
-    // Check if we're in interactive drag mode (either position or velocity)
-    let is_dragging = velocity_drag.dragging || position_drag.dragging.is_some();
+    // Get total step budget and divide among asteroids
+    let total_budget = budget.get_extension_budget();
+    let per_asteroid_budget = (total_budget / all_entities.len()).max(500);
 
-    // Collect deflector info for this asteroid
-    let deflector_snapshot: Vec<ContinuousDeflector> = deflectors
-        .iter()
-        .filter(|(_, d)| d.target == selected_entity)
-        .map(|(_, d)| d.clone())
-        .collect();
-
-    let deflector_hash = compute_deflector_hash(&deflector_snapshot);
-
-    // Determine if we can use the cache for incremental extension
-    let can_extend = !is_dragging
-        && cache.is_valid_for(selected_entity, body_state.pos, body_state.vel, deflector_hash)
-        && cache.continuation.is_some();
-
-    // Get step budget from adaptive system
-    let step_budget = budget.get_extension_budget();
-
-    if can_extend {
-        // Incremental extension: prune old points and continue from cached state
-        prune_old_points(&mut trajectory, sim_time.current);
-
-        // Get the continuation state
-        let continuation = cache.continuation.as_ref().unwrap().clone();
-        let steps_before = continuation.steps;
-
-        // Time the prediction
-        let start_time = Instant::now();
-
-        // Extend trajectory from where we left off
-        let result = predict_with_verlet_continue(
-            selected_entity,
-            body_state,
-            &ephemeris,
-            &settings,
-            &mut trajectory,
-            camera.zoom,
-            &deflector_snapshot,
-            continuation,
-            step_budget,
-        );
-
-        // Update budget with measured performance
-        let elapsed_micros = start_time.elapsed().as_micros() as f64;
-        let steps_taken = result
-            .continuation
-            .as_ref()
-            .map(|c| c.steps - steps_before)
-            .unwrap_or(0);
-        budget.update_cost(steps_taken, elapsed_micros);
-
-        // Update cache with new continuation state
-        if let Some(new_continuation) = result.continuation {
-            cache.continuation = Some(new_continuation);
+    // Process each asteroid
+    for (entity, body_state, mut trajectory) in asteroids.iter_mut() {
+        // Skip if velocity is essentially zero
+        if body_state.vel.length() < 1.0 {
+            trajectory.points.clear();
+            cache.invalidate_entity(entity);
+            continue;
         }
-        if result.is_terminal {
-            cache.mark_terminal();
-        }
-    } else {
-        // Full recomputation
-        trajectory.points.clear();
-        trajectory.ends_in_collision = false;
-        trajectory.collision_target = None;
 
-        // Store starting point with dominant body calculation (for coloring)
-        let start_dominant = find_dominant_body(body_state.pos, sim_time.current, &ephemeris);
-        trajectory.points.push(TrajectoryPoint {
-            pos: body_state.pos,
-            time: sim_time.current,
-            dominant_body: start_dominant,
-        });
+        // Is this asteroid being dragged?
+        let is_this_dragging = is_dragging && (dragging_entity == Some(entity) || velocity_drag.dragging);
 
-        // Time the prediction
-        let start_time = Instant::now();
+        // Collect deflector info for this asteroid
+        let deflector_snapshot: Vec<ContinuousDeflector> = deflectors
+            .iter()
+            .filter(|(_, d)| d.target == entity)
+            .map(|(_, d)| d.clone())
+            .collect();
 
-        // Run prediction (either dragging mode or full recompute)
-        let result = predict_with_verlet_full(
-            selected_entity,
-            body_state,
-            &ephemeris,
-            sim_time.current,
-            &settings,
-            &mut trajectory,
-            is_dragging,
-            camera.zoom,
-            &deflector_snapshot,
-        );
+        let deflector_hash = compute_deflector_hash(&deflector_snapshot);
 
-        // Update budget with measured performance
-        let elapsed_micros = start_time.elapsed().as_micros() as f64;
-        let steps_taken = result
-            .continuation
-            .as_ref()
-            .map(|c| c.steps)
-            .unwrap_or(0);
-        budget.update_cost(steps_taken, elapsed_micros);
+        // Determine if we can use the cache for incremental extension
+        // Cache remains valid as long as: not dragging, deflectors unchanged, not terminal
+        let can_extend_cache = !is_this_dragging
+            && cache.can_extend(entity, deflector_hash);
 
-        // Update cache if not dragging
-        if !is_dragging {
-            if let Some(continuation) = result.continuation {
+        if can_extend_cache {
+            // Incremental extension: prune old points and continue from cached state
+            prune_old_points(&mut trajectory, sim_time.current);
+
+            // Get the continuation state
+            let continuation = cache.get_continuation(entity).unwrap().clone();
+            let steps_before = continuation.steps;
+
+            // Time the prediction
+            let start_time = Instant::now();
+
+            // Extend trajectory from where we left off
+            let result = predict_with_verlet_continue(
+                entity,
+                body_state,
+                &ephemeris,
+                &settings,
+                &mut trajectory,
+                camera.zoom,
+                &deflector_snapshot,
+                continuation,
+                per_asteroid_budget,
+            );
+
+            // Update budget with measured performance
+            let elapsed_micros = start_time.elapsed().as_micros() as f64;
+            let steps_taken = result
+                .continuation
+                .as_ref()
+                .map(|c| c.steps - steps_before)
+                .unwrap_or(0);
+            budget.update_cost(steps_taken, elapsed_micros);
+
+            // Update cache with new continuation state
+            if let Some(new_continuation) = result.continuation {
                 cache.store_continuation(
-                    selected_entity,
-                    body_state.pos,
-                    body_state.vel,
-                    continuation,
+                    entity,
+                    new_continuation,
                     deflector_hash,
                     sim_time.current,
                 );
             }
             if result.is_terminal {
-                cache.mark_terminal();
+                cache.mark_terminal(entity);
             }
         } else {
-            cache.invalidate();
+            // Full recomputation
+            trajectory.points.clear();
+            trajectory.ends_in_collision = false;
+            trajectory.collision_target = None;
+
+            // Store starting point with dominant body calculation (for coloring)
+            let start_dominant = find_dominant_body(body_state.pos, sim_time.current, &ephemeris);
+            trajectory.points.push(TrajectoryPoint {
+                pos: body_state.pos,
+                time: sim_time.current,
+                dominant_body: start_dominant,
+            });
+
+            // Time the prediction
+            let start_time = Instant::now();
+
+            // Run prediction (either dragging mode or full recompute)
+            let result = predict_with_verlet_full(
+                entity,
+                body_state,
+                &ephemeris,
+                sim_time.current,
+                &settings,
+                &mut trajectory,
+                is_this_dragging,
+                camera.zoom,
+                &deflector_snapshot,
+            );
+
+            // Update budget with measured performance
+            let elapsed_micros = start_time.elapsed().as_micros() as f64;
+            let steps_taken = result
+                .continuation
+                .as_ref()
+                .map(|c| c.steps)
+                .unwrap_or(0);
+            budget.update_cost(steps_taken, elapsed_micros);
+
+            // Update cache if not dragging
+            if !is_this_dragging {
+                if let Some(continuation) = result.continuation {
+                    cache.store_continuation(
+                        entity,
+                        continuation,
+                        deflector_hash,
+                        sim_time.current,
+                    );
+                }
+                if result.is_terminal {
+                    cache.mark_terminal(entity);
+                }
+            } else {
+                cache.invalidate_entity(entity);
+            }
         }
+
+        // Compute trajectory outcome
+        let prediction_time_span = trajectory
+            .points
+            .last()
+            .map(|p| p.time - sim_time.current)
+            .unwrap_or(0.0);
+
+        let (final_pos, final_vel) = trajectory
+            .points
+            .last()
+            .map(|p| (p.pos, body_state.vel)) // Approximate final velocity
+            .unwrap_or((body_state.pos, body_state.vel));
+
+        let impact_velocity = if trajectory.ends_in_collision {
+            Some(body_state.vel.length()) // Approximate
+        } else {
+            None
+        };
+
+        trajectory.outcome = crate::outcome::detect_outcome(
+            body_state.pos,
+            body_state.vel,
+            trajectory.ends_in_collision,
+            trajectory.collision_target,
+            final_pos,
+            final_vel,
+            prediction_time_span,
+            impact_velocity,
+        );
     }
-
-    // Compute trajectory outcome
-    let prediction_time_span = trajectory
-        .points
-        .last()
-        .map(|p| p.time - sim_time.current)
-        .unwrap_or(0.0);
-
-    let (final_pos, final_vel) = trajectory
-        .points
-        .last()
-        .map(|p| (p.pos, body_state.vel)) // Approximate final velocity
-        .unwrap_or((body_state.pos, body_state.vel));
-
-    let impact_velocity = if trajectory.ends_in_collision {
-        Some(body_state.vel.length()) // Approximate
-    } else {
-        None
-    };
-
-    trajectory.outcome = crate::outcome::detect_outcome(
-        body_state.pos,
-        body_state.vel,
-        trajectory.ends_in_collision,
-        trajectory.collision_target,
-        final_pos,
-        final_vel,
-        prediction_time_span,
-        impact_velocity,
-    );
 
     // Mark prediction as up-to-date
     state.needs_update = false;
@@ -899,75 +937,77 @@ fn predict_with_verlet_continue(
 
 /// Draw trajectory using Bevy gizmos.
 ///
-/// Renders trajectory at true physics positions (no distortion).
-/// For escape trajectories, applies additional distance-based fading.
+/// Renders trajectories for ALL asteroids at true physics positions.
+/// Selected asteroid gets brighter, more prominent trajectory lines.
+/// Non-selected asteroids get dimmer but still visible trajectories.
 fn draw_trajectory(
     trajectories: Query<(Entity, &TrajectoryPath), With<Asteroid>>,
     selected: Res<SelectedBody>,
     mut gizmos: Gizmos,
 ) {
-    // Get selected asteroid entity
-    let Some(SelectableBody::Asteroid(selected_entity)) = selected.body else {
-        return;
+    // Determine which asteroid is selected (if any)
+    let selected_entity = match selected.body {
+        Some(SelectableBody::Asteroid(e)) => Some(e),
+        _ => None,
     };
 
-    // Get trajectory for selected asteroid
-    let Ok((_, trajectory)) = trajectories.get(selected_entity) else {
-        return;
-    };
-
-    // Need at least 2 points to draw lines
-    if trajectory.points.len() < 2 {
-        return;
-    }
-
-    let total_points = trajectory.points.len();
-    let mut prev_render_pos: Option<Vec3> = None;
-
-    // For escape trajectories, calculate starting position for distance-based fade
-    let is_escape = matches!(trajectory.outcome, crate::outcome::TrajectoryOutcome::Escape { .. });
-    let start_pos = if is_escape && !trajectory.points.is_empty() {
-        Some(trajectory.points[0].pos)
-    } else {
-        None
-    };
-
-    // Max fade distance: 30 AU for escape trajectories
-    const MAX_FADE_DISTANCE: f64 = 30.0 * AU_TO_METERS;
-
-    for (i, point) in trajectory.points.iter().enumerate() {
-        // Render at true physics position (no distortion)
-        let render_pos = Vec3::new(
-            (point.pos.x * RENDER_SCALE) as f32,
-            (point.pos.y * RENDER_SCALE) as f32,
-            z_layers::TRAJECTORY,
-        );
-
-        // Draw line segment from previous point
-        if let Some(prev) = prev_render_pos {
-            let t_normalized = i as f32 / total_points as f32;
-            let mut color = trajectory_color(
-                t_normalized,
-                trajectory.ends_in_collision,
-                point.dominant_body,
-            );
-
-            // Apply additional distance-based fade for escape trajectories
-            if let Some(start) = start_pos {
-                let distance = (point.pos - start).length();
-                let distance_fade = 1.0 - (distance / MAX_FADE_DISTANCE).min(1.0);
-                // Square the fade for more dramatic effect at large distances
-                let distance_alpha = (distance_fade * distance_fade) as f32;
-
-                // Multiply existing alpha by distance-based fade
-                let current_alpha = color.alpha();
-                color = color.with_alpha(current_alpha * distance_alpha.max(0.05));
-            }
-
-            gizmos.line(prev, render_pos, color);
+    // Draw trajectories for ALL asteroids
+    for (entity, trajectory) in trajectories.iter() {
+        // Need at least 2 points to draw lines
+        if trajectory.points.len() < 2 {
+            continue;
         }
 
-        prev_render_pos = Some(render_pos);
+        let is_selected = selected_entity == Some(entity);
+        let total_points = trajectory.points.len();
+        let mut prev_render_pos: Option<Vec3> = None;
+
+        // For escape trajectories, calculate starting position for distance-based fade
+        let is_escape = matches!(trajectory.outcome, crate::outcome::TrajectoryOutcome::Escape { .. });
+        let start_pos = if is_escape && !trajectory.points.is_empty() {
+            Some(trajectory.points[0].pos)
+        } else {
+            None
+        };
+
+        // Max fade distance: 30 AU for escape trajectories
+        const MAX_FADE_DISTANCE: f64 = 30.0 * AU_TO_METERS;
+
+        for (i, point) in trajectory.points.iter().enumerate() {
+            // Render at true physics position (no distortion)
+            let render_pos = Vec3::new(
+                (point.pos.x * RENDER_SCALE) as f32,
+                (point.pos.y * RENDER_SCALE) as f32,
+                z_layers::TRAJECTORY,
+            );
+
+            // Draw line segment from previous point
+            if let Some(prev) = prev_render_pos {
+                let t_normalized = i as f32 / total_points as f32;
+                let mut color = trajectory_color(
+                    t_normalized,
+                    trajectory.ends_in_collision,
+                    point.dominant_body,
+                    is_selected,
+                );
+
+                // Apply additional distance-based fade for escape trajectories
+                if let Some(start) = start_pos {
+                    let distance = (point.pos - start).length();
+                    let distance_fade = 1.0 - (distance / MAX_FADE_DISTANCE).min(1.0);
+                    // Square the fade for more dramatic effect at large distances
+                    let distance_alpha = (distance_fade * distance_fade) as f32;
+
+                    // Multiply existing alpha by distance-based fade
+                    let current_alpha = color.alpha();
+                    color = color.with_alpha(current_alpha * distance_alpha.max(0.05));
+                }
+
+                gizmos.line(prev, render_pos, color);
+            }
+
+            prev_render_pos = Some(render_pos);
+        }
     }
 }
 
@@ -995,20 +1035,29 @@ fn body_color(body_id: CelestialBodyId) -> (f32, f32, f32) {
 }
 
 /// Calculate color for trajectory segment based on position along path and dominant body.
+/// Non-selected asteroids get dimmer trajectories to avoid visual clutter.
 fn trajectory_color(
     t_normalized: f32,
     ends_in_collision: bool,
     dominant_body: Option<CelestialBodyId>,
+    is_selected: bool,
 ) -> Color {
-    // Alpha fades from 1.0 to 0.2 along trajectory
-    let alpha = 1.0 - t_normalized * 0.8;
+    // Base alpha fades from 1.0 to 0.2 along trajectory
+    let base_alpha = 1.0 - t_normalized * 0.8;
+    
+    // Non-selected asteroids get reduced opacity (but still visible)
+    let alpha = if is_selected {
+        base_alpha
+    } else {
+        base_alpha * 0.4 // 40% opacity for non-selected
+    };
 
     if ends_in_collision {
         // Collision trajectory: red throughout, intensifying near collision
         // Start orange-red, transition to bright red near collision
         let intensity = 0.6 + t_normalized * 0.4; // 0.6 → 1.0
         let green = 0.3 * (1.0 - t_normalized); // 0.3 → 0.0
-        Color::srgba(intensity, green, 0.1, alpha.max(0.5)) // Keep more visible
+        Color::srgba(intensity, green, 0.1, alpha.max(if is_selected { 0.5 } else { 0.2 }))
     } else if let Some(body_id) = dominant_body {
         // Color based on dominant body
         let (r, g, b) = body_color(body_id);
@@ -1031,9 +1080,9 @@ mod tests {
 
     #[test]
     fn test_trajectory_color_fades_with_distance() {
-        // Sun-dominated (None) trajectory
-        let start_color = trajectory_color(0.0, false, None);
-        let end_color = trajectory_color(1.0, false, None);
+        // Sun-dominated (None) trajectory (selected=true for full opacity)
+        let start_color = trajectory_color(0.0, false, None, true);
+        let end_color = trajectory_color(1.0, false, None, true);
 
         // Start should be more opaque (higher alpha)
         // Both are cyan colors
@@ -1051,8 +1100,8 @@ mod tests {
 
     #[test]
     fn test_trajectory_color_red_at_collision() {
-        let near_collision = trajectory_color(0.95, true, None);
-        let normal = trajectory_color(0.95, false, None);
+        let near_collision = trajectory_color(0.95, true, None, true);
+        let normal = trajectory_color(0.95, false, None, true);
 
         let Color::Srgba(collision_color) = near_collision else {
             panic!("Expected Srgba color");
@@ -1073,7 +1122,7 @@ mod tests {
     #[test]
     fn test_trajectory_color_by_dominant_body() {
         // Jupiter-dominated segment should be orange
-        let jupiter_color = trajectory_color(0.5, false, Some(CelestialBodyId::Jupiter));
+        let jupiter_color = trajectory_color(0.5, false, Some(CelestialBodyId::Jupiter), true);
         let Color::Srgba(color) = jupiter_color else {
             panic!("Expected Srgba color");
         };
@@ -1084,7 +1133,7 @@ mod tests {
         assert!(color.blue < 0.5, "Jupiter should be orange (low blue)");
 
         // Earth-dominated segment should be blue
-        let earth_color = trajectory_color(0.5, false, Some(CelestialBodyId::Earth));
+        let earth_color = trajectory_color(0.5, false, Some(CelestialBodyId::Earth), true);
         let Color::Srgba(e_color) = earth_color else {
             panic!("Expected Srgba color");
         };

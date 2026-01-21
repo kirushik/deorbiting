@@ -185,7 +185,9 @@ pub fn radial_menu_system(
                 let angle = -std::f32::consts::FRAC_PI_2 + (i as f32 * std::f32::consts::TAU / num_methods as f32);
                 let button_pos = center + egui::vec2(angle.cos() * radius, angle.sin() * radius);
 
-                if render_method_button(ui, button_pos, *method) {
+                // Show keyboard shortcut number (1-7)
+                let shortcut_key = (i + 1).to_string();
+                if render_method_button(ui, button_pos, *method, &shortcut_key) {
                     apply_deflection(
                         target,
                         *method,
@@ -213,10 +215,36 @@ pub fn radial_menu_system(
     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
         menu_state.open = false;
     }
+
+    // Keyboard shortcuts for quick selection (1-7)
+    let key_method_map = [
+        (egui::Key::Num1, DeflectionMethod::Kinetic),
+        (egui::Key::Num2, DeflectionMethod::Nuclear),
+        (egui::Key::Num3, DeflectionMethod::NuclearSplit),
+        (egui::Key::Num4, DeflectionMethod::IonBeam),
+        (egui::Key::Num5, DeflectionMethod::GravityTractor),
+        (egui::Key::Num6, DeflectionMethod::LaserAblation),
+        (egui::Key::Num7, DeflectionMethod::SolarSail),
+    ];
+
+    for (key, method) in key_method_map {
+        if ctx.input(|i| i.key_pressed(key)) {
+            apply_deflection(
+                target,
+                method,
+                asteroid_state,
+                flight_time_seconds,
+                &mut launch_events,
+                &mut continuous_launch_events,
+            );
+            menu_state.open = false;
+            break;
+        }
+    }
 }
 
 /// Render a method button. Returns true if clicked.
-fn render_method_button(ui: &mut egui::Ui, pos: egui::Pos2, method: DeflectionMethod) -> bool {
+fn render_method_button(ui: &mut egui::Ui, pos: egui::Pos2, method: DeflectionMethod, shortcut: &str) -> bool {
     let button_size = 44.0;
     let rect = egui::Rect::from_center_size(pos, egui::vec2(button_size, button_size));
 
@@ -238,6 +266,15 @@ fn render_method_button(ui: &mut egui::Ui, pos: egui::Pos2, method: DeflectionMe
         egui::Stroke::new(2.0, accent_color),
     );
 
+    // Keyboard shortcut badge (top-left corner)
+    ui.painter().text(
+        pos + egui::vec2(-button_size / 2.0 + 6.0, -button_size / 2.0 + 8.0),
+        egui::Align2::LEFT_TOP,
+        shortcut,
+        egui::FontId::proportional(10.0),
+        egui::Color32::from_rgb(150, 150, 160),
+    );
+
     // Icon (use proportional font where Phosphor is added as fallback)
     ui.painter().text(
         pos,
@@ -252,7 +289,7 @@ fn render_method_button(ui: &mut egui::Ui, pos: egui::Pos2, method: DeflectionMe
         pos + egui::vec2(0.0, button_size / 2.0 + 10.0),
         egui::Align2::CENTER_TOP,
         method.name(),
-        egui::FontId::proportional(11.0),
+        egui::FontId::proportional(12.0),
         egui::Color32::from_rgb(200, 200, 210),
     );
 
@@ -262,7 +299,7 @@ fn render_method_button(ui: &mut egui::Ui, pos: egui::Pos2, method: DeflectionMe
         pos + egui::vec2(0.0, button_size / 2.0 + 22.0),
         egui::Align2::CENTER_TOP,
         type_label,
-        egui::FontId::proportional(9.0),
+        egui::FontId::proportional(11.0),
         egui::Color32::from_rgb(130, 130, 140),
     );
 
