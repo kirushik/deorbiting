@@ -9,7 +9,7 @@ use bevy_egui::{egui, EguiContexts};
 use crate::asteroid::{Asteroid, AsteroidName};
 use crate::camera::{MainCamera, RENDER_SCALE};
 use crate::continuous::{ContinuousDeflector, ContinuousDeflectorState};
-use crate::ephemeris::{CelestialBodyId, Ephemeris};
+use crate::ephemeris::{get_trivia, CelestialBodyData, CelestialBodyId, Ephemeris};
 use crate::physics::IntegratorStates;
 use crate::render::{CelestialBody, SelectedBody};
 use crate::types::{BodyState, SelectableBody, SimulationTime, AU_TO_METERS};
@@ -33,6 +33,41 @@ const CARD_HEIGHT: f32 = 180.0; // Approximate height
 const CARD_MARGIN: f32 = 25.0; // Distance from object
 const DOCK_HEIGHT: f32 = 56.0;
 const VELOCITY_ARROW_LENGTH: f32 = 35.0; // Approximate max arrow length to avoid
+
+// Physical constants for formatting
+const EARTH_MASS: f64 = 5.972e24; // kg
+const JUPITER_MASS: f64 = 1.898e27; // kg
+const SOLAR_MASS: f64 = 1.989e30; // kg
+const EARTH_RADIUS: f64 = 6.371e6; // meters
+
+/// Format mass in appropriate units (Earth/Jupiter/Solar masses).
+fn format_mass(mass_kg: f64) -> String {
+    if mass_kg >= SOLAR_MASS * 0.001 {
+        format!("{:.3} M☉", mass_kg / SOLAR_MASS)
+    } else if mass_kg >= JUPITER_MASS * 0.1 {
+        format!("{:.2} Mⱼ", mass_kg / JUPITER_MASS)
+    } else {
+        format!("{:.3} M⊕", mass_kg / EARTH_MASS)
+    }
+}
+
+/// Format radius in appropriate units.
+fn format_radius(radius_m: f64) -> String {
+    if radius_m >= EARTH_RADIUS * 0.5 {
+        format!("{:.2} R⊕", radius_m / EARTH_RADIUS)
+    } else {
+        format!("{:.0} km", radius_m / 1000.0)
+    }
+}
+
+/// Format orbital period in days or years.
+fn format_period(days: f64) -> String {
+    if days >= 365.25 * 2.0 {
+        format!("{:.1} years", days / 365.25)
+    } else {
+        format!("{:.1} days", days)
+    }
+}
 
 /// 8-position label placement algorithm.
 /// Tries 8 candidate positions around the object and picks the best one.
@@ -159,7 +194,7 @@ pub fn context_card_system(
     match selected.body {
         Some(SelectableBody::Celestial(entity)) => {
             if let Ok((_, body)) = celestial_bodies.get(entity) {
-                // Get body position
+                // Get body position and velocity
                 if let Some(pos) = ephemeris.get_position_by_id(body.id, sim_time.current) {
                     let render_pos = Vec2::new(
                         (pos.x * RENDER_SCALE) as f32,
@@ -167,7 +202,15 @@ pub fn context_card_system(
                     );
 
                     if let Ok(screen_pos) = camera.world_to_viewport(camera_transform, render_pos.extend(0.0)) {
-                        render_celestial_card(ctx, body, pos.length(), screen_pos, None);
+                        // Get body data and velocity for enhanced card
+                        let body_data = ephemeris.get_body_data_by_id(body.id);
+                        let velocity = ephemeris.get_velocity_by_id(body.id, sim_time.current)
+                            .map(|v| v.length())
+                            .unwrap_or(0.0);
+
+                        if let Some(data) = body_data {
+                            render_celestial_card(ctx, body, data, pos.length(), velocity, screen_pos, None);
+                        }
                     }
                 }
             }
@@ -222,11 +265,13 @@ struct AsteroidCardResult {
     deflect_clicked: bool,
 }
 
-/// Render context card for a celestial body.
+/// Render context card for a celestial body with enhanced information.
 fn render_celestial_card(
     ctx: &egui::Context,
     body: &CelestialBody,
+    body_data: &CelestialBodyData,
     distance_from_sun: f64,
+    current_velocity: f64,
     screen_pos: Vec2,
     velocity_dir: Option<Vec2>,
 ) {
@@ -246,12 +291,12 @@ fn render_celestial_card(
                 .rounding(4.0),
         )
         .show(ctx, |ui| {
-            ui.set_max_width(180.0);
+            ui.set_max_width(190.0);
 
             // Header with icon and name
             ui.horizontal(|ui| {
                 let icon = celestial_icon(body.id);
-                ui.label(egui::RichText::new(icon).size(16.0)); // Phosphor icon
+                ui.label(egui::RichText::new(icon).size(16.0));
                 ui.label(egui::RichText::new(&body.name).strong().size(16.0));
             });
 
@@ -266,6 +311,65 @@ fn render_celestial_card(
             let dist_mkm = distance_from_sun / 1e9;
             ui.label(egui::RichText::new(format!("{:.1} M km from Sun", dist_mkm)).size(14.0));
             ui.label(egui::RichText::new(format!("({:.3} AU)", dist_au)).weak().size(12.0));
+
+            ui.add_space(4.0);
+
+            // Orbital velocity
+            let vel_km_s = current_velocity / 1000.0;
+            ui.label(egui::RichText::new(format!("Velocity: {:.1} km/s", vel_km_s)).size(14.0));
+
+            // Orbital period and eccentricity (only for bodies with orbits)
+            if let Some(orbit) = &body_data.orbit {
+                // Period in days: T = 2π / mean_motion (where mean_motion is rad/s)
+                let period_seconds = std::f64::consts::TAU / orbit.mean_motion;
+                let period_days = period_seconds / 86400.0;
+                ui.label(egui::RichText::new(format!("Period: {}", format_period(period_days))).size(14.0));
+                ui.label(egui::RichText::new(format!("e = {:.4}", orbit.eccentricity)).weak().size(12.0));
+            }
+
+            // Collapsible details section
+            egui::CollapsingHeader::new(egui::RichText::new("Details").size(13.0))
+                .default_open(false)
+                .show(ui, |ui| {
+                    ui.label(egui::RichText::new(format!("Mass: {}", format_mass(body_data.mass))).size(13.0));
+                    ui.label(egui::RichText::new(format!("Radius: {}", format_radius(body_data.radius))).size(13.0));
+                    
+                    if body_data.hill_sphere > 0.0 {
+                        let hill_au = body_data.hill_sphere / AU_TO_METERS;
+                        ui.label(egui::RichText::new(format!("Hill sphere: {:.4} AU", hill_au)).size(13.0));
+                    }
+
+                    // Perihelion/Aphelion for bodies with orbits
+                    if let Some(orbit) = &body_data.orbit {
+                        let perihelion = orbit.semi_major_axis * (1.0 - orbit.eccentricity);
+                        let aphelion = orbit.semi_major_axis * (1.0 + orbit.eccentricity);
+                        ui.label(egui::RichText::new(format!("Perihelion: {:.3} AU", perihelion / AU_TO_METERS)).size(13.0));
+                        ui.label(egui::RichText::new(format!("Aphelion: {:.3} AU", aphelion / AU_TO_METERS)).size(13.0));
+                    }
+                });
+
+            // Trivia section
+            let trivia = get_trivia(body.id);
+            egui::CollapsingHeader::new(egui::RichText::new("Fun Facts").size(13.0))
+                .default_open(false)
+                .show(ui, |ui| {
+                    if let Some(moons) = trivia.known_moons {
+                        ui.label(egui::RichText::new(format!("Moons: {}", moons)).size(12.0));
+                    }
+                    if trivia.has_rings {
+                        ui.label(egui::RichText::new("Has rings").size(12.0));
+                    }
+                    ui.label(egui::RichText::new(format!("Surface gravity: {:.2}g", trivia.surface_gravity_g)).size(12.0));
+                    if let Some(day_hours) = trivia.day_length_hours {
+                        if day_hours >= 24.0 {
+                            ui.label(egui::RichText::new(format!("Day length: {:.1} days", day_hours / 24.0)).size(12.0));
+                        } else {
+                            ui.label(egui::RichText::new(format!("Day length: {:.1}h", day_hours)).size(12.0));
+                        }
+                    }
+                    ui.add_space(4.0);
+                    ui.label(egui::RichText::new(trivia.fun_fact).weak().italics().size(12.0));
+                });
         });
 }
 

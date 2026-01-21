@@ -12,7 +12,7 @@ pub mod horizons_tables;
 pub mod kepler;
 pub mod table;
 
-pub use data::{CelestialBodyData, CelestialBodyId, all_bodies};
+pub use data::{get_trivia, CelestialBodyData, CelestialBodyId, CelestialBodyTrivia, all_bodies};
 
 use crate::types::G;
 use bevy::math::DVec2;

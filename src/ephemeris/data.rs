@@ -401,6 +401,154 @@ pub fn all_bodies() -> Vec<CelestialBodyData> {
     bodies
 }
 
+/// Trivia data for celestial bodies - fun facts for the info card.
+#[derive(Clone, Debug)]
+pub struct CelestialBodyTrivia {
+    /// Number of known moons (None for moons themselves)
+    pub known_moons: Option<u32>,
+    /// Whether the body has rings
+    pub has_rings: bool,
+    /// Surface gravity in Earth g's
+    pub surface_gravity_g: f64,
+    /// Rotation period in hours (None if tidally locked or special)
+    pub day_length_hours: Option<f64>,
+    /// A brief fun fact about the body
+    pub fun_fact: &'static str,
+}
+
+/// Get trivia data for a celestial body.
+pub fn get_trivia(id: CelestialBodyId) -> CelestialBodyTrivia {
+    match id {
+        CelestialBodyId::Sun => CelestialBodyTrivia {
+            known_moons: Some(0),
+            has_rings: false,
+            surface_gravity_g: 28.0,
+            day_length_hours: Some(609.0), // ~25 days at equator
+            fun_fact: "Contains 99.86% of solar system mass",
+        },
+        CelestialBodyId::Mercury => CelestialBodyTrivia {
+            known_moons: Some(0),
+            has_rings: false,
+            surface_gravity_g: 0.38,
+            day_length_hours: Some(1407.6), // 58.6 Earth days
+            fun_fact: "Extreme temperature swings: -180°C to 430°C",
+        },
+        CelestialBodyId::Venus => CelestialBodyTrivia {
+            known_moons: Some(0),
+            has_rings: false,
+            surface_gravity_g: 0.91,
+            day_length_hours: Some(5832.0), // 243 Earth days, retrograde
+            fun_fact: "Rotates backwards (retrograde)",
+        },
+        CelestialBodyId::Earth => CelestialBodyTrivia {
+            known_moons: Some(1),
+            has_rings: false,
+            surface_gravity_g: 1.0,
+            day_length_hours: Some(24.0),
+            fun_fact: "Only known body with life",
+        },
+        CelestialBodyId::Mars => CelestialBodyTrivia {
+            known_moons: Some(2),
+            has_rings: false,
+            surface_gravity_g: 0.38,
+            day_length_hours: Some(24.6),
+            fun_fact: "Home to Olympus Mons, tallest volcano",
+        },
+        CelestialBodyId::Jupiter => CelestialBodyTrivia {
+            known_moons: Some(95),
+            has_rings: true, // faint
+            surface_gravity_g: 2.53,
+            day_length_hours: Some(9.9),
+            fun_fact: "Great Red Spot: storm larger than Earth",
+        },
+        CelestialBodyId::Saturn => CelestialBodyTrivia {
+            known_moons: Some(146),
+            has_rings: true,
+            surface_gravity_g: 1.07,
+            day_length_hours: Some(10.7),
+            fun_fact: "Less dense than water - could float",
+        },
+        CelestialBodyId::Uranus => CelestialBodyTrivia {
+            known_moons: Some(28),
+            has_rings: true, // faint
+            surface_gravity_g: 0.89,
+            day_length_hours: Some(17.2),
+            fun_fact: "Tilted 98° - rolls around the Sun",
+        },
+        CelestialBodyId::Neptune => CelestialBodyTrivia {
+            known_moons: Some(16),
+            has_rings: true, // faint
+            surface_gravity_g: 1.14,
+            day_length_hours: Some(16.1),
+            fun_fact: "Fastest winds: up to 2100 km/h",
+        },
+        // Moons
+        CelestialBodyId::Moon => CelestialBodyTrivia {
+            known_moons: None,
+            has_rings: false,
+            surface_gravity_g: 0.17,
+            day_length_hours: None, // tidally locked
+            fun_fact: "Tidally locked - same face always toward Earth",
+        },
+        CelestialBodyId::Phobos => CelestialBodyTrivia {
+            known_moons: None,
+            has_rings: false,
+            surface_gravity_g: 0.0006,
+            day_length_hours: None,
+            fun_fact: "Slowly spiraling inward toward Mars",
+        },
+        CelestialBodyId::Deimos => CelestialBodyTrivia {
+            known_moons: None,
+            has_rings: false,
+            surface_gravity_g: 0.0003,
+            day_length_hours: None,
+            fun_fact: "May be a captured asteroid",
+        },
+        CelestialBodyId::Io => CelestialBodyTrivia {
+            known_moons: None,
+            has_rings: false,
+            surface_gravity_g: 0.18,
+            day_length_hours: None,
+            fun_fact: "Most volcanically active body in solar system",
+        },
+        CelestialBodyId::Europa => CelestialBodyTrivia {
+            known_moons: None,
+            has_rings: false,
+            surface_gravity_g: 0.13,
+            day_length_hours: None,
+            fun_fact: "Subsurface ocean may harbor life",
+        },
+        CelestialBodyId::Ganymede => CelestialBodyTrivia {
+            known_moons: None,
+            has_rings: false,
+            surface_gravity_g: 0.15,
+            day_length_hours: None,
+            fun_fact: "Largest moon in solar system",
+        },
+        CelestialBodyId::Callisto => CelestialBodyTrivia {
+            known_moons: None,
+            has_rings: false,
+            surface_gravity_g: 0.13,
+            day_length_hours: None,
+            fun_fact: "Most heavily cratered object in solar system",
+        },
+        CelestialBodyId::Titan => CelestialBodyTrivia {
+            known_moons: None,
+            has_rings: false,
+            surface_gravity_g: 0.14,
+            day_length_hours: None,
+            fun_fact: "Only moon with a thick atmosphere",
+        },
+        CelestialBodyId::Enceladus => CelestialBodyTrivia {
+            known_moons: None,
+            has_rings: false,
+            surface_gravity_g: 0.01,
+            day_length_hours: None,
+            fun_fact: "Water geysers erupting from south pole",
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
