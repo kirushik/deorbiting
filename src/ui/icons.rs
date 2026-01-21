@@ -4,7 +4,7 @@
 //! Icons are initialized via `setup_fonts` when the app starts.
 
 use bevy::prelude::*;
-use bevy_egui::{egui, EguiContexts};
+use bevy_egui::{EguiContexts, egui};
 
 /// Resource to track if fonts have been initialized.
 #[derive(Resource, Default)]

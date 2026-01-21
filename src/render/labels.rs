@@ -3,7 +3,7 @@
 //! Renders planet and moon names near each celestial body.
 
 use bevy::prelude::*;
-use bevy_egui::{egui, EguiContexts};
+use bevy_egui::{EguiContexts, egui};
 
 use crate::camera::MainCamera;
 use crate::ephemeris::data::CelestialBodyId;

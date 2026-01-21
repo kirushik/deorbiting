@@ -64,7 +64,9 @@ fn find_body_at_cursor(
     let cursor_pos = window.cursor_position()?;
 
     // Convert cursor position to world coordinates
-    let world_pos = camera.viewport_to_world_2d(camera_transform, cursor_pos).ok()?;
+    let world_pos = camera
+        .viewport_to_world_2d(camera_transform, cursor_pos)
+        .ok()?;
 
     // Find the closest body under the cursor (checking both types)
     let mut closest: Option<(SelectableBody, f32)> = None;
@@ -79,10 +81,9 @@ fn find_body_at_cursor(
         let base_radius = (body.radius * crate::camera::RENDER_SCALE) as f32 * body.visual_scale;
         let hit_radius = base_radius.max(2.0) * 2.0; // At least 2 units, doubled for easier picking
 
-        if dist < hit_radius
-            && closest.is_none_or(|(_, d)| dist < d) {
-                closest = Some((SelectableBody::Celestial(entity), dist));
-            }
+        if dist < hit_radius && closest.is_none_or(|(_, d)| dist < d) {
+            closest = Some((SelectableBody::Celestial(entity), dist));
+        }
     }
 
     // Check asteroids
@@ -93,10 +94,9 @@ fn find_body_at_cursor(
         // Use asteroid visual radius for hit detection
         let hit_radius = visual.render_radius.max(2.0) * 2.0;
 
-        if dist < hit_radius
-            && closest.is_none_or(|(_, d)| dist < d) {
-                closest = Some((SelectableBody::Asteroid(entity), dist));
-            }
+        if dist < hit_radius && closest.is_none_or(|(_, d)| dist < d) {
+            closest = Some((SelectableBody::Asteroid(entity), dist));
+        }
     }
 
     closest.map(|(body, _)| body)
@@ -120,10 +120,11 @@ fn detect_hover(
 
     // Don't detect hover if egui wants the pointer
     if let Some(ctx) = contexts.try_ctx_mut()
-        && ctx.wants_pointer_input() {
-            hovered.body = None;
-            return;
-        }
+        && ctx.wants_pointer_input()
+    {
+        hovered.body = None;
+        return;
+    }
 
     let Ok(window) = window_query.get_single() else {
         return;
@@ -133,7 +134,13 @@ fn detect_hover(
         return;
     };
 
-    hovered.body = find_body_at_cursor(window, camera, camera_transform, &celestial_bodies, &asteroids);
+    hovered.body = find_body_at_cursor(
+        window,
+        camera,
+        camera_transform,
+        &celestial_bodies,
+        &asteroids,
+    );
 }
 
 /// Detect clicks on bodies (celestial or asteroid) to select them.
@@ -160,9 +167,10 @@ fn detect_selection(
 
     // Don't process click if egui wants the pointer (clicking on UI)
     if let Some(ctx) = contexts.try_ctx_mut()
-        && ctx.wants_pointer_input() {
-            return;
-        }
+        && ctx.wants_pointer_input()
+    {
+        return;
+    }
 
     let Ok(window) = window_query.get_single() else {
         return;
@@ -173,7 +181,13 @@ fn detect_selection(
     };
 
     // Find body at cursor and select it (or deselect if clicking empty space)
-    selected.body = find_body_at_cursor(window, camera, camera_transform, &celestial_bodies, &asteroids);
+    selected.body = find_body_at_cursor(
+        window,
+        camera,
+        camera_transform,
+        &celestial_bodies,
+        &asteroids,
+    );
 }
 
 /// Draw highlight ring around hovered body.
@@ -201,12 +215,22 @@ fn draw_hover_highlight(
         SelectableBody::Celestial(entity) => {
             if let Ok((transform, body)) = celestial_bodies.get(entity) {
                 let radius = (body.radius * crate::camera::RENDER_SCALE) as f32 * body.visual_scale;
-                draw_highlight_ring_at(&mut gizmos, transform.translation.truncate(), radius, color);
+                draw_highlight_ring_at(
+                    &mut gizmos,
+                    transform.translation.truncate(),
+                    radius,
+                    color,
+                );
             }
         }
         SelectableBody::Asteroid(entity) => {
             if let Ok((transform, visual)) = asteroids.get(entity) {
-                draw_highlight_ring_at(&mut gizmos, transform.translation.truncate(), visual.render_radius, color);
+                draw_highlight_ring_at(
+                    &mut gizmos,
+                    transform.translation.truncate(),
+                    visual.render_radius,
+                    color,
+                );
             }
         }
     }
@@ -230,12 +254,22 @@ fn draw_selection_highlight(
         SelectableBody::Celestial(entity) => {
             if let Ok((transform, body)) = celestial_bodies.get(entity) {
                 let radius = (body.radius * crate::camera::RENDER_SCALE) as f32 * body.visual_scale;
-                draw_highlight_ring_at(&mut gizmos, transform.translation.truncate(), radius, color);
+                draw_highlight_ring_at(
+                    &mut gizmos,
+                    transform.translation.truncate(),
+                    radius,
+                    color,
+                );
             }
         }
         SelectableBody::Asteroid(entity) => {
             if let Ok((transform, visual)) = asteroids.get(entity) {
-                draw_highlight_ring_at(&mut gizmos, transform.translation.truncate(), visual.render_radius, color);
+                draw_highlight_ring_at(
+                    &mut gizmos,
+                    transform.translation.truncate(),
+                    visual.render_radius,
+                    color,
+                );
             }
         }
     }
@@ -260,7 +294,6 @@ fn draw_highlight_ring_at(gizmos: &mut Gizmos, center_2d: Vec2, base_radius: f32
         gizmos.line(p0, p1, color);
     }
 }
-
 
 /// Draw persistent visibility markers for ALL asteroids.
 /// These markers ensure asteroids remain visible at any zoom level,

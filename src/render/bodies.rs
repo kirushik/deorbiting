@@ -12,8 +12,8 @@ use bevy::{
 
 use crate::camera::RENDER_SCALE;
 use crate::ephemeris::{
-    data::{all_bodies, CelestialBodyId},
     Ephemeris,
+    data::{CelestialBodyId, all_bodies},
 };
 use crate::render::z_layers;
 use crate::types::SimulationTime;
@@ -33,7 +33,6 @@ pub struct CelestialBody {
     /// Human-readable name.
     pub name: String,
 }
-
 
 /// Tracks the effective visual radius after all scaling is applied.
 /// Used for position distortion calculations and hit detection.
@@ -67,7 +66,7 @@ fn body_color(id: CelestialBodyId) -> Color {
         CelestialBodyId::Uranus => Color::srgb(0.6, 0.8, 0.9),
         CelestialBodyId::Neptune => Color::srgb(0.3, 0.5, 0.9),
         CelestialBodyId::Moon => Color::srgb(0.7, 0.7, 0.7),
-        CelestialBodyId::Phobos => Color::srgb(0.5, 0.45, 0.4),  // Dark gray-brown
+        CelestialBodyId::Phobos => Color::srgb(0.5, 0.45, 0.4), // Dark gray-brown
         CelestialBodyId::Deimos => Color::srgb(0.55, 0.5, 0.45), // Slightly lighter gray-brown
         CelestialBodyId::Io => Color::srgb(0.9, 0.8, 0.3),
         CelestialBodyId::Europa => Color::srgb(0.85, 0.85, 0.8),
@@ -141,7 +140,13 @@ fn spawn_solar_system(
 
         // Add rings to Saturn
         if id == CelestialBodyId::Saturn {
-            spawn_saturn_rings(&mut commands, &mut meshes, &mut materials, entity, render_radius);
+            spawn_saturn_rings(
+                &mut commands,
+                &mut meshes,
+                &mut materials,
+                entity,
+                render_radius,
+            );
         }
 
         // Register entity in ephemeris for later position lookups

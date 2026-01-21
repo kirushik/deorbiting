@@ -1,7 +1,7 @@
 //! Kepler orbit solver using Newton's method for the Kepler equation.
 
-use bevy::math::DVec2;
 use crate::types::{DEG_TO_RAD, SECONDS_PER_DAY};
+use bevy::math::DVec2;
 
 /// Keplerian orbital elements for computing positions analytically.
 /// All angular values in radians, distances in meters, time in seconds.
@@ -62,11 +62,7 @@ impl KeplerOrbit {
         let e = self.eccentricity;
 
         // Initial guess: E = M for low eccentricity, π for high e
-        let mut e_anomaly = if e < 0.8 {
-            m
-        } else {
-            std::f64::consts::PI
-        };
+        let mut e_anomaly = if e < 0.8 { m } else { std::f64::consts::PI };
 
         // Newton's method iteration with fallback
         let mut prev_delta = f64::INFINITY;
@@ -109,19 +105,18 @@ impl KeplerOrbit {
         e_anomaly
     }
 
-
     /// Bisection fallback for solving Kepler's equation when Newton fails.
     /// Guaranteed to converge but slower than Newton's method.
     fn solve_eccentric_anomaly_bisection(&self, mean_anomaly: f64) -> f64 {
         let e = self.eccentricity;
-        
+
         // f(E) = E - e*sin(E) - M, find root
         let f = |e_anom: f64| e_anom - e * e_anom.sin() - mean_anomaly;
-        
+
         // Bracket: E is always between M - e and M + e for elliptical orbits
         let mut low = mean_anomaly - e;
         let mut high = mean_anomaly + e;
-        
+
         // Expand bracket if needed
         while f(low) * f(high) > 0.0 {
             low -= e;
@@ -131,23 +126,23 @@ impl KeplerOrbit {
                 return mean_anomaly;
             }
         }
-        
+
         // Bisection iteration
         for _ in 0..100 {
             let mid = 0.5 * (low + high);
             let f_mid = f(mid);
-            
+
             if f_mid.abs() < 1e-14 || (high - low) < 1e-14 {
                 return mid;
             }
-            
+
             if f(low) * f_mid < 0.0 {
                 high = mid;
             } else {
                 low = mid;
             }
         }
-        
+
         0.5 * (low + high)
     }
 
@@ -241,10 +236,7 @@ impl KeplerOrbit {
         let cos_a = angle.cos();
         let sin_a = angle.sin();
 
-        DVec2::new(
-            vr * cos_a - vt * sin_a,
-            vr * sin_a + vt * cos_a,
-        )
+        DVec2::new(vr * cos_a - vt * sin_a, vr * sin_a + vt * cos_a)
     }
 
     /// Orbital period in seconds.
@@ -266,11 +258,11 @@ mod tests {
     /// Earth's approximate orbital elements
     fn earth_orbit() -> KeplerOrbit {
         KeplerOrbit::from_elements(
-            1.0 * AU_TO_METERS,  // 1 AU
-            0.0167,              // eccentricity
-            102.94,              // argument of periapsis (degrees)
-            357.53,              // mean anomaly at epoch (degrees)
-            0.9856,              // mean motion (degrees/day)
+            1.0 * AU_TO_METERS, // 1 AU
+            0.0167,             // eccentricity
+            102.94,             // argument of periapsis (degrees)
+            357.53,             // mean anomaly at epoch (degrees)
+            0.9856,             // mean motion (degrees/day)
         )
     }
 
@@ -279,7 +271,7 @@ mod tests {
         // Test with circular orbit (e=0)
         let orbit = KeplerOrbit::from_elements(
             AU_TO_METERS,
-            0.0,      // circular
+            0.0, // circular
             0.0,
             0.0,
             0.9856,
@@ -296,7 +288,7 @@ mod tests {
         // Test with Mercury-like eccentricity
         let orbit = KeplerOrbit::from_elements(
             0.387 * AU_TO_METERS,
-            0.2056,   // Mercury's eccentricity
+            0.2056, // Mercury's eccentricity
             29.12,
             174.79,
             4.0923,
@@ -318,13 +310,7 @@ mod tests {
     #[test]
     fn test_kepler_solver_high_eccentricity() {
         // Test with high eccentricity (e=0.9)
-        let orbit = KeplerOrbit::from_elements(
-            AU_TO_METERS,
-            0.9,
-            0.0,
-            0.0,
-            0.1,
-        );
+        let orbit = KeplerOrbit::from_elements(AU_TO_METERS, 0.9, 0.0, 0.0, 0.1);
 
         // Verify Kepler's equation
         for m in [0.1, 0.5, 1.0, 2.0, 3.0, 5.0] {
@@ -334,7 +320,9 @@ mod tests {
             assert!(
                 (m_check - m_normalized).abs() < 1e-10,
                 "High eccentricity: Kepler equation not satisfied for M={}: {} vs {}",
-                m, m_check, m_normalized
+                m,
+                m_check,
+                m_normalized
             );
         }
     }
@@ -432,13 +420,7 @@ mod tests {
     #[ignore = "Near-parabolic orbits need improved solver (Halley's method or bisection fallback)"]
     fn test_kepler_solver_near_parabolic() {
         // Test with e=0.99 (comet-like orbit)
-        let orbit = KeplerOrbit::from_elements(
-            AU_TO_METERS,
-            0.99,
-            0.0,
-            0.0,
-            0.01,
-        );
+        let orbit = KeplerOrbit::from_elements(AU_TO_METERS, 0.99, 0.0, 0.0, 0.01);
 
         // Near perihelion (M close to 0), Newton's method may struggle
         for m in [0.001, 0.01, 0.1, 3.14, 6.28] {
@@ -448,7 +430,9 @@ mod tests {
             assert!(
                 (m_check - m_normalized).abs() < 1e-10,
                 "Near-parabolic (e=0.99): Kepler equation not satisfied for M={}: {} vs {}",
-                m, m_check, m_normalized
+                m,
+                m_check,
+                m_normalized
             );
         }
     }

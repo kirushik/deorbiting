@@ -136,10 +136,7 @@ fn test_gravitational_attraction() {
 
     // Inverse-square law: doubling distance should quarter the force
     let ratio = acc_200m / acc_400m;
-    assert!(
-        (ratio - 4.0).abs() < 0.01,
-        "Inverse-square law should hold"
-    );
+    assert!((ratio - 4.0).abs() < 0.01, "Inverse-square law should hold");
 
     println!("  PASSED\n");
 }
@@ -165,10 +162,7 @@ fn test_reference_case() {
     println!("  Force on {} kg asteroid: {:.4} N", asteroid_mass, force);
 
     let relative_error = (acc - expected_acc).abs() / expected_acc;
-    assert!(
-        relative_error < 0.001,
-        "Acceleration should match expected"
-    );
+    assert!(relative_error < 0.001, "Acceleration should match expected");
 
     // Force = G × m_spacecraft × m_asteroid / r²
     // The acceleration times asteroid mass gives the force
@@ -208,7 +202,10 @@ fn test_long_duration_deflection() {
     println!("  Mission duration: {:.1} years", mission_years);
     println!("  Acceleration: {:.4e} m/s²", tractor.acceleration());
     println!("  Expected Δv: {:.6} mm/s", expected_delta_v * 1000.0);
-    println!("  Actual Δv: {:.6} mm/s", tractor.accumulated_delta_v * 1000.0);
+    println!(
+        "  Actual Δv: {:.6} mm/s",
+        tractor.accumulated_delta_v * 1000.0
+    );
 
     let relative_error = (tractor.accumulated_delta_v - expected_delta_v).abs() / expected_delta_v;
     println!("  Relative error: {:.4}%", relative_error * 100.0);
@@ -219,10 +216,7 @@ fn test_long_duration_deflection() {
     );
 
     // Verify mission completed
-    assert!(
-        !tractor.is_active(),
-        "Mission should be complete"
-    );
+    assert!(!tractor.is_active(), "Mission should be complete");
 
     println!("  PASSED\n");
 }

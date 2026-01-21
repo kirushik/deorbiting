@@ -12,23 +12,23 @@ mod proptest_physics;
 
 use std::collections::HashMap;
 
-use bevy::prelude::*;
 use bevy::math::DVec2;
+use bevy::prelude::*;
 
 pub use gravity::{
-    compute_acceleration, compute_acceleration_from_full_sources, compute_acceleration_from_sources,
-    compute_gravity_full, find_closest_body, ClosestBodyInfo, GravityResult,
+    ClosestBodyInfo, GravityResult, compute_acceleration, compute_acceleration_from_full_sources,
+    compute_acceleration_from_sources, compute_gravity_full, find_closest_body,
 };
 pub use integrator::{IAS15Config, IAS15State, PredictionConfig, compute_adaptive_dt};
 
 use crate::asteroid::{Asteroid, AsteroidName};
 use crate::collision::{CollisionEvent, CollisionState, handle_collision_response};
 use crate::continuous::{
-    compute_continuous_thrust, update_deflector_progress, ContinuousDeflector,
+    ContinuousDeflector, compute_continuous_thrust, update_deflector_progress,
 };
 use crate::ephemeris::Ephemeris;
 use crate::render::SelectedBody;
-use crate::types::{BodyState, SimulationTime, SECONDS_PER_DAY};
+use crate::types::{BodyState, SECONDS_PER_DAY, SimulationTime};
 
 /// System set for physics simulation, used for ordering with collision detection.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
@@ -155,7 +155,8 @@ fn physics_step(
 
                     if rel_vel > 0.0 {
                         // Distance to collision boundary (not center)
-                        let dist_to_boundary = (closest.distance - closest.collision_radius).max(1e3);
+                        let dist_to_boundary =
+                            (closest.distance - closest.collision_radius).max(1e3);
 
                         // Cap so we move at most 50% of distance to boundary per step
                         let safety_factor = 0.5;
@@ -199,10 +200,8 @@ fn physics_step(
                 if deflector_snapshot.is_empty() {
                     gravity_acc
                 } else {
-                    let deflector_refs: Vec<(Entity, &ContinuousDeflector)> = deflector_snapshot
-                        .iter()
-                        .map(|(e, d)| (*e, d))
-                        .collect();
+                    let deflector_refs: Vec<(Entity, &ContinuousDeflector)> =
+                        deflector_snapshot.iter().map(|(e, d)| (*e, d)).collect();
                     let thrust_acc = compute_continuous_thrust(
                         entity,
                         pos,

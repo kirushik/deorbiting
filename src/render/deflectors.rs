@@ -7,11 +7,11 @@
 
 use bevy::prelude::*;
 
+use crate::asteroid::Asteroid;
 use crate::camera::RENDER_SCALE;
 use crate::continuous::{ContinuousDeflector, ContinuousDeflectorState, ContinuousPayload};
 use crate::ephemeris::{CelestialBodyId, Ephemeris};
 use crate::types::{BodyState, SimulationTime};
-use crate::asteroid::Asteroid;
 
 use super::z_layers;
 
@@ -54,12 +54,7 @@ pub fn draw_deflector_trajectories(
                 let current_pos = earth_pos.lerp(asteroid_pos, progress);
 
                 // Draw traveled portion (solid line)
-                draw_solid_line(
-                    &mut gizmos,
-                    earth_pos,
-                    current_pos,
-                    color,
-                );
+                draw_solid_line(&mut gizmos, earth_pos, current_pos, color);
 
                 // Draw remaining portion (dashed line, semi-transparent)
                 draw_dashed_line(
@@ -71,20 +66,12 @@ pub fn draw_deflector_trajectories(
                 );
 
                 // Draw spacecraft icon at current position
-                draw_spacecraft_icon(
-                    &mut gizmos,
-                    current_pos,
-                    color,
-                );
+                draw_spacecraft_icon(&mut gizmos, current_pos, color);
             }
             ContinuousDeflectorState::Operating { .. } => {
                 // Draw spacecraft icon near asteroid
                 let spacecraft_pos = asteroid_pos;
-                draw_spacecraft_icon(
-                    &mut gizmos,
-                    spacecraft_pos,
-                    color,
-                );
+                draw_spacecraft_icon(&mut gizmos, spacecraft_pos, color);
 
                 // Draw thrust direction indicator
                 if let Ok(body_state) = asteroids.get(deflector.target) {
@@ -108,10 +95,10 @@ pub fn draw_deflector_trajectories(
 /// Get color for a deflection method.
 fn method_color(payload: &ContinuousPayload) -> Color {
     match payload {
-        ContinuousPayload::IonBeam { .. } => Color::srgba(0.0, 0.8, 1.0, 1.0),      // Cyan
+        ContinuousPayload::IonBeam { .. } => Color::srgba(0.0, 0.8, 1.0, 1.0), // Cyan
         ContinuousPayload::GravityTractor { .. } => Color::srgba(0.8, 0.4, 1.0, 1.0), // Purple
-        ContinuousPayload::LaserAblation { .. } => Color::srgba(1.0, 0.6, 0.2, 1.0),  // Orange
-        ContinuousPayload::SolarSail { .. } => Color::srgba(1.0, 0.9, 0.3, 1.0),     // Yellow/Gold
+        ContinuousPayload::LaserAblation { .. } => Color::srgba(1.0, 0.6, 0.2, 1.0), // Orange
+        ContinuousPayload::SolarSail { .. } => Color::srgba(1.0, 0.9, 0.3, 1.0), // Yellow/Gold
     }
 }
 
@@ -165,11 +152,7 @@ fn draw_dashed_line(
 }
 
 /// Draw a simple spacecraft icon (diamond shape).
-fn draw_spacecraft_icon(
-    gizmos: &mut Gizmos,
-    pos: bevy::math::DVec2,
-    color: Color,
-) {
+fn draw_spacecraft_icon(gizmos: &mut Gizmos, pos: bevy::math::DVec2, color: Color) {
     let center = Vec3::new(
         (pos.x * RENDER_SCALE) as f32,
         (pos.y * RENDER_SCALE) as f32,
@@ -215,11 +198,12 @@ fn draw_thrust_arrow(
 
     // Arrow pointing in thrust direction
     let arrow_length = 0.05;
-    let arrow_end = center + Vec3::new(
-        (thrust_dir.x * arrow_length) as f32,
-        (thrust_dir.y * arrow_length) as f32,
-        0.0,
-    );
+    let arrow_end = center
+        + Vec3::new(
+            (thrust_dir.x * arrow_length) as f32,
+            (thrust_dir.y * arrow_length) as f32,
+            0.0,
+        );
 
     gizmos.line(center, arrow_end, color);
 
@@ -233,11 +217,7 @@ fn draw_thrust_arrow(
 }
 
 /// Draw a completed mission icon (small circle).
-fn draw_completed_icon(
-    gizmos: &mut Gizmos,
-    pos: bevy::math::DVec2,
-    color: Color,
-) {
+fn draw_completed_icon(gizmos: &mut Gizmos, pos: bevy::math::DVec2, color: Color) {
     let center = Vec3::new(
         (pos.x * RENDER_SCALE) as f32,
         (pos.y * RENDER_SCALE) as f32,

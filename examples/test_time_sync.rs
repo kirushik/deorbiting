@@ -30,9 +30,9 @@ struct IAS15Config {
 impl Default for IAS15Config {
     fn default() -> Self {
         Self {
-            initial_dt: 3600.0,    // 1 hour
-            min_dt: 1.0,           // 1 second
-            max_dt: 86400.0,       // 1 day
+            initial_dt: 3600.0, // 1 hour
+            min_dt: 1.0,        // 1 second
+            max_dt: 86400.0,    // 1 day
             epsilon: 1e-9,
         }
     }
@@ -138,9 +138,8 @@ fn simulate_until(
                 }
             }
 
-            let acc_fn = |pos: DVec2, _relative_t: f64| -> DVec2 {
-                compute_acceleration_sun_only(pos)
-            };
+            let acc_fn =
+                |pos: DVec2, _relative_t: f64| -> DVec2 { compute_acceleration_sun_only(pos) };
 
             ias15.step(acc_fn, config);
             elapsed += ias15.dt_last_done;
@@ -171,8 +170,14 @@ fn main() {
     let target_sim_days = 10.0;
     let target_sim_time = target_sim_days * SECONDS_PER_DAY;
 
-    println!("Testing time synchronization: asteroid position after {target_sim_days} simulation days\n");
-    println!("Initial position: ({:.6} AU, {:.6} AU)", initial_pos.x / AU_TO_METERS, initial_pos.y / AU_TO_METERS);
+    println!(
+        "Testing time synchronization: asteroid position after {target_sim_days} simulation days\n"
+    );
+    println!(
+        "Initial position: ({:.6} AU, {:.6} AU)",
+        initial_pos.x / AU_TO_METERS,
+        initial_pos.y / AU_TO_METERS
+    );
     println!("Fixed timestep: {fixed_dt} seconds\n");
 
     // Test at multiple scales with the fix
@@ -196,8 +201,15 @@ fn main() {
         );
 
         println!("Scale {scale}x:");
-        println!("  Final position: ({:.9} AU, {:.9} AU)", ias15.pos.x / AU_TO_METERS, ias15.pos.y / AU_TO_METERS);
-        println!("  Sim time reached: {:.6} days", final_sim_time / SECONDS_PER_DAY);
+        println!(
+            "  Final position: ({:.9} AU, {:.9} AU)",
+            ias15.pos.x / AU_TO_METERS,
+            ias15.pos.y / AU_TO_METERS
+        );
+        println!(
+            "  Sim time reached: {:.6} days",
+            final_sim_time / SECONDS_PER_DAY
+        );
         println!("  Integration steps: {steps}");
         println!();
 
@@ -232,8 +244,15 @@ fn main() {
         );
 
         println!("Scale {scale}x:");
-        println!("  Final position: ({:.9} AU, {:.9} AU)", ias15.pos.x / AU_TO_METERS, ias15.pos.y / AU_TO_METERS);
-        println!("  Sim time reached: {:.6} days", final_sim_time / SECONDS_PER_DAY);
+        println!(
+            "  Final position: ({:.9} AU, {:.9} AU)",
+            ias15.pos.x / AU_TO_METERS,
+            ias15.pos.y / AU_TO_METERS
+        );
+        println!(
+            "  Sim time reached: {:.6} days",
+            final_sim_time / SECONDS_PER_DAY
+        );
         println!("  Integration steps: {steps}");
         println!();
 
@@ -251,13 +270,17 @@ fn main() {
     // Summary
     println!("\n=== Summary ===\n");
 
-    let max_deviation_with_fix = positions_with_fix.iter()
+    let max_deviation_with_fix = positions_with_fix
+        .iter()
         .map(|(_, pos)| (*pos - baseline_pos).length())
-        .fold(0.0f64, f64::max) / 1000.0;
+        .fold(0.0f64, f64::max)
+        / 1000.0;
 
-    let max_deviation_no_fix = positions_no_fix.iter()
+    let max_deviation_no_fix = positions_no_fix
+        .iter()
         .map(|(_, pos)| (*pos - baseline_pos_no_fix).length())
-        .fold(0.0f64, f64::max) / 1000.0;
+        .fold(0.0f64, f64::max)
+        / 1000.0;
 
     println!("Max position deviation WITH fix: {max_deviation_with_fix:.1} km");
     println!("Max position deviation WITHOUT fix: {max_deviation_no_fix:.1} km");
@@ -267,7 +290,8 @@ fn main() {
     // when there are multiple gravity sources causing varying accelerations.
     // The key thing is that WITH the fix, positions should match very closely.
 
-    if max_deviation_with_fix < 1000.0 { // Less than 1000 km deviation
+    if max_deviation_with_fix < 1000.0 {
+        // Less than 1000 km deviation
         println!("\n✓ With the fix, positions match within 1000 km - fix is working!");
     } else {
         println!("\n✗ With the fix, positions still deviate significantly");

@@ -12,12 +12,12 @@ pub mod payload;
 use bevy::math::DVec2;
 use bevy::prelude::*;
 
-use crate::asteroid::{spawn_asteroid, Asteroid, AsteroidCounter, AsteroidName};
+use crate::asteroid::{Asteroid, AsteroidCounter, AsteroidName, spawn_asteroid};
 use crate::camera::RENDER_SCALE;
 use crate::ephemeris::{CelestialBodyId, Ephemeris};
 use crate::physics::IntegratorStates;
-use crate::prediction::{mark_prediction_dirty, PredictionState, TrajectoryPath};
-use crate::types::{BodyState, SimulationTime, AU_TO_METERS};
+use crate::prediction::{PredictionState, TrajectoryPath, mark_prediction_dirty};
+use crate::types::{AU_TO_METERS, BodyState, SimulationTime};
 
 pub use payload::DeflectionPayload;
 
@@ -130,7 +130,8 @@ fn handle_launch_event(
         };
 
         // Get Earth position for launch point
-        let earth_pos = ephemeris.get_position_by_id(CelestialBodyId::Earth, sim_time.current)
+        let earth_pos = ephemeris
+            .get_position_by_id(CelestialBodyId::Earth, sim_time.current)
             .unwrap_or(DVec2::new(AU_TO_METERS, 0.0));
 
         // Determine deflection direction
@@ -146,7 +147,8 @@ fn handle_launch_event(
         });
 
         // Flight time (default 90 days, must be positive)
-        let flight_time = event.flight_time
+        let flight_time = event
+            .flight_time
             .filter(|&t| t > 0.0 && t.is_finite())
             .unwrap_or(90.0 * 86400.0);
 
@@ -193,7 +195,8 @@ fn update_interceptors(
         // Check if arrived
         if sim_time.current >= interceptor.arrival_time {
             // Get asteroid state
-            let Ok((mut asteroid_state, asteroid_name)) = asteroids.get_mut(interceptor.target) else {
+            let Ok((mut asteroid_state, asteroid_name)) = asteroids.get_mut(interceptor.target)
+            else {
                 // Target destroyed or missing
                 interceptor.state = InterceptorState::Cancelled;
                 commands.entity(entity).despawn();
@@ -201,7 +204,11 @@ fn update_interceptors(
             };
 
             // Check if this is a splitting payload
-            if let DeflectionPayload::NuclearSplit { yield_kt, split_ratio } = &interceptor.payload {
+            if let DeflectionPayload::NuclearSplit {
+                yield_kt,
+                split_ratio,
+            } = &interceptor.payload
+            {
                 // Send splitting event instead of applying delta-v
                 split_events.send(SplitAsteroidEvent {
                     target: interceptor.target,
@@ -274,7 +281,9 @@ fn draw_interceptor_trajectories(
         let progress = (elapsed / total_time).clamp(0.0, 1.0);
 
         // Simple linear interpolation (not physically accurate, but visually useful)
-        let current_pos = interceptor.launch_position.lerp(asteroid_state.pos, progress);
+        let current_pos = interceptor
+            .launch_position
+            .lerp(asteroid_state.pos, progress);
 
         // Convert to render coordinates
         let launch_render = (interceptor.launch_position * RENDER_SCALE).as_vec2();
@@ -336,10 +345,7 @@ fn draw_interceptor_trajectories(
 /// - Retrograde (opposite velocity) is usually best for direct impact
 /// - Prograde can work for longer lead times
 /// - Perpendicular (orbit plane) for maximum lateral deflection
-pub fn optimal_deflection_direction(
-    asteroid_vel: DVec2,
-    _lead_time: f64,
-) -> DVec2 {
+pub fn optimal_deflection_direction(asteroid_vel: DVec2, _lead_time: f64) -> DVec2 {
     // Simplified: always use retrograde for now
     // A more sophisticated version would consider the geometry
     -asteroid_vel.normalize_or_zero()
@@ -365,17 +371,20 @@ fn handle_asteroid_splitting(
     for event in events.read() {
         // Validate split ratio to prevent negative or impossible masses
         let split_ratio = event.split_ratio.clamp(0.01, 0.99);
-        
+
         // Calculate fragment masses
         let mass1 = event.mass * split_ratio;
         let mass2 = event.mass * (1.0 - split_ratio);
 
         // Calculate separation velocity from nuclear explosion
-        let separation_speed = DeflectionPayload::calculate_separation_velocity(event.yield_kt, event.mass);
+        let separation_speed =
+            DeflectionPayload::calculate_separation_velocity(event.yield_kt, event.mass);
 
         // Separation direction is perpendicular to deflection direction
         // (fragments fly apart sideways relative to the thrust direction)
-        let separation_dir = DVec2::new(-event.deflection_direction.y, event.deflection_direction.x).normalize_or_zero();
+        let separation_dir =
+            DVec2::new(-event.deflection_direction.y, event.deflection_direction.x)
+                .normalize_or_zero();
 
         // Each fragment gets velocity proportional to the other's mass (momentum conservation)
         // v1 * m1 = v2 * m2 for the separation component
@@ -435,8 +444,12 @@ fn handle_asteroid_splitting(
 
         info!(
             "Asteroid split complete! {} ({:.2e} kg, v={:.1} m/s) and {} ({:.2e} kg, v={:.1} m/s)",
-            name1, mass1, vel1.length(),
-            name2, mass2, vel2.length()
+            name1,
+            mass1,
+            vel1.length(),
+            name2,
+            mass2,
+            vel2.length()
         );
         info!(
             "Separation velocity: {:.2} m/s (entities {:?} and {:?})",

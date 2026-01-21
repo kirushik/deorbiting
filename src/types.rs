@@ -1,7 +1,7 @@
 //! Core physics types and constants for orbital mechanics simulation.
 
-use bevy::prelude::*;
 use bevy::math::DVec2;
+use bevy::prelude::*;
 
 /// System set for ordering input-related systems.
 ///
@@ -217,7 +217,8 @@ fn days_to_ymd(days: i64) -> (i32, u32, u32) {
     };
 
     let day_of_era = (remaining_days - era * 146097) as u32;
-    let year_of_era = (day_of_era - day_of_era / 1460 + day_of_era / 36524 - day_of_era / 146096) / 365;
+    let year_of_era =
+        (day_of_era - day_of_era / 1460 + day_of_era / 36524 - day_of_era / 146096) / 365;
     let year = (year_of_era as i64 + era * 400) as i32;
     let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
     let mp = (5 * day_of_year + 2) / 153;
@@ -252,8 +253,16 @@ mod tests {
     fn test_date_string_j2000() {
         // J2000 epoch should be January 1, 2000, 12:00:00 UTC
         let date_str = j2000_seconds_to_date_string(0.0);
-        assert!(date_str.contains("2000-01-01"), "Expected 2000-01-01, got {}", date_str);
-        assert!(date_str.contains("12:00:00"), "Expected 12:00:00, got {}", date_str);
+        assert!(
+            date_str.contains("2000-01-01"),
+            "Expected 2000-01-01, got {}",
+            date_str
+        );
+        assert!(
+            date_str.contains("12:00:00"),
+            "Expected 12:00:00, got {}",
+            date_str
+        );
     }
 
     #[test]
@@ -272,7 +281,7 @@ mod tests {
         let state = BodyState::new(
             DVec2::new(AU_TO_METERS, 0.0), // 1 AU on x-axis
             DVec2::new(0.0, 29780.0),      // ~Earth orbital velocity
-            5.972e24,                       // Earth mass
+            5.972e24,                      // Earth mass
         );
 
         let pos_au = state.pos_au();

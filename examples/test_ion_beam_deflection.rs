@@ -156,7 +156,12 @@ fn simulate_deflection(
         sim_t += dt;
     }
 
-    (with_deflection.pos, with_deflection.vel, without_deflection.pos, without_deflection.vel)
+    (
+        with_deflection.pos,
+        with_deflection.vel,
+        without_deflection.pos,
+        without_deflection.vel,
+    )
 }
 
 fn main() {
@@ -194,8 +199,14 @@ fn test_basic_deflection() {
 
     // Simulate for 30 days
     let dt = 3600.0; // 1 hour
-    let (pos_deflected, vel_deflected, pos_undeflected, vel_undeflected) =
-        simulate_deflection(initial_pos, initial_vel, asteroid_mass, &mut deflector, 30.0, dt);
+    let (pos_deflected, vel_deflected, pos_undeflected, vel_undeflected) = simulate_deflection(
+        initial_pos,
+        initial_vel,
+        asteroid_mass,
+        &mut deflector,
+        30.0,
+        dt,
+    );
 
     // The deflected asteroid should have lower velocity (retrograde thrust)
     let speed_deflected = vel_deflected.length();
@@ -205,8 +216,14 @@ fn test_basic_deflection() {
     println!("  After 30 days:");
     println!("    Undeflected speed: {:.6} m/s", speed_undeflected);
     println!("    Deflected speed: {:.6} m/s", speed_deflected);
-    println!("    Speed difference: {:.6} m/s", speed_undeflected - speed_deflected);
-    println!("    Accumulated Δv: {:.6} m/s", deflector.accumulated_delta_v);
+    println!(
+        "    Speed difference: {:.6} m/s",
+        speed_undeflected - speed_deflected
+    );
+    println!(
+        "    Accumulated Δv: {:.6} m/s",
+        deflector.accumulated_delta_v
+    );
 
     assert!(
         speed_deflected < speed_undeflected,
@@ -245,10 +262,14 @@ fn test_delta_v_accumulation() {
 
     // Expected delta-v: Δv = a × t = 1e-11 × 5 × 86400 = 4.32e-6 m/s
     let expected_delta_v = expected_acc * simulation_time;
-    let relative_error = (deflector.accumulated_delta_v - expected_delta_v).abs() / expected_delta_v;
+    let relative_error =
+        (deflector.accumulated_delta_v - expected_delta_v).abs() / expected_delta_v;
 
     println!("  Expected acceleration: {:.2e} m/s²", expected_acc);
-    println!("  Simulation time: {:.0} days", simulation_time / SECONDS_PER_DAY);
+    println!(
+        "  Simulation time: {:.0} days",
+        simulation_time / SECONDS_PER_DAY
+    );
     println!("  Expected Δv: {:.6e} m/s", expected_delta_v);
     println!("  Actual Δv: {:.6e} m/s", deflector.accumulated_delta_v);
     println!("  Relative error: {:.4}%", relative_error * 100.0);
@@ -276,7 +297,10 @@ fn test_fuel_depletion() {
     let expected_duration = fuel_mass / fuel_rate; // seconds until fuel depleted
 
     println!("  Fuel rate: {:.2e} kg/s", fuel_rate);
-    println!("  Expected duration: {:.2} days", expected_duration / SECONDS_PER_DAY);
+    println!(
+        "  Expected duration: {:.2} days",
+        expected_duration / SECONDS_PER_DAY
+    );
 
     // Simulate until well past fuel depletion
     let dt = 3600.0;
@@ -298,15 +322,21 @@ fn test_fuel_depletion() {
         sim_t += dt;
     }
 
-    println!("  Actual depletion time: {:.2} days", depletion_time / SECONDS_PER_DAY);
-    println!("  Δv at depletion: {:.6e} m/s", delta_v_at_depletion);
-    println!("  Δv after depletion: {:.6e} m/s", deflector.accumulated_delta_v);
-    println!("  Fuel consumed: {:.2} kg (of {:.2} kg)", deflector.fuel_consumed, fuel_mass);
-
-    assert!(
-        !deflector.has_fuel(),
-        "Fuel should be depleted"
+    println!(
+        "  Actual depletion time: {:.2} days",
+        depletion_time / SECONDS_PER_DAY
     );
+    println!("  Δv at depletion: {:.6e} m/s", delta_v_at_depletion);
+    println!(
+        "  Δv after depletion: {:.6e} m/s",
+        deflector.accumulated_delta_v
+    );
+    println!(
+        "  Fuel consumed: {:.2} kg (of {:.2} kg)",
+        deflector.fuel_consumed, fuel_mass
+    );
+
+    assert!(!deflector.has_fuel(), "Fuel should be depleted");
     assert!(
         (deflector.fuel_consumed - fuel_mass).abs() < 0.1,
         "Should have consumed all fuel"
@@ -335,8 +365,14 @@ fn test_trajectory_deviation() {
 
     // Simulate for 90 days
     let dt = 3600.0;
-    let (pos_deflected, _, pos_undeflected, _) =
-        simulate_deflection(initial_pos, initial_vel, asteroid_mass, &mut deflector, 90.0, dt);
+    let (pos_deflected, _, pos_undeflected, _) = simulate_deflection(
+        initial_pos,
+        initial_vel,
+        asteroid_mass,
+        &mut deflector,
+        90.0,
+        dt,
+    );
 
     // Calculate position deviation
     let deviation = (pos_deflected - pos_undeflected).length();
@@ -344,7 +380,10 @@ fn test_trajectory_deviation() {
 
     println!("  After 90 days of deflection:");
     println!("    Position deviation: {:.2} km", deviation_km);
-    println!("    Accumulated Δv: {:.6} m/s", deflector.accumulated_delta_v);
+    println!(
+        "    Accumulated Δv: {:.6} m/s",
+        deflector.accumulated_delta_v
+    );
     println!("    Fuel consumed: {:.2} kg", deflector.fuel_consumed);
 
     // With 1 N thrust on 1e10 kg asteroid:

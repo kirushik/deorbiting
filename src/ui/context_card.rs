@@ -4,16 +4,16 @@
 //! object. Shows key information and actions inline.
 
 use bevy::prelude::*;
-use bevy_egui::{egui, EguiContexts};
+use bevy_egui::{EguiContexts, egui};
 
 use crate::asteroid::{Asteroid, AsteroidName};
 use crate::camera::{MainCamera, RENDER_SCALE};
 use crate::collision::CollisionState;
 use crate::continuous::{ContinuousDeflector, ContinuousDeflectorState};
-use crate::ephemeris::{get_trivia, CelestialBodyData, CelestialBodyId, Ephemeris};
+use crate::ephemeris::{CelestialBodyData, CelestialBodyId, Ephemeris, get_trivia};
 use crate::physics::IntegratorStates;
 use crate::render::{CelestialBody, SelectedBody};
-use crate::types::{BodyState, SelectableBody, SimulationTime, AU_TO_METERS};
+use crate::types::{AU_TO_METERS, BodyState, SelectableBody, SimulationTime};
 
 use super::RadialMenuState;
 
@@ -73,21 +73,25 @@ fn format_period(days: f64) -> String {
 /// 8-position label placement algorithm.
 /// Tries 8 candidate positions around the object and picks the best one.
 /// Based on cartographic label placement principles.
-fn smart_card_position(ctx: &egui::Context, screen_pos: Vec2, velocity_dir: Option<Vec2>) -> egui::Pos2 {
+fn smart_card_position(
+    ctx: &egui::Context,
+    screen_pos: Vec2,
+    velocity_dir: Option<Vec2>,
+) -> egui::Pos2 {
     let screen = ctx.screen_rect();
     let usable_bottom = screen.bottom() - DOCK_HEIGHT - 10.0;
 
     // Define 8 candidate positions: E, NE, N, NW, W, SW, S, SE
     // Each is (offset_x, offset_y) from screen_pos to card's top-left corner
     let candidates: [(f32, f32, &str); 8] = [
-        (CARD_MARGIN, -CARD_HEIGHT / 2.0, "E"),                           // East (right-center)
-        (CARD_MARGIN, -CARD_HEIGHT - CARD_MARGIN, "NE"),                  // Northeast
-        (-CARD_WIDTH / 2.0, -CARD_HEIGHT - CARD_MARGIN, "N"),             // North (top-center)
-        (-CARD_WIDTH - CARD_MARGIN, -CARD_HEIGHT - CARD_MARGIN, "NW"),    // Northwest
-        (-CARD_WIDTH - CARD_MARGIN, -CARD_HEIGHT / 2.0, "W"),             // West (left-center)
-        (-CARD_WIDTH - CARD_MARGIN, CARD_MARGIN, "SW"),                   // Southwest
-        (-CARD_WIDTH / 2.0, CARD_MARGIN, "S"),                            // South (bottom-center)
-        (CARD_MARGIN, CARD_MARGIN, "SE"),                                 // Southeast
+        (CARD_MARGIN, -CARD_HEIGHT / 2.0, "E"), // East (right-center)
+        (CARD_MARGIN, -CARD_HEIGHT - CARD_MARGIN, "NE"), // Northeast
+        (-CARD_WIDTH / 2.0, -CARD_HEIGHT - CARD_MARGIN, "N"), // North (top-center)
+        (-CARD_WIDTH - CARD_MARGIN, -CARD_HEIGHT - CARD_MARGIN, "NW"), // Northwest
+        (-CARD_WIDTH - CARD_MARGIN, -CARD_HEIGHT / 2.0, "W"), // West (left-center)
+        (-CARD_WIDTH - CARD_MARGIN, CARD_MARGIN, "SW"), // Southwest
+        (-CARD_WIDTH / 2.0, CARD_MARGIN, "S"),  // South (bottom-center)
+        (CARD_MARGIN, CARD_MARGIN, "SE"),       // Southeast
     ];
 
     let mut best_score = f32::MIN;
@@ -128,10 +132,14 @@ fn smart_card_position(ctx: &egui::Context, screen_pos: Vec2, velocity_dir: Opti
             let arrow_mid_x = screen_pos.x + vel_dir.x * VELOCITY_ARROW_LENGTH * 0.5;
             let arrow_mid_y = screen_pos.y + vel_dir.y * VELOCITY_ARROW_LENGTH * 0.5;
 
-            let endpoint_inside = arrow_end_x >= card_left && arrow_end_x <= card_right
-                && arrow_end_y >= card_top && arrow_end_y <= card_bottom;
-            let midpoint_inside = arrow_mid_x >= card_left && arrow_mid_x <= card_right
-                && arrow_mid_y >= card_top && arrow_mid_y <= card_bottom;
+            let endpoint_inside = arrow_end_x >= card_left
+                && arrow_end_x <= card_right
+                && arrow_end_y >= card_top
+                && arrow_end_y <= card_bottom;
+            let midpoint_inside = arrow_mid_x >= card_left
+                && arrow_mid_x <= card_right
+                && arrow_mid_y >= card_top
+                && arrow_mid_y <= card_bottom;
 
             if endpoint_inside {
                 score -= 80.0; // Heavy penalty - this blocks the drag handle
@@ -163,8 +171,12 @@ fn smart_card_position(ctx: &egui::Context, screen_pos: Vec2, velocity_dir: Opti
     }
 
     // Final clamp to ensure card stays on screen
-    let final_x = best_pos.x.clamp(screen.left() + 5.0, screen.right() - CARD_WIDTH - 5.0);
-    let final_y = best_pos.y.clamp(screen.top() + 5.0, usable_bottom - CARD_HEIGHT);
+    let final_x = best_pos
+        .x
+        .clamp(screen.left() + 5.0, screen.right() - CARD_WIDTH - 5.0);
+    let final_y = best_pos
+        .y
+        .clamp(screen.top() + 5.0, usable_bottom - CARD_HEIGHT);
 
     egui::pos2(final_x, final_y)
 }
@@ -198,20 +210,29 @@ pub fn context_card_system(
             if let Ok((_, body)) = celestial_bodies.get(entity) {
                 // Get body position and velocity
                 if let Some(pos) = ephemeris.get_position_by_id(body.id, sim_time.current) {
-                    let render_pos = Vec2::new(
-                        (pos.x * RENDER_SCALE) as f32,
-                        (pos.y * RENDER_SCALE) as f32,
-                    );
+                    let render_pos =
+                        Vec2::new((pos.x * RENDER_SCALE) as f32, (pos.y * RENDER_SCALE) as f32);
 
-                    if let Ok(screen_pos) = camera.world_to_viewport(camera_transform, render_pos.extend(0.0)) {
+                    if let Ok(screen_pos) =
+                        camera.world_to_viewport(camera_transform, render_pos.extend(0.0))
+                    {
                         // Get body data and velocity for enhanced card
                         let body_data = ephemeris.get_body_data_by_id(body.id);
-                        let velocity = ephemeris.get_velocity_by_id(body.id, sim_time.current)
+                        let velocity = ephemeris
+                            .get_velocity_by_id(body.id, sim_time.current)
                             .map(|v| v.length())
                             .unwrap_or(0.0);
 
                         if let Some(data) = body_data {
-                            render_celestial_card(ctx, body, data, pos.length(), velocity, screen_pos, None);
+                            render_celestial_card(
+                                ctx,
+                                body,
+                                data,
+                                pos.length(),
+                                velocity,
+                                screen_pos,
+                                None,
+                            );
                         }
                     }
                 }
@@ -225,10 +246,14 @@ pub fn context_card_system(
             if let Ok((_, name, mut body_state, transform)) = asteroids.get_mut(entity) {
                 let render_pos = transform.translation.truncate();
 
-                if let Ok(screen_pos) = camera.world_to_viewport(camera_transform, render_pos.extend(0.0)) {
+                if let Ok(screen_pos) =
+                    camera.world_to_viewport(camera_transform, render_pos.extend(0.0))
+                {
                     // Check for active deflector on this asteroid
                     let active_deflector = deflectors.iter().find(|d| {
-                        d.target == entity && (d.is_operating() || matches!(d.state, ContinuousDeflectorState::EnRoute { .. }))
+                        d.target == entity
+                            && (d.is_operating()
+                                || matches!(d.state, ContinuousDeflectorState::EnRoute { .. }))
                     });
 
                     // Get velocity direction for smart card positioning
@@ -317,7 +342,11 @@ fn render_celestial_card(
             let dist_au = distance_from_sun / AU_TO_METERS;
             let dist_mkm = distance_from_sun / 1e9;
             ui.label(egui::RichText::new(format!("{:.1} M km from Sun", dist_mkm)).size(14.0));
-            ui.label(egui::RichText::new(format!("({:.3} AU)", dist_au)).weak().size(12.0));
+            ui.label(
+                egui::RichText::new(format!("({:.3} AU)", dist_au))
+                    .weak()
+                    .size(12.0),
+            );
 
             ui.add_space(4.0);
 
@@ -330,28 +359,56 @@ fn render_celestial_card(
                 // Period in days: T = 2π / mean_motion (where mean_motion is rad/s)
                 let period_seconds = std::f64::consts::TAU / orbit.mean_motion;
                 let period_days = period_seconds / 86400.0;
-                ui.label(egui::RichText::new(format!("Period: {}", format_period(period_days))).size(14.0));
-                ui.label(egui::RichText::new(format!("e = {:.4}", orbit.eccentricity)).weak().size(12.0));
+                ui.label(
+                    egui::RichText::new(format!("Period: {}", format_period(period_days)))
+                        .size(14.0),
+                );
+                ui.label(
+                    egui::RichText::new(format!("e = {:.4}", orbit.eccentricity))
+                        .weak()
+                        .size(12.0),
+                );
             }
 
             // Collapsible details section
             egui::CollapsingHeader::new(egui::RichText::new("Details").size(13.0))
                 .default_open(false)
                 .show(ui, |ui| {
-                    ui.label(egui::RichText::new(format!("Mass: {}", format_mass(body_data.mass))).size(13.0));
-                    ui.label(egui::RichText::new(format!("Radius: {}", format_radius(body_data.radius))).size(13.0));
-                    
+                    ui.label(
+                        egui::RichText::new(format!("Mass: {}", format_mass(body_data.mass)))
+                            .size(13.0),
+                    );
+                    ui.label(
+                        egui::RichText::new(format!("Radius: {}", format_radius(body_data.radius)))
+                            .size(13.0),
+                    );
+
                     if body_data.hill_sphere > 0.0 {
                         let hill_au = body_data.hill_sphere / AU_TO_METERS;
-                        ui.label(egui::RichText::new(format!("Hill sphere: {:.4} AU", hill_au)).size(13.0));
+                        ui.label(
+                            egui::RichText::new(format!("Hill sphere: {:.4} AU", hill_au))
+                                .size(13.0),
+                        );
                     }
 
                     // Perihelion/Aphelion for bodies with orbits
                     if let Some(orbit) = &body_data.orbit {
                         let perihelion = orbit.semi_major_axis * (1.0 - orbit.eccentricity);
                         let aphelion = orbit.semi_major_axis * (1.0 + orbit.eccentricity);
-                        ui.label(egui::RichText::new(format!("Perihelion: {:.3} AU", perihelion / AU_TO_METERS)).size(13.0));
-                        ui.label(egui::RichText::new(format!("Aphelion: {:.3} AU", aphelion / AU_TO_METERS)).size(13.0));
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "Perihelion: {:.3} AU",
+                                perihelion / AU_TO_METERS
+                            ))
+                            .size(13.0),
+                        );
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "Aphelion: {:.3} AU",
+                                aphelion / AU_TO_METERS
+                            ))
+                            .size(13.0),
+                        );
                     }
                 });
 
@@ -366,16 +423,36 @@ fn render_celestial_card(
                     if trivia.has_rings {
                         ui.label(egui::RichText::new("Has rings").size(12.0));
                     }
-                    ui.label(egui::RichText::new(format!("Surface gravity: {:.2}g", trivia.surface_gravity_g)).size(12.0));
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "Surface gravity: {:.2}g",
+                            trivia.surface_gravity_g
+                        ))
+                        .size(12.0),
+                    );
                     if let Some(day_hours) = trivia.day_length_hours {
                         if day_hours >= 24.0 {
-                            ui.label(egui::RichText::new(format!("Day length: {:.1} days", day_hours / 24.0)).size(12.0));
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "Day length: {:.1} days",
+                                    day_hours / 24.0
+                                ))
+                                .size(12.0),
+                            );
                         } else {
-                            ui.label(egui::RichText::new(format!("Day length: {:.1}h", day_hours)).size(12.0));
+                            ui.label(
+                                egui::RichText::new(format!("Day length: {:.1}h", day_hours))
+                                    .size(12.0),
+                            );
                         }
                     }
                     ui.add_space(4.0);
-                    ui.label(egui::RichText::new(trivia.fun_fact).weak().italics().size(12.0));
+                    ui.label(
+                        egui::RichText::new(trivia.fun_fact)
+                            .weak()
+                            .italics()
+                            .size(12.0),
+                    );
                 });
         });
 }
@@ -441,21 +518,27 @@ fn render_asteroid_card(
                 let mut exponent_i32 = exponent as i32;
 
                 // Mantissa drag value (1.0 - 9.99)
-                let mantissa_changed = ui.add(
-                    egui::DragValue::new(&mut mantissa_f32)
-                        .range(1.0..=9.99)
-                        .speed(0.01)
-                        .fixed_decimals(2)
-                ).on_hover_text("Drag to adjust mass").changed();
+                let mantissa_changed = ui
+                    .add(
+                        egui::DragValue::new(&mut mantissa_f32)
+                            .range(1.0..=9.99)
+                            .speed(0.01)
+                            .fixed_decimals(2),
+                    )
+                    .on_hover_text("Drag to adjust mass")
+                    .changed();
 
                 ui.label(egui::RichText::new("×10").size(12.0));
 
                 // Exponent drag value
-                let exponent_changed = ui.add(
-                    egui::DragValue::new(&mut exponent_i32)
-                        .range(6..=18)
-                        .speed(0.1)
-                ).on_hover_text("Mass exponent (kg)").changed();
+                let exponent_changed = ui
+                    .add(
+                        egui::DragValue::new(&mut exponent_i32)
+                            .range(6..=18)
+                            .speed(0.1),
+                    )
+                    .on_hover_text("Mass exponent (kg)")
+                    .changed();
 
                 ui.label(egui::RichText::new("kg").size(12.0));
 
@@ -478,16 +561,24 @@ fn render_asteroid_card(
             // Action buttons
             ui.horizontal(|ui| {
                 let deflect_button = egui::Button::new(
-                    egui::RichText::new("Deflect >").size(14.0).color(egui::Color32::WHITE)
-                ).fill(colors::ACCENT).min_size(egui::vec2(75.0, 28.0));
+                    egui::RichText::new("Deflect >")
+                        .size(14.0)
+                        .color(egui::Color32::WHITE),
+                )
+                .fill(colors::ACCENT)
+                .min_size(egui::vec2(75.0, 28.0));
 
                 if ui.add(deflect_button).clicked() {
                     result.deflect_clicked = true;
                 }
 
                 let delete_button = egui::Button::new(
-                    egui::RichText::new("Delete").size(14.0).color(egui::Color32::WHITE)
-                ).fill(colors::DANGER).min_size(egui::vec2(60.0, 28.0));
+                    egui::RichText::new("Delete")
+                        .size(14.0)
+                        .color(egui::Color32::WHITE),
+                )
+                .fill(colors::DANGER)
+                .min_size(egui::vec2(60.0, 28.0));
 
                 if ui.add(delete_button).clicked() {
                     result.delete_clicked = true;
@@ -502,7 +593,12 @@ fn render_asteroid_card(
 fn render_deflection_status(ui: &mut egui::Ui, deflector: &ContinuousDeflector) {
     use crate::ui::icons;
 
-    ui.label(egui::RichText::new("ACTIVE DEFLECTION").strong().size(12.0).color(colors::SUCCESS));
+    ui.label(
+        egui::RichText::new("ACTIVE DEFLECTION")
+            .strong()
+            .size(12.0)
+            .color(colors::SUCCESS),
+    );
 
     let (icon, method_name) = deflector_display(&deflector.payload);
     ui.horizontal(|ui| {
@@ -512,9 +608,17 @@ fn render_deflection_status(ui: &mut egui::Ui, deflector: &ContinuousDeflector) 
 
     match &deflector.state {
         ContinuousDeflectorState::EnRoute { .. } => {
-            ui.label(egui::RichText::new(format!("{} En route", icons::CLOCK)).weak().size(12.0));
+            ui.label(
+                egui::RichText::new(format!("{} En route", icons::CLOCK))
+                    .weak()
+                    .size(12.0),
+            );
         }
-        ContinuousDeflectorState::Operating { fuel_consumed, accumulated_delta_v, .. } => {
+        ContinuousDeflectorState::Operating {
+            fuel_consumed,
+            accumulated_delta_v,
+            ..
+        } => {
             // Fuel bar if applicable
             if let Some(initial_fuel) = deflector.payload.initial_fuel() {
                 let remaining = (initial_fuel - fuel_consumed).max(0.0);
@@ -529,21 +633,35 @@ fn render_deflection_status(ui: &mut egui::Ui, deflector: &ContinuousDeflector) 
             ui.label(format!("Dv: +{:.4} mm/s", accumulated_delta_v * 1000.0));
         }
         ContinuousDeflectorState::FuelDepleted { total_delta_v, .. } => {
-            ui.label(egui::RichText::new(format!("{} Fuel depleted", icons::FUEL)).weak().size(12.0));
+            ui.label(
+                egui::RichText::new(format!("{} Fuel depleted", icons::FUEL))
+                    .weak()
+                    .size(12.0),
+            );
             ui.label(format!("Total Dv: {:.4} mm/s", total_delta_v * 1000.0));
         }
         ContinuousDeflectorState::Complete { total_delta_v, .. } => {
-            ui.label(egui::RichText::new(format!("{} Complete", icons::SUCCESS)).color(colors::SUCCESS).size(12.0));
+            ui.label(
+                egui::RichText::new(format!("{} Complete", icons::SUCCESS))
+                    .color(colors::SUCCESS)
+                    .size(12.0),
+            );
             ui.label(format!("Total Dv: {:.4} mm/s", total_delta_v * 1000.0));
         }
         ContinuousDeflectorState::Cancelled => {
-            ui.label(egui::RichText::new(format!("{} Cancelled", icons::CLOSE)).color(colors::DANGER).size(12.0));
+            ui.label(
+                egui::RichText::new(format!("{} Cancelled", icons::CLOSE))
+                    .color(colors::DANGER)
+                    .size(12.0),
+            );
         }
     }
 }
 
 /// Get display info for a deflector payload.
-fn deflector_display(payload: &crate::continuous::ContinuousPayload) -> (&'static str, &'static str) {
+fn deflector_display(
+    payload: &crate::continuous::ContinuousPayload,
+) -> (&'static str, &'static str) {
     use crate::continuous::ContinuousPayload;
     use crate::ui::icons;
     match payload {

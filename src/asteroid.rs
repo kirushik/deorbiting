@@ -5,14 +5,14 @@
 //! follow ephemeris-defined paths, asteroids have dynamic trajectories
 //! computed in real-time.
 
-use bevy::prelude::*;
 use bevy::math::DVec2;
+use bevy::prelude::*;
 
 use crate::camera::RENDER_SCALE;
 use crate::ephemeris::{CelestialBodyId, Ephemeris};
 use crate::prediction::TrajectoryPath;
 use crate::render::z_layers;
-use crate::types::{BodyState, AU_TO_METERS, G};
+use crate::types::{AU_TO_METERS, BodyState, G};
 
 /// Event to trigger a full simulation reset.
 ///
@@ -111,7 +111,7 @@ pub struct AsteroidVisual {
 impl Default for AsteroidVisual {
     fn default() -> Self {
         Self {
-            render_radius: 2.0, // Visible size in render units
+            render_radius: 2.0,                // Visible size in render units
             color: Color::srgb(0.6, 0.6, 0.6), // Gray
         }
     }
@@ -205,10 +205,7 @@ pub fn spawn_asteroid_at_position(
     let mass = 1e12; // Default mass: 1 trillion kg
     let color = asteroid_color(counter.0);
 
-    info!(
-        "Spawning {} at ({:.2e}, {:.2e}) m",
-        name, pos.x, pos.y
-    );
+    info!("Spawning {} at ({:.2e}, {:.2e}) m", name, pos.x, pos.y);
 
     spawn_asteroid(commands, meshes, materials, name, pos, vel, mass, color)
 }
@@ -395,7 +392,10 @@ pub fn handle_reset(
     // Clear any remaining reset events
     reset_events.clear();
 
-    info!("Resetting simulation - reloading scenario: {}", current_scenario.id);
+    info!(
+        "Resetting simulation - reloading scenario: {}",
+        current_scenario.id
+    );
 
     // Send event to reload the current scenario
     load_events.send(crate::scenarios::LoadScenarioEvent {

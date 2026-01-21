@@ -32,7 +32,11 @@ fn get_planet_data() -> HashMap<&'static str, (f64, f64, f64, f64)> {
 }
 
 /// Calculate planet position at given time using simple Kepler orbit
-fn planet_position(name: &str, time_seconds: f64, data: &HashMap<&str, (f64, f64, f64, f64)>) -> DVec2 {
+fn planet_position(
+    name: &str,
+    time_seconds: f64,
+    data: &HashMap<&str, (f64, f64, f64, f64)>,
+) -> DVec2 {
     let (a_au, e, _mass, _radius) = data.get(name).unwrap();
     let a = a_au * AU_TO_METERS;
 
@@ -63,7 +67,11 @@ fn planet_position(name: &str, time_seconds: f64, data: &HashMap<&str, (f64, f64
 }
 
 /// Compute gravitational acceleration from Sun and all planets
-fn compute_acceleration(pos: DVec2, time: f64, planet_data: &HashMap<&str, (f64, f64, f64, f64)>) -> DVec2 {
+fn compute_acceleration(
+    pos: DVec2,
+    time: f64,
+    planet_data: &HashMap<&str, (f64, f64, f64, f64)>,
+) -> DVec2 {
     let mut acc = DVec2::ZERO;
 
     // Sun gravity
@@ -89,7 +97,11 @@ fn compute_acceleration(pos: DVec2, time: f64, planet_data: &HashMap<&str, (f64,
 }
 
 /// Check collision with Sun or any planet
-fn check_collision(pos: DVec2, time: f64, planet_data: &HashMap<&str, (f64, f64, f64, f64)>) -> Option<String> {
+fn check_collision(
+    pos: DVec2,
+    time: f64,
+    planet_data: &HashMap<&str, (f64, f64, f64, f64)>,
+) -> Option<String> {
     // Sun collision (using ~2x visual radius for detection)
     const SUN_RADIUS: f64 = 6.96e8 * 2.0;
     if pos.length() < SUN_RADIUS {
@@ -141,7 +153,10 @@ struct Scenario {
 
 /// Earth Collision: 45° ahead of Earth, retrograde orbit
 /// Uses numerical differentiation to get Earth's actual velocity, matching the game.
-fn earth_collision_state(time: f64, planet_data: &HashMap<&str, (f64, f64, f64, f64)>) -> (DVec2, DVec2) {
+fn earth_collision_state(
+    time: f64,
+    planet_data: &HashMap<&str, (f64, f64, f64, f64)>,
+) -> (DVec2, DVec2) {
     // Time offset for 45° ahead in Earth's orbit
     // Earth moves at ~0.986°/day, so 45° = ~45.6 days
     let days_for_45_degrees = 45.0 / 0.9856;
@@ -166,7 +181,10 @@ fn earth_collision_state(time: f64, planet_data: &HashMap<&str, (f64, f64, f64, 
 }
 
 /// Apophis flyby: close approach trajectory (DYNAMIC)
-fn apophis_flyby_state(time: f64, planet_data: &HashMap<&str, (f64, f64, f64, f64)>) -> (DVec2, DVec2) {
+fn apophis_flyby_state(
+    time: f64,
+    planet_data: &HashMap<&str, (f64, f64, f64, f64)>,
+) -> (DVec2, DVec2) {
     let earth_pos = planet_position("Earth", time, planet_data);
     let earth_r = earth_pos.length();
     let earth_angle = earth_pos.y.atan2(earth_pos.x);
@@ -188,7 +206,10 @@ fn apophis_flyby_state(time: f64, planet_data: &HashMap<&str, (f64, f64, f64, f6
 
 /// Jupiter slingshot (DYNAMIC) - Ahead of Jupiter, slower velocity
 /// Jupiter catches up and pulls asteroid forward for velocity boost
-fn jupiter_slingshot_state(time: f64, planet_data: &HashMap<&str, (f64, f64, f64, f64)>) -> (DVec2, DVec2) {
+fn jupiter_slingshot_state(
+    time: f64,
+    planet_data: &HashMap<&str, (f64, f64, f64, f64)>,
+) -> (DVec2, DVec2) {
     let jupiter_pos = planet_position("Jupiter", time, planet_data);
     let jupiter_r = jupiter_pos.length();
     let jupiter_angle = jupiter_pos.y.atan2(jupiter_pos.x);
@@ -208,7 +229,10 @@ fn jupiter_slingshot_state(time: f64, planet_data: &HashMap<&str, (f64, f64, f64
 }
 
 /// Interstellar visitor (hyperbolic) - static is fine
-fn interstellar_visitor_state(_time: f64, _planet_data: &HashMap<&str, (f64, f64, f64, f64)>) -> (DVec2, DVec2) {
+fn interstellar_visitor_state(
+    _time: f64,
+    _planet_data: &HashMap<&str, (f64, f64, f64, f64)>,
+) -> (DVec2, DVec2) {
     let pos = DVec2::new(-3.0 * AU_TO_METERS, 4.0 * AU_TO_METERS);
     let vel = DVec2::new(28_000.0, -28_000.0); // ~40 km/s
     (pos, vel)
@@ -216,7 +240,10 @@ fn interstellar_visitor_state(_time: f64, _planet_data: &HashMap<&str, (f64, f64
 
 /// Deflection Challenge: 91° ahead of Earth, retrograde orbit.
 /// Uses numerical differentiation to get Earth's actual velocity, matching the game.
-fn deflection_challenge_state(time: f64, planet_data: &HashMap<&str, (f64, f64, f64, f64)>) -> (DVec2, DVec2) {
+fn deflection_challenge_state(
+    time: f64,
+    planet_data: &HashMap<&str, (f64, f64, f64, f64)>,
+) -> (DVec2, DVec2) {
     // Time offset for 91° ahead in Earth's orbit → collision ~46 days
     let days_for_91_degrees = 91.0 / 0.9856;
     let time_offset = days_for_91_degrees * DAY_SECONDS;
@@ -326,41 +353,68 @@ fn simulate_scenario(scenario: &Scenario, planet_data: &HashMap<&str, (f64, f64,
     let (mut pos, mut vel) = (scenario.get_initial_state)(start_time, planet_data);
 
     println!("Initial state:");
-    println!("  Position: ({:.4}, {:.4}) AU", pos.x / AU_TO_METERS, pos.y / AU_TO_METERS);
+    println!(
+        "  Position: ({:.4}, {:.4}) AU",
+        pos.x / AU_TO_METERS,
+        pos.y / AU_TO_METERS
+    );
     println!("  Distance from Sun: {:.4} AU", pos.length() / AU_TO_METERS);
-    println!("  Velocity: ({:.2}, {:.2}) km/s", vel.x / 1000.0, vel.y / 1000.0);
+    println!(
+        "  Velocity: ({:.2}, {:.2}) km/s",
+        vel.x / 1000.0,
+        vel.y / 1000.0
+    );
     println!("  Speed: {:.2} km/s", vel.length() / 1000.0);
 
     // Earth info
     let earth_pos = planet_position("Earth", start_time, planet_data);
     let initial_earth_dist = (pos - earth_pos).length();
-    println!("  Distance to Earth: {:.4} AU ({:.0} km)",
-             initial_earth_dist / AU_TO_METERS,
-             initial_earth_dist / 1000.0);
+    println!(
+        "  Distance to Earth: {:.4} AU ({:.0} km)",
+        initial_earth_dist / AU_TO_METERS,
+        initial_earth_dist / 1000.0
+    );
 
     // Orbital energy
     let r = pos.length();
     let v = vel.length();
     let specific_energy = 0.5 * v * v - GM_SUN / r;
     println!("\nOrbital parameters:");
-    println!("  Specific energy: {:.2e} J/kg ({})",
-             specific_energy,
-             if specific_energy > 0.0 { "HYPERBOLIC" } else { "BOUND" });
+    println!(
+        "  Specific energy: {:.2e} J/kg ({})",
+        specific_energy,
+        if specific_energy > 0.0 {
+            "HYPERBOLIC"
+        } else {
+            "BOUND"
+        }
+    );
 
     if specific_energy < 0.0 {
         let semi_major_axis = -GM_SUN / (2.0 * specific_energy);
         let h = pos.x * vel.y - pos.y * vel.x;
         let e_sq = 1.0 + (2.0 * specific_energy * h * h) / (GM_SUN * GM_SUN);
         let eccentricity = e_sq.max(0.0).sqrt();
-        let period_days = 2.0 * std::f64::consts::PI * (semi_major_axis.powi(3) / GM_SUN).sqrt() / DAY_SECONDS;
+        let period_days =
+            2.0 * std::f64::consts::PI * (semi_major_axis.powi(3) / GM_SUN).sqrt() / DAY_SECONDS;
 
-        println!("  Semi-major axis: {:.4} AU", semi_major_axis / AU_TO_METERS);
+        println!(
+            "  Semi-major axis: {:.4} AU",
+            semi_major_axis / AU_TO_METERS
+        );
         println!("  Eccentricity: {:.4}", eccentricity);
-        println!("  Period: {:.1} days ({:.2} years)", period_days, period_days / 365.25);
+        println!(
+            "  Period: {:.1} days ({:.2} years)",
+            period_days,
+            period_days / 365.25
+        );
     }
 
     // Run simulation
-    println!("\n--- Running simulation for {:.0} days ---\n", scenario.max_days);
+    println!(
+        "\n--- Running simulation for {:.0} days ---\n",
+        scenario.max_days
+    );
 
     let mut acc = compute_acceleration(pos, start_time, planet_data);
     let mut time = start_time;
@@ -376,7 +430,13 @@ fn simulate_scenario(scenario: &Scenario, planet_data: &HashMap<&str, (f64, f64,
     let mut last_printed_day = -1;
 
     // Print header
-    let print_interval = if scenario.max_days > 500.0 { 50 } else if scenario.max_days > 100.0 { 10 } else { 5 };
+    let print_interval = if scenario.max_days > 500.0 {
+        50
+    } else if scenario.max_days > 100.0 {
+        10
+    } else {
+        5
+    };
     println!("Day    | Sun (AU) | Earth (AU) | Earth (km)    | Speed (km/s)");
     println!("-------|----------|------------|---------------|-------------");
 
@@ -404,12 +464,14 @@ fn simulate_scenario(scenario: &Scenario, planet_data: &HashMap<&str, (f64, f64,
         if current_day > last_printed_day && current_day % print_interval == 0 {
             let sun_dist = pos.length();
             let speed = vel.length();
-            println!("{:5}  | {:8.4} | {:10.4} | {:13.0} | {:11.2}",
-                     current_day,
-                     sun_dist / AU_TO_METERS,
-                     earth_dist / AU_TO_METERS,
-                     earth_dist / 1000.0,
-                     speed / 1000.0);
+            println!(
+                "{:5}  | {:8.4} | {:10.4} | {:13.0} | {:11.2}",
+                current_day,
+                sun_dist / AU_TO_METERS,
+                earth_dist / AU_TO_METERS,
+                earth_dist / 1000.0,
+                speed / 1000.0
+            );
             last_printed_day = current_day;
         }
 
@@ -424,10 +486,12 @@ fn simulate_scenario(scenario: &Scenario, planet_data: &HashMap<&str, (f64, f64,
     println!("\n--- Summary ---");
     let elapsed_days = (time - start_time) / DAY_SECONDS;
     println!("Simulated: {:.1} days", elapsed_days);
-    println!("Closest Earth approach: {:.6} AU ({:.0} km) at day {:.1}",
-             closest_earth_dist / AU_TO_METERS,
-             closest_earth_dist / 1000.0,
-             (closest_earth_time - start_time) / DAY_SECONDS);
+    println!(
+        "Closest Earth approach: {:.6} AU ({:.0} km) at day {:.1}",
+        closest_earth_dist / AU_TO_METERS,
+        closest_earth_dist / 1000.0,
+        (closest_earth_time - start_time) / DAY_SECONDS
+    );
 
     // Classify outcome
     if collision_body.is_some() {
@@ -442,8 +506,10 @@ fn simulate_scenario(scenario: &Scenario, planet_data: &HashMap<&str, (f64, f64,
             // Check if it was supposed to collide
             if scenario.id == "earth_collision" || scenario.id == "deflection_challenge" {
                 println!("  !!! PROBLEM: Expected collision with Earth but none occurred !!!");
-                println!("  Closest approach was {:.0} km (Earth radius ~6371 km, detection ~318,550 km)",
-                         closest_earth_dist / 1000.0);
+                println!(
+                    "  Closest approach was {:.0} km (Earth radius ~6371 km, detection ~318,550 km)",
+                    closest_earth_dist / 1000.0
+                );
             }
         }
     }
@@ -452,8 +518,12 @@ fn simulate_scenario(scenario: &Scenario, planet_data: &HashMap<&str, (f64, f64,
     if scenario.id == "jupiter_slingshot" {
         let final_speed = vel.length();
         let delta_v = final_speed - initial_speed;
-        println!("\nVelocity change: {:.2} km/s → {:.2} km/s (Δv = {:.2} km/s)",
-                 initial_speed / 1000.0, final_speed / 1000.0, delta_v / 1000.0);
+        println!(
+            "\nVelocity change: {:.2} km/s → {:.2} km/s (Δv = {:.2} km/s)",
+            initial_speed / 1000.0,
+            final_speed / 1000.0,
+            delta_v / 1000.0
+        );
     }
 
     println!("\n");

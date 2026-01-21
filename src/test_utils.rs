@@ -5,7 +5,7 @@
 
 use bevy::math::DVec2;
 
-use crate::types::{BodyState, AU_TO_METERS, GM_SUN};
+use crate::types::{AU_TO_METERS, BodyState, GM_SUN};
 
 /// Fixtures for creating test orbital states.
 pub mod fixtures {

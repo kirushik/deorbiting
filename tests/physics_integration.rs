@@ -3,8 +3,8 @@
 mod common;
 
 use approx::assert_relative_eq;
-use deorbiting::types::{AU_TO_METERS, GM_SUN, SECONDS_PER_DAY};
 use bevy::math::DVec2;
+use deorbiting::types::{AU_TO_METERS, GM_SUN, SECONDS_PER_DAY};
 
 #[test]
 fn test_earth_orbit_365_days() {
@@ -21,7 +21,8 @@ fn test_earth_orbit_365_days() {
 
     // Simulate one full orbit
     let (final_pos, _final_vel) = common::simulate_verlet(
-        pos, vel,
+        pos,
+        vel,
         expected_period,
         100_000, // High resolution for accuracy
     );
@@ -112,11 +113,7 @@ fn test_long_term_stability_10_years() {
 
     // Energy should drift less than 1% over 10 years
     let drift = ((final_energy - initial_energy) / initial_energy).abs();
-    assert!(
-        drift < 0.01,
-        "10-year energy drift {} exceeds 1%",
-        drift
-    );
+    assert!(drift < 0.01, "10-year energy drift {} exceeds 1%", drift);
 }
 
 #[test]
@@ -130,20 +127,14 @@ fn test_escape_velocity_boundary() {
     let vel_below = DVec2::new(0.0, v_below);
 
     let energy_below = common::orbital_energy(pos, vel_below);
-    assert!(
-        energy_below < 0.0,
-        "95% of escape velocity should be bound"
-    );
+    assert!(energy_below < 0.0, "95% of escape velocity should be bound");
 
     // Just above escape velocity - should escape
     let v_above = v_esc * 1.05;
     let vel_above = DVec2::new(0.0, v_above);
 
     let energy_above = common::orbital_energy(pos, vel_above);
-    assert!(
-        energy_above > 0.0,
-        "105% of escape velocity should escape"
-    );
+    assert!(energy_above > 0.0, "105% of escape velocity should escape");
 }
 
 #[test]

@@ -118,10 +118,8 @@ pub fn compute_hierarchical_scales(
         let base_radius = body.base_render_radius;
 
         // Get parent's scale and radius
-        let (parent_scale, parent_eff_radius) = parent_data
-            .get(&parent_id)
-            .copied()
-            .unwrap_or((1.0, 1.0));
+        let (parent_scale, parent_eff_radius) =
+            parent_data.get(&parent_id).copied().unwrap_or((1.0, 1.0));
 
         // Calculate visibility scale as if independent
         let visibility_scale = if base_radius < min_render_radius {
@@ -194,7 +192,9 @@ pub fn apply_moon_position_distortion(
         moons.sort_by(|a, b| {
             let dist_a = (a.1 - parent_pos).length();
             let dist_b = (b.1 - parent_pos).length();
-            dist_a.partial_cmp(&dist_b).unwrap_or(std::cmp::Ordering::Equal)
+            dist_a
+                .partial_cmp(&dist_b)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         // Track the minimum distance for each subsequent moon
@@ -202,8 +202,7 @@ pub fn apply_moon_position_distortion(
 
         for (moon_entity, moon_physics_pos, _moon_id, moon_radius) in moons.iter() {
             // Get the moon's transform mutably
-            let Ok((_, mut transform, _, _, mut distortion_offset)) =
-                bodies.get_mut(*moon_entity)
+            let Ok((_, mut transform, _, _, mut distortion_offset)) = bodies.get_mut(*moon_entity)
             else {
                 continue;
             };

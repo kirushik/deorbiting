@@ -151,11 +151,11 @@ pub fn get_body_data(id: CelestialBodyId) -> CelestialBodyData {
                 mass,
                 radius: 2.440e6,
                 orbit: Some(KeplerOrbit::from_elements(
-                    a,       // semi-major axis
-                    0.2056,  // eccentricity
-                    29.12,   // argument of periapsis (deg)
-                    174.79,  // mean anomaly at epoch (deg)
-                    4.0923,  // mean motion (deg/day)
+                    a,      // semi-major axis
+                    0.2056, // eccentricity
+                    29.12,  // argument of periapsis (deg)
+                    174.79, // mean anomaly at epoch (deg)
+                    4.0923, // mean motion (deg/day)
                 )),
                 visual_scale: 200.0,
                 hill_sphere: compute_hill_sphere(a, mass, SUN_MASS),
@@ -182,7 +182,9 @@ pub fn get_body_data(id: CelestialBodyId) -> CelestialBodyData {
                 id,
                 mass,
                 radius: 6.371e6,
-                orbit: Some(KeplerOrbit::from_elements(a, 0.0167, 102.94, 357.53, 0.9856)),
+                orbit: Some(KeplerOrbit::from_elements(
+                    a, 0.0167, 102.94, 357.53, 0.9856,
+                )),
                 visual_scale: 150.0,
                 hill_sphere: compute_hill_sphere(a, mass, SUN_MASS),
             }
@@ -221,7 +223,9 @@ pub fn get_body_data(id: CelestialBodyId) -> CelestialBodyData {
                 id,
                 mass,
                 radius: 5.823e7,
-                orbit: Some(KeplerOrbit::from_elements(a, 0.0542, 339.39, 317.02, 0.0335)),
+                orbit: Some(KeplerOrbit::from_elements(
+                    a, 0.0542, 339.39, 317.02, 0.0335,
+                )),
                 visual_scale: 55.0,
                 hill_sphere: compute_hill_sphere(a, mass, SUN_MASS),
             }
@@ -247,7 +251,9 @@ pub fn get_body_data(id: CelestialBodyId) -> CelestialBodyData {
                 id,
                 mass,
                 radius: 2.462e7,
-                orbit: Some(KeplerOrbit::from_elements(a, 0.0086, 273.19, 256.23, 0.0060)),
+                orbit: Some(KeplerOrbit::from_elements(
+                    a, 0.0086, 273.19, 256.23, 0.0060,
+                )),
                 visual_scale: 80.0,
                 hill_sphere: compute_hill_sphere(a, mass, SUN_MASS),
             }
@@ -263,7 +269,9 @@ pub fn get_body_data(id: CelestialBodyId) -> CelestialBodyData {
                 id,
                 mass,
                 radius: 1.737e6,
-                orbit: Some(KeplerOrbit::from_elements(a, 0.0549, 318.15, 134.96, 13.1764)),
+                orbit: Some(KeplerOrbit::from_elements(
+                    a, 0.0549, 318.15, 134.96, 13.1764,
+                )),
                 visual_scale: 250.0,
                 hill_sphere: compute_hill_sphere(a, mass, earth_mass),
             }
@@ -278,7 +286,9 @@ pub fn get_body_data(id: CelestialBodyId) -> CelestialBodyData {
                 id,
                 mass,
                 radius: 1.127e4, // ~11.3 km mean radius (irregular)
-                orbit: Some(KeplerOrbit::from_elements(a, 0.0151, 150.06, 91.05, 1128.84)),
+                orbit: Some(KeplerOrbit::from_elements(
+                    a, 0.0151, 150.06, 91.05, 1128.84,
+                )),
                 visual_scale: 500.0, // Tiny moon needs big scale
                 hill_sphere: compute_hill_sphere(a, mass, mars_mass),
             }
@@ -292,7 +302,9 @@ pub fn get_body_data(id: CelestialBodyId) -> CelestialBodyData {
                 id,
                 mass,
                 radius: 6.2e3, // ~6.2 km mean radius (irregular)
-                orbit: Some(KeplerOrbit::from_elements(a, 0.00033, 290.50, 325.00, 285.16)),
+                orbit: Some(KeplerOrbit::from_elements(
+                    a, 0.00033, 290.50, 325.00, 285.16,
+                )),
                 visual_scale: 600.0, // Even tinier
                 hill_sphere: compute_hill_sphere(a, mass, mars_mass),
             }
@@ -378,7 +390,9 @@ pub fn get_body_data(id: CelestialBodyId) -> CelestialBodyData {
                 id,
                 mass,
                 radius: 2.521e5, // 252.1 km
-                orbit: Some(KeplerOrbit::from_elements(a, 0.0047, 342.51, 199.69, 262.73)),
+                orbit: Some(KeplerOrbit::from_elements(
+                    a, 0.0047, 342.51, 199.69, 262.73,
+                )),
                 visual_scale: 400.0,
                 hill_sphere: compute_hill_sphere(a, mass, saturn_mass),
             }
@@ -607,7 +621,6 @@ mod tests {
         assert!(jupiter.radius > earth.radius);
         assert!(earth.radius > moon.radius);
     }
-
 
     #[test]
     fn test_hill_sphere_values_reasonable() {

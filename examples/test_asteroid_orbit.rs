@@ -31,12 +31,7 @@ fn compute_acceleration_sun_only(pos: DVec2) -> DVec2 {
 }
 
 /// Simple Velocity Verlet step.
-fn verlet_step(
-    pos: &mut DVec2,
-    vel: &mut DVec2,
-    acc: &mut DVec2,
-    dt: f64,
-) {
+fn verlet_step(pos: &mut DVec2, vel: &mut DVec2, acc: &mut DVec2, dt: f64) {
     // Position update
     *pos = *pos + *vel * dt + *acc * (0.5 * dt * dt);
 
@@ -80,7 +75,11 @@ fn test_circular_orbit(distance_au: f64) {
     let period = 2.0 * std::f64::consts::PI * (distance.powi(3) / GM_SUN).sqrt();
     let period_days = period / SECONDS_PER_DAY;
 
-    println!("  Initial: r = {:.4} AU, v = {:.2} km/s", distance / AU_TO_METERS, v_circular / 1000.0);
+    println!(
+        "  Initial: r = {:.4} AU, v = {:.2} km/s",
+        distance / AU_TO_METERS,
+        v_circular / 1000.0
+    );
     println!("  Expected period: {:.2} days", period_days);
 
     // Use fixed timestep for simplicity
@@ -105,7 +104,11 @@ fn test_circular_orbit(distance_au: f64) {
 
         // Print progress every 30 days
         if step % (30 * steps_per_day) == 0 && step > 0 {
-            println!("    Day {:>6.0}: r = {:.4} AU", t / SECONDS_PER_DAY, r / AU_TO_METERS);
+            println!(
+                "    Day {:>6.0}: r = {:.4} AU",
+                t / SECONDS_PER_DAY,
+                r / AU_TO_METERS
+            );
         }
     }
 
@@ -116,18 +119,28 @@ fn test_circular_orbit(distance_au: f64) {
     // Check orbital stability
     let r_variation = (max_r - min_r) / distance;
 
-    println!("  Final: r = {:.4} AU after {:.2} days", pos.length() / AU_TO_METERS, t / SECONDS_PER_DAY);
+    println!(
+        "  Final: r = {:.4} AU after {:.2} days",
+        pos.length() / AU_TO_METERS,
+        t / SECONDS_PER_DAY
+    );
     println!("  Radius variation: {:.4}%", r_variation * 100.0);
     println!("  Energy error: {:.2e}", energy_error);
 
-    assert!(r_variation < 0.001, "Circular orbit radius varied too much!");
+    assert!(
+        r_variation < 0.001,
+        "Circular orbit radius varied too much!"
+    );
     assert!(energy_error < 1e-6, "Energy not conserved!");
 
     println!("  PASSED\n");
 }
 
 fn test_elliptical_orbit(perihelion_au: f64, eccentricity: f64) {
-    println!("Testing elliptical orbit (e={:.1}) with perihelion at {:.2} AU...", eccentricity, perihelion_au);
+    println!(
+        "Testing elliptical orbit (e={:.1}) with perihelion at {:.2} AU...",
+        eccentricity, perihelion_au
+    );
 
     let r_p = perihelion_au * AU_TO_METERS;
     let a = r_p / (1.0 - eccentricity); // Semi-major axis
@@ -145,7 +158,11 @@ fn test_elliptical_orbit(perihelion_au: f64, eccentricity: f64) {
     let period = 2.0 * std::f64::consts::PI * (a.powi(3) / GM_SUN).sqrt();
     let period_days = period / SECONDS_PER_DAY;
 
-    println!("  Perihelion: {:.4} AU, Aphelion: {:.4} AU", r_p / AU_TO_METERS, r_a / AU_TO_METERS);
+    println!(
+        "  Perihelion: {:.4} AU, Aphelion: {:.4} AU",
+        r_p / AU_TO_METERS,
+        r_a / AU_TO_METERS
+    );
     println!("  Semi-major axis: {:.4} AU", a / AU_TO_METERS);
     println!("  Expected period: {:.2} days", period_days);
 
@@ -171,7 +188,11 @@ fn test_elliptical_orbit(perihelion_au: f64, eccentricity: f64) {
 
         // Print progress every 30 days
         if step % (30 * steps_per_day) == 0 && step > 0 {
-            println!("    Day {:>6.0}: r = {:.4} AU", t / SECONDS_PER_DAY, r / AU_TO_METERS);
+            println!(
+                "    Day {:>6.0}: r = {:.4} AU",
+                t / SECONDS_PER_DAY,
+                r / AU_TO_METERS
+            );
         }
     }
 
@@ -183,8 +204,16 @@ fn test_elliptical_orbit(perihelion_au: f64, eccentricity: f64) {
     let perihelion_error = (min_r - r_p).abs() / r_p;
     let aphelion_error = (max_r - r_a).abs() / r_a;
 
-    println!("  Measured perihelion: {:.4} AU (error: {:.3}%)", min_r / AU_TO_METERS, perihelion_error * 100.0);
-    println!("  Measured aphelion: {:.4} AU (error: {:.3}%)", max_r / AU_TO_METERS, aphelion_error * 100.0);
+    println!(
+        "  Measured perihelion: {:.4} AU (error: {:.3}%)",
+        min_r / AU_TO_METERS,
+        perihelion_error * 100.0
+    );
+    println!(
+        "  Measured aphelion: {:.4} AU (error: {:.3}%)",
+        max_r / AU_TO_METERS,
+        aphelion_error * 100.0
+    );
     println!("  Energy error: {:.2e}", energy_error);
 
     assert!(perihelion_error < 0.01, "Perihelion error too large!");

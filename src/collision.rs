@@ -11,12 +11,12 @@
 
 use std::collections::{HashSet, VecDeque};
 
-use bevy::prelude::*;
 use bevy::math::DVec2;
+use bevy::prelude::*;
 
 use crate::ephemeris::data::CelestialBodyId;
 use crate::render::SelectedBody;
-use crate::types::{SelectableBody, SimulationTime, SECONDS_PER_DAY};
+use crate::types::{SECONDS_PER_DAY, SelectableBody, SimulationTime};
 
 /// Event fired when an asteroid collides with a celestial body.
 ///
@@ -271,7 +271,6 @@ mod tests {
         assert!((event.impact_speed_km_s() - 10.0).abs() < 0.001);
     }
 
-
     #[test]
     fn test_collision_event_time_days() {
         let event = CollisionEvent {
@@ -281,7 +280,7 @@ mod tests {
             impact_velocity: DVec2::ZERO,
             time: SECONDS_PER_DAY * 365.25, // 1 year in seconds
         };
-        
+
         let days = event.time_days();
         assert!((days - 365.25).abs() < 0.001);
     }
@@ -297,20 +296,20 @@ mod tests {
     #[test]
     fn test_collision_state_multiple_entities_independent() {
         let mut state = CollisionState::default();
-        
+
         let e1 = Entity::from_raw(1);
         let e2 = Entity::from_raw(2);
         let e3 = Entity::from_raw(3);
-        
+
         // Add e1 and e2 as colliding
         state.push_collision(e1, make_event("A1"));
         state.push_collision(e2, make_event("A2"));
-        
+
         // e3 should not be affected
         assert!(!state.is_colliding(e3));
         assert!(state.is_colliding(e1));
         assert!(state.is_colliding(e2));
-        
+
         // Pop one notification - entities should still be colliding
         let _ = state.pop_notification();
         assert!(state.is_colliding(e1));
@@ -327,7 +326,7 @@ mod tests {
             impact_velocity: DVec2::new(3000.0, 4000.0), // 5 km/s total
             time: 100.0,
         };
-        
+
         // Velocity magnitude: sqrt(3^2 + 4^2) = 5 km/s
         assert!((event.impact_speed_km_s() - 5.0).abs() < 0.001);
         // Check components preserved
@@ -339,11 +338,11 @@ mod tests {
     fn test_collision_state_pop_returns_none_when_empty() {
         let mut state = CollisionState::default();
         assert!(state.pop_notification().is_none());
-        
+
         // Add one and pop it
         state.push_collision(Entity::from_raw(1), make_event("A"));
         assert!(state.pop_notification().is_some());
-        
+
         // Should be empty again
         assert!(state.pop_notification().is_none());
     }
@@ -357,7 +356,7 @@ mod tests {
             CelestialBodyId::Earth,
             CelestialBodyId::Jupiter,
         ];
-        
+
         for body in bodies {
             let event = CollisionEvent {
                 asteroid_name: format!("Asteroid-{:?}", body),

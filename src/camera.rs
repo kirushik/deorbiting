@@ -119,7 +119,16 @@ impl Plugin for CameraPlugin {
             .init_resource::<ClickTracker>()
             .add_event::<FocusOnEntityEvent>()
             .add_systems(Startup, setup_camera)
-            .add_systems(Update, (camera_zoom, camera_pan, detect_double_click, animate_focus, handle_focus_events));
+            .add_systems(
+                Update,
+                (
+                    camera_zoom,
+                    camera_pan,
+                    detect_double_click,
+                    animate_focus,
+                    handle_focus_events,
+                ),
+            );
     }
 }
 
@@ -180,9 +189,10 @@ fn camera_zoom(
 
     // Skip zoom if egui wants the pointer (e.g., hovering over UI panel)
     if let Some(ctx) = contexts.try_ctx_mut()
-        && ctx.wants_pointer_input() {
-            return;
-        }
+        && ctx.wants_pointer_input()
+    {
+        return;
+    }
 
     let Ok(mut projection) = camera_query.get_single_mut() else {
         return;
@@ -212,9 +222,10 @@ fn camera_pan(
 
     // Skip pan if egui wants the pointer (e.g., interacting with UI panel)
     if let Some(ctx) = contexts.try_ctx_mut()
-        && ctx.wants_pointer_input() {
-            return;
-        }
+        && ctx.wants_pointer_input()
+    {
+        return;
+    }
 
     let Ok((mut transform, projection)) = camera_query.get_single_mut() else {
         return;
@@ -325,7 +336,6 @@ fn animate_focus(
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -346,7 +356,10 @@ mod tests {
     #[test]
     fn test_zoom_bounds_valid() {
         assert!(MIN_ZOOM > 0.0, "MIN_ZOOM must be positive");
-        assert!(MAX_ZOOM > MIN_ZOOM, "MAX_ZOOM must be greater than MIN_ZOOM");
+        assert!(
+            MAX_ZOOM > MIN_ZOOM,
+            "MAX_ZOOM must be greater than MIN_ZOOM"
+        );
         assert!(DEFAULT_ZOOM >= MIN_ZOOM, "DEFAULT_ZOOM must be >= MIN_ZOOM");
         assert!(DEFAULT_ZOOM <= MAX_ZOOM, "DEFAULT_ZOOM must be <= MAX_ZOOM");
     }
@@ -399,7 +412,10 @@ mod tests {
     fn test_zoom_speed_reasonable() {
         // ZOOM_SPEED should be small enough for fine control
         assert!(ZOOM_SPEED > 0.0);
-        assert!(ZOOM_SPEED < 1.0, "Zoom speed should be less than 100% per scroll");
+        assert!(
+            ZOOM_SPEED < 1.0,
+            "Zoom speed should be less than 100% per scroll"
+        );
         // Typical values are around 0.05-0.2
         assert!(ZOOM_SPEED <= 0.3);
     }

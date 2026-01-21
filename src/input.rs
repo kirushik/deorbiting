@@ -9,9 +9,9 @@ use bevy::window::PrimaryWindow;
 use bevy_egui::EguiContexts;
 
 use crate::asteroid::{Asteroid, ResetEvent};
-use crate::camera::{MainCamera, RENDER_SCALE, MIN_ZOOM, MAX_ZOOM, ZOOM_SPEED};
+use crate::camera::{MAX_ZOOM, MIN_ZOOM, MainCamera, RENDER_SCALE, ZOOM_SPEED};
 use crate::physics::IntegratorStates;
-use crate::prediction::{mark_prediction_dirty, PredictionState};
+use crate::prediction::{PredictionState, mark_prediction_dirty};
 use crate::render::SelectedBody;
 use crate::types::{BodyState, InputSystemSet, SelectableBody, SimulationTime};
 use crate::ui::velocity_handle::VelocityDragState;
@@ -58,7 +58,10 @@ fn keyboard_shortcuts(
     // Space: toggle pause
     if keys.just_pressed(KeyCode::Space) {
         sim_time.paused = !sim_time.paused;
-        info!("Simulation {}", if sim_time.paused { "paused" } else { "running" });
+        info!(
+            "Simulation {}",
+            if sim_time.paused { "paused" } else { "running" }
+        );
     }
 
     // Handle zoom with keyboard
@@ -140,19 +143,21 @@ fn handle_asteroid_drag(
 
     // Validate dragged entity still exists (could be despawned via collision)
     if let Some(entity) = drag_state.dragging
-        && !asteroids.contains(entity) {
-            drag_state.dragging = None;
-            drag_state.auto_paused = false;
-        }
+        && !asteroids.contains(entity)
+    {
+        drag_state.dragging = None;
+        drag_state.auto_paused = false;
+    }
 
     // IMPORTANT: Only check egui wants pointer when NOT already dragging.
     // If we're dragging and mouse passes over an egui window, we still need
     // to process drag updates and mouse release.
     if drag_state.dragging.is_none()
         && let Some(ctx) = contexts.try_ctx_mut()
-            && ctx.wants_pointer_input() {
-                return;
-            }
+        && ctx.wants_pointer_input()
+    {
+        return;
+    }
 
     let Ok(window) = window_query.get_single() else {
         return;
@@ -207,34 +212,35 @@ fn handle_asteroid_drag(
     // Continue drag
     if mouse.pressed(MouseButton::Left)
         && let Some(entity) = drag_state.dragging
-            && let Ok((_, _, mut body_state)) = asteroids.get_mut(entity) {
-                let old_pos = body_state.pos;
-                body_state.pos = physics_pos + drag_state.drag_offset;
+        && let Ok((_, _, mut body_state)) = asteroids.get_mut(entity)
+    {
+        let old_pos = body_state.pos;
+        body_state.pos = physics_pos + drag_state.drag_offset;
 
-                // Real-time preview
-                if (body_state.pos - old_pos).length() > 1e6 {
-                    mark_prediction_dirty(&mut prediction_state);
-                }
-            }
+        // Real-time preview
+        if (body_state.pos - old_pos).length() > 1e6 {
+            mark_prediction_dirty(&mut prediction_state);
+        }
+    }
 
     // End drag on mouse release
     if mouse.just_released(MouseButton::Left)
-        && let Some(entity) = drag_state.dragging {
-            if asteroids.contains(entity) {
-                integrator_states.remove(entity);
-                mark_prediction_dirty(&mut prediction_state);
-                info!("Asteroid repositioned, velocity preserved");
-            }
-            drag_state.dragging = None;
-
-            // Restore simulation state: if we auto-paused on drag start, unpause now
-            if drag_state.auto_paused {
-                sim_time.paused = false;
-                drag_state.auto_paused = false;
-            }
+        && let Some(entity) = drag_state.dragging
+    {
+        if asteroids.contains(entity) {
+            integrator_states.remove(entity);
+            mark_prediction_dirty(&mut prediction_state);
+            info!("Asteroid repositioned, velocity preserved");
         }
-}
+        drag_state.dragging = None;
 
+        // Restore simulation state: if we auto-paused on drag start, unpause now
+        if drag_state.auto_paused {
+            sim_time.paused = false;
+            drag_state.auto_paused = false;
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -288,12 +294,7 @@ mod tests {
     #[test]
     fn test_digit_key_scales() {
         // The digit keys set fixed scales
-        let expected_scales: [(i32, f64); 4] = [
-            (1, 1.0),
-            (2, 10.0),
-            (3, 100.0),
-            (4, 1000.0),
-        ];
+        let expected_scales: [(i32, f64); 4] = [(1, 1.0), (2, 10.0), (3, 100.0), (4, 1000.0)];
         for (digit, expected) in expected_scales {
             // These are the values set by keyboard_shortcuts
             let scale: f64 = match digit {
@@ -303,18 +304,23 @@ mod tests {
                 4 => 1000.0,
                 _ => unreachable!(),
             };
-            assert!((scale - expected).abs() < 1e-10, "Digit {} should set scale {}", digit, expected);
+            assert!(
+                (scale - expected).abs() < 1e-10,
+                "Digit {} should set scale {}",
+                digit,
+                expected
+            );
         }
     }
 
     #[test]
     fn test_drag_state_auto_pause_flag() {
         let mut state = DragState::default();
-        
+
         // When simulation was running and we start drag, set auto_paused
         state.auto_paused = true;
         assert!(state.auto_paused);
-        
+
         // After drag ends, clear auto_paused
         state.auto_paused = false;
         assert!(!state.auto_paused);
@@ -326,7 +332,10 @@ mod tests {
         let click_radius = 3.0_f32;
         // This should be reasonable for clicking on asteroids
         // (not too small to be frustrating, not too large to be imprecise)
-        assert!(click_radius >= 1.0, "Click radius should be at least 1 unit");
+        assert!(
+            click_radius >= 1.0,
+            "Click radius should be at least 1 unit"
+        );
         assert!(click_radius <= 10.0, "Click radius should not be too large");
     }
 }

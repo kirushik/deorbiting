@@ -17,8 +17,8 @@ use crate::camera::MainCamera;
 use crate::collision::CollisionState;
 use crate::physics::IntegratorStates;
 use crate::prediction::PredictionState;
-use crate::render::z_layers;
 use crate::render::SelectedBody;
+use crate::render::z_layers;
 use crate::types::{BodyState, InputSystemSet, SelectableBody, SimulationTime};
 
 /// Plugin for velocity handle interaction.
@@ -57,7 +57,7 @@ pub struct VelocityDragState {
 /// while still supporting higher velocities. This is ideal for asteroid
 /// mission planning where typical velocities are 5-30 km/s.
 fn velocity_to_arrow_length(vel_magnitude: f64) -> f32 {
-    const MIN_LENGTH: f32 = 1.0;  // Base length for zero velocity
+    const MIN_LENGTH: f32 = 1.0; // Base length for zero velocity
     const MAX_LENGTH: f32 = 30.0; // Maximum arrow length
     const SCALE_FACTOR: f32 = 3.5; // Multiplier for sqrt(v_km/s)
 
@@ -106,20 +106,22 @@ fn handle_velocity_drag(
 ) {
     // Validate target entity still exists (could be despawned via collision)
     if let Some(entity) = drag_state.target
-        && !asteroids.contains(entity) {
-            drag_state.dragging = false;
-            drag_state.target = None;
-            drag_state.auto_paused = false;
-        }
+        && !asteroids.contains(entity)
+    {
+        drag_state.dragging = false;
+        drag_state.target = None;
+        drag_state.auto_paused = false;
+    }
 
     // IMPORTANT: Only check egui wants pointer when NOT already dragging.
     // If we're dragging and mouse passes over an egui window, we still need
     // to process drag updates and mouse release.
     if !drag_state.dragging
         && let Some(ctx) = contexts.try_ctx_mut()
-            && ctx.wants_pointer_input() {
-                return;
-            }
+        && ctx.wants_pointer_input()
+    {
+        return;
+    }
 
     let Ok(window) = window_query.get_single() else {
         return;
@@ -219,33 +221,35 @@ fn handle_velocity_drag(
     }
 
     // Continue drag
-    if drag_state.dragging && mouse.pressed(MouseButton::Left)
+    if drag_state.dragging
+        && mouse.pressed(MouseButton::Left)
         && let Some(target_entity) = drag_state.target
-            && let Ok((_, transform, mut body_state)) = asteroids.get_mut(target_entity) {
-                let asteroid_render_pos = transform.translation.truncate();
+        && let Ok((_, transform, mut body_state)) = asteroids.get_mut(target_entity)
+    {
+        let asteroid_render_pos = transform.translation.truncate();
 
-                // Vector from asteroid to cursor
-                let delta = world_pos - asteroid_render_pos;
-                let length = delta.length();
+        // Vector from asteroid to cursor
+        let delta = world_pos - asteroid_render_pos;
+        let length = delta.length();
 
-                let old_vel = body_state.vel;
-                if length > 0.5 {
-                    let direction = delta.normalize();
-                    let new_vel_magnitude = arrow_length_to_velocity(length);
+        let old_vel = body_state.vel;
+        if length > 0.5 {
+            let direction = delta.normalize();
+            let new_vel_magnitude = arrow_length_to_velocity(length);
 
-                    body_state.vel = DVec2::new(
-                        direction.x as f64 * new_vel_magnitude,
-                        direction.y as f64 * new_vel_magnitude,
-                    );
-                } else {
-                    body_state.vel = DVec2::ZERO;
-                }
+            body_state.vel = DVec2::new(
+                direction.x as f64 * new_vel_magnitude,
+                direction.y as f64 * new_vel_magnitude,
+            );
+        } else {
+            body_state.vel = DVec2::ZERO;
+        }
 
-                // Real-time preview
-                if (body_state.vel - old_vel).length() > 10.0 {
-                    crate::prediction::mark_prediction_dirty(&mut prediction_state);
-                }
-            }
+        // Real-time preview
+        if (body_state.vel - old_vel).length() > 10.0 {
+            crate::prediction::mark_prediction_dirty(&mut prediction_state);
+        }
+    }
 
     // End drag on mouse release
     if mouse.just_released(MouseButton::Left) && drag_state.dragging {
@@ -328,12 +332,26 @@ fn draw_velocity_handles(
             Color::srgba(0.4, 0.4, 0.4, 0.4)
         };
 
-        draw_arrow(&mut gizmos, base, direction, arrow_length, color, is_selected || is_dragging);
+        draw_arrow(
+            &mut gizmos,
+            base,
+            direction,
+            arrow_length,
+            color,
+            is_selected || is_dragging,
+        );
     }
 }
 
 /// Draw an arrow with arrowhead.
-fn draw_arrow(gizmos: &mut Gizmos, base: Vec3, direction: Vec2, length: f32, color: Color, show_grip: bool) {
+fn draw_arrow(
+    gizmos: &mut Gizmos,
+    base: Vec3,
+    direction: Vec2,
+    length: f32,
+    color: Color,
+    show_grip: bool,
+) {
     let tip = base + Vec3::new(direction.x * length, direction.y * length, 0.0);
 
     // Main arrow line
@@ -345,11 +363,12 @@ fn draw_arrow(gizmos: &mut Gizmos, base: Vec3, direction: Vec2, length: f32, col
 
     for offset in [-0.5_f32, 0.5_f32] {
         let head_angle = angle + std::f32::consts::PI + offset;
-        let head_end = tip + Vec3::new(
-            head_angle.cos() * head_size,
-            head_angle.sin() * head_size,
-            0.0,
-        );
+        let head_end = tip
+            + Vec3::new(
+                head_angle.cos() * head_size,
+                head_angle.sin() * head_size,
+                0.0,
+            );
         gizmos.line(tip, head_end, color);
     }
 
@@ -386,7 +405,10 @@ mod tests {
         let len_30kms = velocity_to_arrow_length(30_000.0);
 
         assert!(len_10kms > len_1kms, "10 km/s should be longer than 1 km/s");
-        assert!(len_30kms > len_10kms, "30 km/s should be longer than 10 km/s");
+        assert!(
+            len_30kms > len_10kms,
+            "30 km/s should be longer than 10 km/s"
+        );
     }
 
     #[test]
@@ -402,6 +424,10 @@ mod tests {
         let recovered_vel = arrow_length_to_velocity(length);
 
         let error = (recovered_vel - original_vel).abs() / original_vel;
-        assert!(error < 0.01, "Roundtrip error should be < 1%, got {}%", error * 100.0);
+        assert!(
+            error < 0.01,
+            "Roundtrip error should be < 1%, got {}%",
+            error * 100.0
+        );
     }
 }

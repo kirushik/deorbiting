@@ -4,7 +4,7 @@
 
 use bevy::prelude::*;
 use deorbiting::ephemeris::Ephemeris;
-use deorbiting::types::{SimulationTime, SECONDS_PER_DAY};
+use deorbiting::types::{SECONDS_PER_DAY, SimulationTime};
 
 fn create_minimal_app() -> App {
     let mut app = App::new();

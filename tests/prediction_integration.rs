@@ -2,8 +2,8 @@
 
 mod common;
 
-use deorbiting::types::{AU_TO_METERS, ESCAPE_DISTANCE, CRASH_DISTANCE, GM_SUN, SECONDS_PER_DAY};
 use bevy::math::DVec2;
+use deorbiting::types::{AU_TO_METERS, CRASH_DISTANCE, ESCAPE_DISTANCE, GM_SUN, SECONDS_PER_DAY};
 
 #[test]
 fn test_prediction_detects_escape() {

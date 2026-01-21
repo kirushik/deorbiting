@@ -12,16 +12,14 @@ pub mod presets;
 use bevy::math::DVec2;
 use bevy::prelude::*;
 
-use crate::asteroid::{
-    spawn_asteroid_at_position, Asteroid, AsteroidCounter,
-};
+use crate::asteroid::{Asteroid, AsteroidCounter, spawn_asteroid_at_position};
 use crate::camera::{MainCamera, RENDER_SCALE};
 use crate::collision::CollisionState;
 use crate::ephemeris::{CelestialBodyId, Ephemeris};
 use crate::physics::IntegratorStates;
-use crate::prediction::{mark_prediction_dirty, PredictionState, TrajectoryPath};
+use crate::prediction::{PredictionState, TrajectoryPath, mark_prediction_dirty};
 use crate::render::SelectedBody;
-use crate::types::{SelectableBody, SimulationTime, AU_TO_METERS};
+use crate::types::{AU_TO_METERS, SelectableBody, SimulationTime};
 use crate::ui::ActiveNotification;
 
 pub use presets::SCENARIOS;
@@ -211,7 +209,9 @@ fn handle_load_scenario_event(
         if let Ok((mut transform, mut projection)) = camera_query.get_single_mut() {
             let target_pos = match &scenario.camera_target {
                 CameraTarget::Sun => DVec2::ZERO,
-                CameraTarget::Body(id) => ephemeris.get_position_by_id(*id, sim_time.current).unwrap_or(DVec2::ZERO),
+                CameraTarget::Body(id) => ephemeris
+                    .get_position_by_id(*id, sim_time.current)
+                    .unwrap_or(DVec2::ZERO),
                 CameraTarget::Asteroid => pos,
                 CameraTarget::Position(p) => *p,
             };
@@ -260,7 +260,8 @@ pub fn compute_scenario_asteroid_state(
         "apophis_flyby" => {
             // Dynamic: Close Earth flyby trajectory
             // Position slightly ahead and outside Earth's orbit
-            let earth_pos = ephemeris.get_position_by_id(CelestialBodyId::Earth, time)
+            let earth_pos = ephemeris
+                .get_position_by_id(CelestialBodyId::Earth, time)
                 .unwrap_or(DVec2::new(AU_TO_METERS, 0.0));
             let earth_r = earth_pos.length();
             let earth_angle = earth_pos.y.atan2(earth_pos.x);
@@ -287,7 +288,8 @@ pub fn compute_scenario_asteroid_state(
             // Jupiter catches up and pulls the asteroid forward, adding energy.
             // This is similar to how Voyager gained speed - passing behind Jupiter
             // in Jupiter's reference frame.
-            let jupiter_pos = ephemeris.get_position_by_id(CelestialBodyId::Jupiter, time)
+            let jupiter_pos = ephemeris
+                .get_position_by_id(CelestialBodyId::Jupiter, time)
                 .unwrap_or(DVec2::new(5.2 * AU_TO_METERS, 0.0));
             let jupiter_r = jupiter_pos.length();
             let jupiter_angle = jupiter_pos.y.atan2(jupiter_pos.x);
@@ -327,14 +329,17 @@ pub fn compute_scenario_asteroid_state(
             let future_time = time + time_offset;
 
             // Get Earth's position 91° ahead
-            let pos = ephemeris.get_position_by_id(CelestialBodyId::Earth, future_time)
+            let pos = ephemeris
+                .get_position_by_id(CelestialBodyId::Earth, future_time)
                 .unwrap_or(DVec2::new(AU_TO_METERS, 0.0));
 
             // Compute Earth's actual velocity via numerical differentiation
             let dt = 60.0;
-            let pos_before = ephemeris.get_position_by_id(CelestialBodyId::Earth, future_time - dt)
+            let pos_before = ephemeris
+                .get_position_by_id(CelestialBodyId::Earth, future_time - dt)
                 .unwrap_or(pos);
-            let pos_after = ephemeris.get_position_by_id(CelestialBodyId::Earth, future_time + dt)
+            let pos_after = ephemeris
+                .get_position_by_id(CelestialBodyId::Earth, future_time + dt)
                 .unwrap_or(pos);
             let earth_velocity = (pos_after - pos_before) / (2.0 * dt);
 
@@ -346,7 +351,8 @@ pub fn compute_scenario_asteroid_state(
 
         "sandbox" => {
             // Near Earth, zero velocity - user sets orbit
-            let earth_pos = ephemeris.get_position_by_id(CelestialBodyId::Earth, time)
+            let earth_pos = ephemeris
+                .get_position_by_id(CelestialBodyId::Earth, time)
                 .unwrap_or(DVec2::new(AU_TO_METERS, 0.0));
             let earth_angle = earth_pos.y.atan2(earth_pos.x);
 
@@ -368,14 +374,13 @@ pub fn compute_scenario_asteroid_state(
                 (pos, tangent * v_circular)
             }
             (None, Some(vel)) => {
-                let earth_pos = ephemeris.get_position_by_id(CelestialBodyId::Earth, time)
+                let earth_pos = ephemeris
+                    .get_position_by_id(CelestialBodyId::Earth, time)
                     .unwrap_or(DVec2::new(AU_TO_METERS, 0.0));
                 (earth_pos, vel)
             }
-            (None, None) => {
-                crate::asteroid::calculate_earth_intercept(ephemeris, time)
-            }
-        }
+            (None, None) => crate::asteroid::calculate_earth_intercept(ephemeris, time),
+        },
     }
 }
 

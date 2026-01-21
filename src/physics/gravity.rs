@@ -170,7 +170,7 @@ pub struct ClosestBodyInfo {
 /// Returns information about the closest body, which is used for
 /// timestep adaptation to ensure we don't "skip over" bodies.
 pub fn find_closest_body(pos: DVec2, time: f64, ephemeris: &Ephemeris) -> Option<ClosestBodyInfo> {
-    use crate::ephemeris::{CelestialBodyId, COLLISION_MULTIPLIER};
+    use crate::ephemeris::{COLLISION_MULTIPLIER, CelestialBodyId};
 
     let mut closest: Option<ClosestBodyInfo> = None;
     let mut min_distance = f64::MAX;
@@ -206,7 +206,7 @@ pub fn find_closest_body(pos: DVec2, time: f64, ephemeris: &Ephemeris) -> Option
         if distance < min_distance {
             closest = Some(ClosestBodyInfo {
                 distance,
-                body_velocity: DVec2::ZERO, // Sun doesn't move
+                body_velocity: DVec2::ZERO,          // Sun doesn't move
                 collision_radius: data.radius * 2.0, // Sun uses smaller multiplier
             });
         }
@@ -304,8 +304,16 @@ mod tests {
         );
 
         // Print for debugging
-        println!("Jupiter distance: {:.4e} m ({:.4} AU)", jupiter_dist, jupiter_dist / AU_TO_METERS);
-        println!("Sun distance: {:.4e} m ({:.4} AU)", sun_dist, sun_dist / AU_TO_METERS);
+        println!(
+            "Jupiter distance: {:.4e} m ({:.4} AU)",
+            jupiter_dist,
+            jupiter_dist / AU_TO_METERS
+        );
+        println!(
+            "Sun distance: {:.4e} m ({:.4} AU)",
+            sun_dist,
+            sun_dist / AU_TO_METERS
+        );
         println!("Jupiter acc magnitude: {:.4e} m/s²", jupiter_acc_mag);
         println!("Sun acc magnitude: {:.4e} m/s²", sun_acc_mag);
         println!("Jupiter/Sun ratio: {:.2}", ratio);
@@ -336,10 +344,7 @@ mod tests {
         // Print all sources for debugging
         println!("Gravity sources ({} total):", sources.len());
         for (i, (pos, gm)) in sources.iter().enumerate() {
-            println!(
-                "  {}: pos=({:.3e}, {:.3e}), GM={:.4e}",
-                i, pos.x, pos.y, gm
-            );
+            println!("  {}: pos=({:.3e}, {:.3e}), GM={:.4e}", i, pos.x, pos.y, gm);
         }
     }
 }

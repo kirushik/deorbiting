@@ -28,11 +28,7 @@ fn test_scenario_unique_ids() {
     ids.sort();
 
     for i in 1..ids.len() {
-        assert_ne!(
-            ids[i - 1], ids[i],
-            "Duplicate scenario ID: {}",
-            ids[i]
-        );
+        assert_ne!(ids[i - 1], ids[i], "Duplicate scenario ID: {}", ids[i]);
     }
 }
 
@@ -43,7 +39,8 @@ fn test_scenario_unique_names() {
 
     for i in 1..names.len() {
         assert_ne!(
-            names[i - 1], names[i],
+            names[i - 1],
+            names[i],
             "Duplicate scenario name: {}",
             names[i]
         );
@@ -87,8 +84,7 @@ fn test_scenario_asteroid_mass_positive() {
 fn test_earth_collision_is_first() {
     // Earth collision should be the default/first scenario
     assert_eq!(
-        SCENARIOS[0].id,
-        "earth_collision",
+        SCENARIOS[0].id, "earth_collision",
         "Earth collision should be the first scenario"
     );
 }

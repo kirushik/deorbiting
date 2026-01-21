@@ -152,11 +152,11 @@ impl DeflectionPayload {
         // Energy of nuclear explosion in Joules
         // 1 kt TNT = 4.184 × 10^12 J
         let energy_j = yield_kt * 4.184e12;
-        
+
         // Assume 1% of energy goes into kinetic energy of fragments
         // (rest goes to heat, radiation, debris, etc.)
         let kinetic_energy = energy_j * 0.01;
-        
+
         // KE = 0.5 * m * v^2  →  v = sqrt(2 * KE / m)
         // Using reduced mass for two-body separation
         (2.0 * kinetic_energy / total_mass).sqrt()
@@ -175,12 +175,25 @@ impl DeflectionPayload {
                     format!("Nuclear Standoff ({:.0} kt)", yield_kt)
                 }
             }
-            DeflectionPayload::NuclearSplit { yield_kt, split_ratio } => {
+            DeflectionPayload::NuclearSplit {
+                yield_kt,
+                split_ratio,
+            } => {
                 let ratio_percent = (split_ratio * 100.0) as i32;
                 if *yield_kt >= 1000.0 {
-                    format!("Nuclear Split ({:.1} Mt, {}/{})", yield_kt / 1000.0, ratio_percent, 100 - ratio_percent)
+                    format!(
+                        "Nuclear Split ({:.1} Mt, {}/{})",
+                        yield_kt / 1000.0,
+                        ratio_percent,
+                        100 - ratio_percent
+                    )
                 } else {
-                    format!("Nuclear Split ({:.0} kt, {}/{})", yield_kt, ratio_percent, 100 - ratio_percent)
+                    format!(
+                        "Nuclear Split ({:.0} kt, {}/{})",
+                        yield_kt,
+                        ratio_percent,
+                        100 - ratio_percent
+                    )
                 }
             }
         }

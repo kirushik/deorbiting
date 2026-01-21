@@ -5,7 +5,7 @@
 
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
-use bevy_egui::{egui, EguiContexts};
+use bevy_egui::{EguiContexts, egui};
 
 use crate::asteroid::{Asteroid, AsteroidVisual};
 use crate::camera::MainCamera;
@@ -100,9 +100,10 @@ pub fn box_selection_input(
     if mouse.just_pressed(MouseButton::Left) && !box_state.active {
         // Don't start if egui wants the pointer
         if let Some(ctx) = contexts.try_ctx_mut()
-            && ctx.wants_pointer_input() {
-                return;
-            }
+            && ctx.wants_pointer_input()
+        {
+            return;
+        }
 
         // Check if clicking on empty space (not on an asteroid)
         let click_on_asteroid = asteroids.iter().any(|(_, transform, visual)| {
@@ -165,9 +166,8 @@ pub fn box_selection_input(
             // Select the asteroid closest to the center of the box
             if !asteroids_in_box.is_empty() {
                 // Sort with NaN-safe comparison
-                asteroids_in_box.sort_by(|a, b| {
-                    a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
-                });
+                asteroids_in_box
+                    .sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
                 selected.body = Some(SelectableBody::Asteroid(asteroids_in_box[0].0));
             }
         }
@@ -186,10 +186,7 @@ pub fn box_selection_input(
 }
 
 /// System to render the selection box.
-pub fn render_box_selection(
-    mut gizmos: Gizmos,
-    box_state: Res<BoxSelectionState>,
-) {
+pub fn render_box_selection(mut gizmos: Gizmos, box_state: Res<BoxSelectionState>) {
     if !box_state.active {
         return;
     }
@@ -200,11 +197,7 @@ pub fn render_box_selection(
 
     // Draw selection box outline
     let color = Color::srgba(0.4, 0.7, 1.0, 0.8);
-    gizmos.rect_2d(
-        Isometry2d::from_translation(center),
-        size,
-        color,
-    );
+    gizmos.rect_2d(Isometry2d::from_translation(center), size, color);
 
     // Draw semi-transparent fill
     let fill_color = Color::srgba(0.4, 0.7, 1.0, 0.15);

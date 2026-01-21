@@ -5,7 +5,7 @@
 //! interaction - it's just an overlay.
 
 use bevy::prelude::*;
-use bevy_egui::{egui, EguiContexts};
+use bevy_egui::{EguiContexts, egui};
 
 use crate::scenarios::{CurrentScenario, LoadScenarioEvent, SCENARIOS};
 
@@ -57,7 +57,10 @@ pub fn scenario_drawer_system(
     let dock_height = 56.0;
 
     egui::Area::new(egui::Id::new("scenario_drawer"))
-        .fixed_pos(egui::pos2(0.0, ctx.screen_rect().height() - dock_height - visible_height))
+        .fixed_pos(egui::pos2(
+            0.0,
+            ctx.screen_rect().height() - dock_height - visible_height,
+        ))
         .show(ctx, |ui| {
             let frame = egui::Frame::none()
                 .fill(colors::DRAWER_BG)
@@ -73,9 +76,14 @@ pub fn scenario_drawer_system(
                     ui.label(egui::RichText::new("Select Scenario").size(18.0).strong());
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         use crate::ui::icons;
-                        if ui.add(egui::Button::new(egui::RichText::new(icons::CLOSE).size(16.0))
-                            .min_size(egui::vec2(28.0, 28.0)))
-                            .on_hover_text("Close (Esc)").clicked() {
+                        if ui
+                            .add(
+                                egui::Button::new(egui::RichText::new(icons::CLOSE).size(16.0))
+                                    .min_size(egui::vec2(28.0, 28.0)),
+                            )
+                            .on_hover_text("Close (Esc)")
+                            .clicked()
+                        {
                             drawer_state.open = false;
                         }
                     });
@@ -93,7 +101,13 @@ pub fn scenario_drawer_system(
                             for scenario in SCENARIOS.iter() {
                                 let is_current = scenario.id == current_scenario.id;
 
-                                if render_scenario_card(ui, scenario.id, scenario.name, scenario.description, is_current) {
+                                if render_scenario_card(
+                                    ui,
+                                    scenario.id,
+                                    scenario.name,
+                                    scenario.description,
+                                    is_current,
+                                ) {
                                     load_events.send(LoadScenarioEvent {
                                         scenario_id: scenario.id,
                                     });
@@ -106,13 +120,15 @@ pub fn scenario_drawer_system(
         });
 
     // Close on click outside
-    if drawer_state.open && ctx.input(|i| i.pointer.any_pressed())
-        && let Some(pos) = ctx.input(|i| i.pointer.hover_pos()) {
-            let drawer_top = ctx.screen_rect().height() - dock_height - visible_height;
-            if pos.y < drawer_top {
-                drawer_state.open = false;
-            }
+    if drawer_state.open
+        && ctx.input(|i| i.pointer.any_pressed())
+        && let Some(pos) = ctx.input(|i| i.pointer.hover_pos())
+    {
+        let drawer_top = ctx.screen_rect().height() - dock_height - visible_height;
+        if pos.y < drawer_top {
+            drawer_state.open = false;
         }
+    }
 }
 
 /// System to handle keyboard shortcuts for the drawer.
@@ -138,10 +154,8 @@ fn render_scenario_card(
 
     let (icon, icon_color) = scenario_icon(id);
 
-    let (rect, response) = ui.allocate_exact_size(
-        egui::vec2(card_width, card_height),
-        egui::Sense::click(),
-    );
+    let (rect, response) =
+        ui.allocate_exact_size(egui::vec2(card_width, card_height), egui::Sense::click());
 
     let bg_color = if is_current {
         colors::CARD_SELECTED
@@ -158,7 +172,11 @@ fn render_scenario_card(
         bg_color,
         egui::Stroke::new(
             if is_current { 2.0 } else { 1.0 },
-            if is_current { egui::Color32::from_rgb(85, 153, 221) } else { colors::CARD_BORDER },
+            if is_current {
+                egui::Color32::from_rgb(85, 153, 221)
+            } else {
+                colors::CARD_BORDER
+            },
         ),
     );
 

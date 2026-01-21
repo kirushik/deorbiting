@@ -88,10 +88,10 @@ impl ContinuousPayload {
     /// Based on typical mission parameters for ~300m asteroid deflection.
     pub fn ion_beam_default() -> Self {
         ContinuousPayload::IonBeam {
-            thrust_n: 0.1,                // 100 mN
-            fuel_mass_kg: 500.0,          // 500 kg propellant
-            specific_impulse: 3500.0,     // Typical xenon ion engine
-            hover_distance_m: 200.0,      // 200 m from surface
+            thrust_n: 0.1,            // 100 mN
+            fuel_mass_kg: 500.0,      // 500 kg propellant
+            specific_impulse: 3500.0, // Typical xenon ion engine
+            hover_distance_m: 200.0,  // 200 m from surface
             direction: ThrustDirection::Retrograde,
         }
     }
@@ -101,8 +101,8 @@ impl ContinuousPayload {
     /// Based on Lu & Love (2005) reference mission.
     pub fn gravity_tractor_default() -> Self {
         ContinuousPayload::GravityTractor {
-            spacecraft_mass_kg: 20_000.0, // 20 tons
-            hover_distance_m: 200.0,      // 200 m from center
+            spacecraft_mass_kg: 20_000.0,              // 20 tons
+            hover_distance_m: 200.0,                   // 200 m from center
             mission_duration: 10.0 * 365.25 * 86400.0, // 10 years
             direction: ThrustDirection::Retrograde,
         }
@@ -113,9 +113,9 @@ impl ContinuousPayload {
     /// Based on DE-STARLITE concept for Apophis-class asteroid.
     pub fn laser_ablation_default() -> Self {
         ContinuousPayload::LaserAblation {
-            power_kw: 100.0,              // 100 kW laser
+            power_kw: 100.0,                          // 100 kW laser
             mission_duration: 1.0 * 365.25 * 86400.0, // 1 year
-            efficiency: 0.8,              // 80% efficiency
+            efficiency: 0.8,                          // 80% efficiency
             direction: ThrustDirection::Retrograde,
         }
     }
@@ -125,10 +125,10 @@ impl ContinuousPayload {
     /// Based on NASA Solar Cruiser concept scaled up for asteroid deflection.
     pub fn solar_sail_default() -> Self {
         ContinuousPayload::SolarSail {
-            sail_area_m2: 10_000.0,       // 10,000 m² (100m × 100m sail)
+            sail_area_m2: 10_000.0,                   // 10,000 m² (100m × 100m sail)
             mission_duration: 2.0 * 365.25 * 86400.0, // 2 years
-            reflectivity: 0.9,            // 90% reflective
-            direction: ThrustDirection::SunPointing, // Solar sails push away from Sun
+            reflectivity: 0.9,                        // 90% reflective
+            direction: ThrustDirection::SunPointing,  // Solar sails push away from Sun
         }
     }
 
@@ -187,9 +187,15 @@ impl ContinuousPayload {
     pub fn mission_duration(&self) -> Option<f64> {
         match self {
             ContinuousPayload::IonBeam { .. } => None, // Limited by fuel, not time
-            ContinuousPayload::GravityTractor { mission_duration, .. } => Some(*mission_duration),
-            ContinuousPayload::LaserAblation { mission_duration, .. } => Some(*mission_duration),
-            ContinuousPayload::SolarSail { mission_duration, .. } => Some(*mission_duration),
+            ContinuousPayload::GravityTractor {
+                mission_duration, ..
+            } => Some(*mission_duration),
+            ContinuousPayload::LaserAblation {
+                mission_duration, ..
+            } => Some(*mission_duration),
+            ContinuousPayload::SolarSail {
+                mission_duration, ..
+            } => Some(*mission_duration),
         }
     }
 

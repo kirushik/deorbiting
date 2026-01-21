@@ -125,25 +125,23 @@ fn test_circular_orbit_prediction() {
     let dt = 3600.0; // 1 hour
     let point_interval = 24; // Store every 24 hours
 
-    let trajectory = predict_trajectory(
-        initial_pos,
-        initial_vel,
-        one_year,
-        dt,
-        point_interval,
-    );
+    let trajectory = predict_trajectory(initial_pos, initial_vel, one_year, dt, point_interval);
 
     // Check final position is close to initial
     let (final_pos, final_time) = trajectory.points.last().unwrap();
     let closure_error = (*final_pos - initial_pos).length() / distance;
 
-    println!("  Initial position: ({:.4}, {:.4}) AU",
+    println!(
+        "  Initial position: ({:.4}, {:.4}) AU",
         initial_pos.x / AU_TO_METERS,
-        initial_pos.y / AU_TO_METERS);
-    println!("  Final position: ({:.4}, {:.4}) AU after {:.1} days",
+        initial_pos.y / AU_TO_METERS
+    );
+    println!(
+        "  Final position: ({:.4}, {:.4}) AU after {:.1} days",
         final_pos.x / AU_TO_METERS,
         final_pos.y / AU_TO_METERS,
-        final_time / SECONDS_PER_DAY);
+        final_time / SECONDS_PER_DAY
+    );
     println!("  Closure error: {:.4}%", closure_error * 100.0);
     println!("  Points in trajectory: {}", trajectory.points.len());
 
@@ -180,11 +178,16 @@ fn test_prediction_point_count() {
     let expected_dense = (one_year / dt) as usize + 1;
     let expected_sparse = expected_dense / 24 + 1;
 
-    assert!(dense.points.len() > sparse.points.len() * 10,
-        "Dense should have ~24x more points than sparse");
-    let relative_error = (sparse.points.len() as f64 - expected_sparse as f64).abs() / expected_sparse as f64;
-    assert!(relative_error < 0.1,
-        "Sparse should have approximately expected points");
+    assert!(
+        dense.points.len() > sparse.points.len() * 10,
+        "Dense should have ~24x more points than sparse"
+    );
+    let relative_error =
+        (sparse.points.len() as f64 - expected_sparse as f64).abs() / expected_sparse as f64;
+    assert!(
+        relative_error < 0.1,
+        "Sparse should have approximately expected points"
+    );
 
     println!("  PASSED\n");
 }
@@ -213,13 +216,7 @@ fn test_eccentric_orbit_prediction() {
     let dt = 600.0; // 10 minutes for better accuracy
     let point_interval = 6; // Every hour
 
-    let trajectory = predict_trajectory(
-        initial_pos,
-        initial_vel,
-        period * 1.5,
-        dt,
-        point_interval,
-    );
+    let trajectory = predict_trajectory(initial_pos, initial_vel, period * 1.5, dt, point_interval);
 
     // Find min and max distances
     let mut min_r: f64 = f64::MAX;
@@ -233,10 +230,16 @@ fn test_eccentric_orbit_prediction() {
     let perihelion_error = (min_r - perihelion).abs() / perihelion;
     let aphelion_error = (max_r - aphelion).abs() / aphelion;
 
-    println!("  Measured perihelion: {:.4} AU (error: {:.3}%)",
-        min_r / AU_TO_METERS, perihelion_error * 100.0);
-    println!("  Measured aphelion: {:.4} AU (error: {:.3}%)",
-        max_r / AU_TO_METERS, aphelion_error * 100.0);
+    println!(
+        "  Measured perihelion: {:.4} AU (error: {:.3}%)",
+        min_r / AU_TO_METERS,
+        perihelion_error * 100.0
+    );
+    println!(
+        "  Measured aphelion: {:.4} AU (error: {:.3}%)",
+        max_r / AU_TO_METERS,
+        aphelion_error * 100.0
+    );
     println!("  Points in trajectory: {}", trajectory.points.len());
 
     assert!(perihelion_error < 0.02, "Perihelion should be within 2%");

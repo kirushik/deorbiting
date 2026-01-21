@@ -10,11 +10,13 @@
 //! - Help button with shortcuts tooltip
 
 use bevy::prelude::*;
-use bevy_egui::{egui, EguiContexts};
+use bevy_egui::{EguiContexts, egui};
 
-use crate::asteroid::{indicator_color_from_material, Asteroid, AsteroidName, AsteroidVisual, ResetEvent};
+use crate::asteroid::{
+    Asteroid, AsteroidName, AsteroidVisual, ResetEvent, indicator_color_from_material,
+};
 use crate::render::SelectedBody;
-use crate::scenarios::{get_scenario, CurrentScenario};
+use crate::scenarios::{CurrentScenario, get_scenario};
 use crate::types::{SelectableBody, SimulationTime};
 
 use super::ScenarioDrawerState;
@@ -75,10 +77,16 @@ pub fn dock_system(
                 } else {
                     (icons::PAUSE, colors::PAUSE_ICON, "Pause (Space)")
                 };
-                if ui.add_sized(
-                    [DOCK_BUTTON_SIZE, DOCK_BUTTON_SIZE],
-                    egui::Button::new(egui::RichText::new(play_icon).size(18.0).color(play_color))
-                ).on_hover_text(play_tooltip).clicked() {
+                if ui
+                    .add_sized(
+                        [DOCK_BUTTON_SIZE, DOCK_BUTTON_SIZE],
+                        egui::Button::new(
+                            egui::RichText::new(play_icon).size(18.0).color(play_color),
+                        ),
+                    )
+                    .on_hover_text(play_tooltip)
+                    .clicked()
+                {
                     sim_time.paused = !sim_time.paused;
                 }
 
@@ -90,7 +98,12 @@ pub fn dock_system(
                 let date_str = format_date_human(sim_time.current);
                 ui.add_sized(
                     [DATE_WIDTH, DOCK_BUTTON_SIZE],
-                    egui::Label::new(egui::RichText::new(date_str).monospace().size(14.0).color(colors::TEXT))
+                    egui::Label::new(
+                        egui::RichText::new(date_str)
+                            .monospace()
+                            .size(14.0)
+                            .color(colors::TEXT),
+                    ),
                 );
 
                 ui.add_space(12.0);
@@ -100,17 +113,27 @@ pub fn dock_system(
                 // ===== Speed Buttons (inline, no nested horizontal) =====
                 let speeds = [1.0, 10.0, 100.0, 1000.0];
                 let labels = ["1x", "10x", "100x", "1000x"];
-                let current_speed_index = speeds.iter().position(|&s| (sim_time.scale - s).abs() < 0.01);
+                let current_speed_index = speeds
+                    .iter()
+                    .position(|&s| (sim_time.scale - s).abs() < 0.01);
 
                 for (i, (&speed, label)) in speeds.iter().zip(labels.iter()).enumerate() {
                     let is_active = current_speed_index == Some(i);
-                    let color = if is_active { colors::SPEED_ACTIVE } else { colors::SPEED_INACTIVE };
+                    let color = if is_active {
+                        colors::SPEED_ACTIVE
+                    } else {
+                        colors::SPEED_INACTIVE
+                    };
                     let text = egui::RichText::new(*label).size(14.0).color(color).strong();
 
-                    if ui.add_sized(
-                        [SPEED_BUTTON_WIDTH, DOCK_BUTTON_SIZE],
-                        egui::Button::new(text).frame(false)
-                    ).on_hover_text(format!("{}x speed (press {})", speed as i32, i + 1)).clicked() {
+                    if ui
+                        .add_sized(
+                            [SPEED_BUTTON_WIDTH, DOCK_BUTTON_SIZE],
+                            egui::Button::new(text).frame(false),
+                        )
+                        .on_hover_text(format!("{}x speed (press {})", speed as i32, i + 1))
+                        .clicked()
+                    {
                         sim_time.scale = speed;
                     }
                 }
@@ -123,10 +146,19 @@ pub fn dock_system(
                 let scenario_name = get_scenario(current_scenario.id)
                     .map(|s| s.name)
                     .unwrap_or("Unknown Scenario");
-                if ui.add_sized(
-                    [SCENARIO_NAME_WIDTH, DOCK_BUTTON_SIZE],
-                    egui::Button::new(egui::RichText::new(scenario_name).size(14.0).color(colors::TEXT)).frame(false)
-                ).on_hover_text("Click to change scenario").clicked() {
+                if ui
+                    .add_sized(
+                        [SCENARIO_NAME_WIDTH, DOCK_BUTTON_SIZE],
+                        egui::Button::new(
+                            egui::RichText::new(scenario_name)
+                                .size(14.0)
+                                .color(colors::TEXT),
+                        )
+                        .frame(false),
+                    )
+                    .on_hover_text("Click to change scenario")
+                    .clicked()
+                {
                     drawer_state.open = !drawer_state.open;
                 }
 
@@ -144,7 +176,11 @@ pub fn dock_system(
                 if asteroid_list.is_empty() {
                     ui.add_sized(
                         [80.0, DOCK_BUTTON_SIZE],
-                        egui::Label::new(egui::RichText::new("No asteroids").size(13.0).color(colors::SPEED_INACTIVE))
+                        egui::Label::new(
+                            egui::RichText::new("No asteroids")
+                                .size(13.0)
+                                .color(colors::SPEED_INACTIVE),
+                        ),
                     );
                 } else {
                     for (entity, name, visual) in asteroid_list.iter() {
@@ -170,33 +206,50 @@ pub fn dock_system(
                             )
                         };
 
-                        let response = ui.add_sized(
-                            [DOCK_BUTTON_SIZE, DOCK_BUTTON_SIZE],
-                            egui::Button::new(egui::RichText::new(icons::ASTEROID).size(14.0).color(dot_color))
-                                .frame(is_selected)
-                        ).on_hover_text(&name.0);
+                        let response = ui
+                            .add_sized(
+                                [DOCK_BUTTON_SIZE, DOCK_BUTTON_SIZE],
+                                egui::Button::new(
+                                    egui::RichText::new(icons::ASTEROID)
+                                        .size(14.0)
+                                        .color(dot_color),
+                                )
+                                .frame(is_selected),
+                            )
+                            .on_hover_text(&name.0);
 
                         if response.clicked() {
                             selected.body = Some(SelectableBody::Asteroid(*entity));
                         }
                         if response.double_clicked() {
                             // Double-click centers camera on asteroid
-                            camera_focus_events.send(crate::camera::FocusOnEntityEvent { entity: *entity });
+                            camera_focus_events
+                                .send(crate::camera::FocusOnEntityEvent { entity: *entity });
                         }
                     }
                 }
 
                 // Add asteroid button
-                let add_color = if placement_mode.active { colors::SPEED_ACTIVE } else { colors::SPEED_INACTIVE };
+                let add_color = if placement_mode.active {
+                    colors::SPEED_ACTIVE
+                } else {
+                    colors::SPEED_INACTIVE
+                };
                 let add_tooltip = if placement_mode.active {
                     "Click on viewport to place (Right-click to cancel)"
                 } else {
                     "Add asteroid"
                 };
-                if ui.add_sized(
-                    [DOCK_BUTTON_SIZE, DOCK_BUTTON_SIZE],
-                    egui::Button::new(egui::RichText::new(icons::ADD).size(14.0).color(add_color))
-                ).on_hover_text(add_tooltip).clicked() {
+                if ui
+                    .add_sized(
+                        [DOCK_BUTTON_SIZE, DOCK_BUTTON_SIZE],
+                        egui::Button::new(
+                            egui::RichText::new(icons::ADD).size(14.0).color(add_color),
+                        ),
+                    )
+                    .on_hover_text(add_tooltip)
+                    .clicked()
+                {
                     placement_mode.active = !placement_mode.active;
                 }
 
@@ -205,7 +258,7 @@ pub fn dock_system(
                     // Help button
                     let help_response = ui.add_sized(
                         [DOCK_BUTTON_SIZE, DOCK_BUTTON_SIZE],
-                        egui::Button::new(egui::RichText::new(icons::HELP).size(18.0))
+                        egui::Button::new(egui::RichText::new(icons::HELP).size(18.0)),
                     );
                     if help_response.hovered() || help_state.visible {
                         help_state.visible = help_response.hovered();
@@ -215,19 +268,31 @@ pub fn dock_system(
                     }
 
                     // Scenarios button
-                    let scenarios_icon = if drawer_state.open { icons::COLLAPSE } else { icons::MENU };
-                    if ui.add_sized(
-                        [DOCK_BUTTON_SIZE, DOCK_BUTTON_SIZE],
-                        egui::Button::new(egui::RichText::new(scenarios_icon).size(18.0))
-                    ).on_hover_text("Scenarios (Esc)").clicked() {
+                    let scenarios_icon = if drawer_state.open {
+                        icons::COLLAPSE
+                    } else {
+                        icons::MENU
+                    };
+                    if ui
+                        .add_sized(
+                            [DOCK_BUTTON_SIZE, DOCK_BUTTON_SIZE],
+                            egui::Button::new(egui::RichText::new(scenarios_icon).size(18.0)),
+                        )
+                        .on_hover_text("Scenarios (Esc)")
+                        .clicked()
+                    {
                         drawer_state.open = !drawer_state.open;
                     }
 
                     // Reset button
-                    if ui.add_sized(
-                        [DOCK_BUTTON_SIZE, DOCK_BUTTON_SIZE],
-                        egui::Button::new(egui::RichText::new(icons::RESET).size(18.0))
-                    ).on_hover_text("Reset scenario (R)").clicked() {
+                    if ui
+                        .add_sized(
+                            [DOCK_BUTTON_SIZE, DOCK_BUTTON_SIZE],
+                            egui::Button::new(egui::RichText::new(icons::RESET).size(18.0)),
+                        )
+                        .on_hover_text("Reset scenario (R)")
+                        .clicked()
+                    {
                         reset_events.send(ResetEvent);
                     }
                 });
@@ -294,8 +359,7 @@ fn format_date_human(j2000_seconds: f64) -> String {
     let (year, month, day) = days_to_ymd(days_since_epoch);
 
     let month_names = [
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
     ];
 
     let month_name = month_names.get((month - 1) as usize).unwrap_or(&"???");
@@ -305,7 +369,11 @@ fn format_date_human(j2000_seconds: f64) -> String {
 /// Convert days since Unix epoch to (year, month, day).
 fn days_to_ymd(days: i64) -> (i32, u32, u32) {
     let z = days + 719468;
-    let era = if z >= 0 { z / 146097 } else { (z - 146096) / 146097 };
+    let era = if z >= 0 {
+        z / 146097
+    } else {
+        (z - 146096) / 146097
+    };
     let doe = (z - era * 146097) as u32;
     let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
     let y = yoe as i64 + era * 400;

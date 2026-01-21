@@ -6,8 +6,8 @@
 use proptest::prelude::*;
 use std::f64::consts::{PI, TAU};
 
-use crate::types::{AU_TO_METERS, GM_SUN, SECONDS_PER_DAY};
 use super::kepler::KeplerOrbit;
+use crate::types::{AU_TO_METERS, GM_SUN, SECONDS_PER_DAY};
 
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(200))]
@@ -214,7 +214,8 @@ mod deterministic_tests {
                 assert!(
                     (0.0..1.0).contains(&e),
                     "{:?} has invalid eccentricity {}",
-                    body.id, e
+                    body.id,
+                    e
                 );
             }
         }
@@ -223,13 +224,7 @@ mod deterministic_tests {
     #[test]
     fn test_kepler_solver_at_boundary_mean_anomaly() {
         // Test at M = 0, π, 2π
-        let orbit = KeplerOrbit::from_elements(
-            AU_TO_METERS,
-            0.5,
-            0.0,
-            0.0,
-            0.9856,
-        );
+        let orbit = KeplerOrbit::from_elements(AU_TO_METERS, 0.5, 0.0, 0.0, 0.9856);
 
         for m in [0.0, PI, TAU - 0.001, TAU] {
             let e = orbit.solve_eccentric_anomaly(m);

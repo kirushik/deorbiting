@@ -232,13 +232,13 @@ impl EphemerisTable {
     /// Sample position only (faster when velocity not needed).
     #[inline]
     pub fn sample_position(&self, t: f64) -> Result<DVec2, EphemerisTableError> {
-        let (i0, s) = self.get_sample_index(t).ok_or_else(|| {
-            EphemerisTableError::OutOfRange {
+        let (i0, s) = self
+            .get_sample_index(t)
+            .ok_or_else(|| EphemerisTableError::OutOfRange {
                 time: t,
                 start: self.start_time(),
                 end: self.end_time(),
-            }
-        })?;
+            })?;
 
         let i1 = i0 + 1;
         let s0 = &self.samples[i0];

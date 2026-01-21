@@ -19,10 +19,8 @@ use self::bodies::CelestialBodyPlugin;
 use self::deflectors::draw_deflector_trajectories;
 use self::highlight::HighlightPlugin;
 use self::labels::LabelPlugin;
-use self::orbits::{draw_moon_orbit_paths, draw_orbit_paths, OrbitPathPlugin};
-use self::scaling::{
-    apply_moon_position_distortion, compute_hierarchical_scales, ScalingPlugin,
-};
+use self::orbits::{OrbitPathPlugin, draw_moon_orbit_paths, draw_orbit_paths};
+use self::scaling::{ScalingPlugin, apply_moon_position_distortion, compute_hierarchical_scales};
 use self::sync::{sync_asteroid_positions, sync_celestial_positions};
 
 // Re-export for use in other modules

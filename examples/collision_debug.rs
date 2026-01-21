@@ -35,9 +35,20 @@ fn main() {
     let asteroid_vel = -tangent * v_circular;
 
     println!("Initial asteroid:");
-    println!("  Position: ({:.3} AU, {:.3} AU)", asteroid_pos.x / AU, asteroid_pos.y / AU);
-    println!("  Velocity: {:.2} km/s (retrograde)", asteroid_vel.length() / 1000.0);
-    println!("  Earth at: ({:.3} AU, {:.3} AU)", earth_pos.x / AU, earth_pos.y / AU);
+    println!(
+        "  Position: ({:.3} AU, {:.3} AU)",
+        asteroid_pos.x / AU,
+        asteroid_pos.y / AU
+    );
+    println!(
+        "  Velocity: {:.2} km/s (retrograde)",
+        asteroid_vel.length() / 1000.0
+    );
+    println!(
+        "  Earth at: ({:.3} AU, {:.3} AU)",
+        earth_pos.x / AU,
+        earth_pos.y / AU
+    );
 
     // Simulate
     let mut pos = asteroid_pos;
@@ -66,7 +77,10 @@ fn main() {
         if dist < DANGER_ZONE {
             println!("\n✓ COLLISION DETECTED at t = {:.1} days", t / 86400.0);
             println!("  Distance to Earth center: {:.0} km", dist / 1000.0);
-            println!("  Relative velocity: {:.2} km/s", (vel - earth_pos_t.normalize() * v_circular).length() / 1000.0);
+            println!(
+                "  Relative velocity: {:.2} km/s",
+                (vel - earth_pos_t.normalize() * v_circular).length() / 1000.0
+            );
             return;
         }
 
@@ -90,7 +104,11 @@ fn main() {
     }
 
     println!("\n✗ NO COLLISION after {:.0} days", max_time / 86400.0);
-    println!("  Closest approach: {:.0} km at t = {:.1} days", closest_approach / 1000.0, closest_time / 86400.0);
+    println!(
+        "  Closest approach: {:.0} km at t = {:.1} days",
+        closest_approach / 1000.0,
+        closest_time / 86400.0
+    );
 
     if closest_approach < DANGER_ZONE * 2.0 {
         println!("  (This was very close - might miss due to timestep)");

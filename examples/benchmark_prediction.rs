@@ -33,19 +33,19 @@ const BENCHMARK_ITERATIONS: usize = 10;
 /// Planet data: (semi-major axis AU, eccentricity, mass kg, radius m, GM m³/s²)
 #[derive(Clone, Copy)]
 struct PlanetData {
-    a: f64,        // semi-major axis in meters
-    e: f64,        // eccentricity
-    gm: f64,       // gravitational parameter
-    radius: f64,   // radius in meters
-    period: f64,   // orbital period in seconds
+    a: f64,      // semi-major axis in meters
+    e: f64,      // eccentricity
+    gm: f64,     // gravitational parameter
+    radius: f64, // radius in meters
+    period: f64, // orbital period in seconds
 }
 
 /// Full gravity source data (what we want to fetch once per timestep)
 #[derive(Clone, Copy)]
 struct GravitySourceFull {
-    id: usize,           // 0=Sun, 1=Mercury, etc.
-    pos: DVec2,          // position in meters
-    gm: f64,             // GM in m³/s²
+    id: usize,             // 0=Sun, 1=Mercury, etc.
+    pos: DVec2,            // position in meters
+    gm: f64,               // GM in m³/s²
     collision_radius: f64, // effective collision radius (with multiplier)
 }
 
@@ -64,7 +64,11 @@ fn get_planet_data() -> [PlanetData; 8] {
     ];
 
     let mut result = [PlanetData {
-        a: 0.0, e: 0.0, gm: 0.0, radius: 0.0, period: 0.0
+        a: 0.0,
+        e: 0.0,
+        gm: 0.0,
+        radius: 0.0,
+        period: 0.0,
     }; 8];
 
     for (i, (a_au, e, mass, radius)) in raw.iter().enumerate() {
@@ -107,7 +111,10 @@ mod current {
     use super::*;
 
     /// Get gravity sources (position + GM only)
-    pub fn get_gravity_sources(planets: &[PlanetData; 8], time: f64) -> [(DVec2, f64); GRAVITY_SOURCE_COUNT] {
+    pub fn get_gravity_sources(
+        planets: &[PlanetData; 8],
+        time: f64,
+    ) -> [(DVec2, f64); GRAVITY_SOURCE_COUNT] {
         let mut sources = [(DVec2::ZERO, 0.0); GRAVITY_SOURCE_COUNT];
 
         // Sun at origin
@@ -142,7 +149,10 @@ mod current {
     }
 
     /// Compute acceleration from sources
-    pub fn compute_acceleration(pos: DVec2, sources: &[(DVec2, f64); GRAVITY_SOURCE_COUNT]) -> DVec2 {
+    pub fn compute_acceleration(
+        pos: DVec2,
+        sources: &[(DVec2, f64); GRAVITY_SOURCE_COUNT],
+    ) -> DVec2 {
         let mut acc = DVec2::ZERO;
         for &(body_pos, gm) in sources {
             let delta = body_pos - pos;
@@ -180,11 +190,7 @@ mod current {
     }
 
     /// Check collision - ANOTHER set of ephemeris lookups!
-    pub fn check_collision(
-        pos: DVec2,
-        time: f64,
-        planets: &[PlanetData; 8],
-    ) -> Option<usize> {
+    pub fn check_collision(pos: DVec2, time: f64, planets: &[PlanetData; 8]) -> Option<usize> {
         // Check Sun
         const SUN_RADIUS: f64 = 6.96e8;
         if pos.length() < SUN_RADIUS * 2.0 {
@@ -244,7 +250,10 @@ mod optimized {
     ) -> [GravitySourceFull; GRAVITY_SOURCE_COUNT] {
         const SUN_RADIUS: f64 = 6.96e8;
         let mut sources = [GravitySourceFull {
-            id: 0, pos: DVec2::ZERO, gm: 0.0, collision_radius: 0.0
+            id: 0,
+            pos: DVec2::ZERO,
+            gm: 0.0,
+            collision_radius: 0.0,
         }; GRAVITY_SOURCE_COUNT];
 
         // Sun
@@ -499,7 +508,8 @@ fn benchmark_operations(planets: &[PlanetData; 8]) {
 
     // Summary
     println!("\n--- Per-Step Ephemeris Cost ---");
-    let current_ephemeris = sources_time.as_nanos() + sources_id_time.as_nanos() + collision_time.as_nanos();
+    let current_ephemeris =
+        sources_time.as_nanos() + sources_id_time.as_nanos() + collision_time.as_nanos();
     let optimized_ephemeris = full_time.as_nanos();
     println!(
         "CURRENT:   {:>8} ns/step (24 Kepler lookups)",
@@ -540,7 +550,14 @@ fn benchmark_trajectories(planets: &[PlanetData; 8]) {
 
         // Warmup
         for _ in 0..WARMUP_ITERATIONS {
-            let _ = run_prediction(initial_pos, initial_vel, max_time, max_steps, false, planets);
+            let _ = run_prediction(
+                initial_pos,
+                initial_vel,
+                max_time,
+                max_steps,
+                false,
+                planets,
+            );
             let _ = run_prediction(initial_pos, initial_vel, max_time, max_steps, true, planets);
         }
 
@@ -548,8 +565,14 @@ fn benchmark_trajectories(planets: &[PlanetData; 8]) {
         let mut current_total = std::time::Duration::ZERO;
         let mut current_steps = 0;
         for _ in 0..BENCHMARK_ITERATIONS {
-            let (elapsed, steps, _) =
-                run_prediction(initial_pos, initial_vel, max_time, max_steps, false, planets);
+            let (elapsed, steps, _) = run_prediction(
+                initial_pos,
+                initial_vel,
+                max_time,
+                max_steps,
+                false,
+                planets,
+            );
             current_total += elapsed;
             current_steps = steps;
         }

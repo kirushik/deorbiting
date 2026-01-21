@@ -9,7 +9,7 @@ use bevy::window::PrimaryWindow;
 use bevy_egui::EguiContexts;
 
 use crate::asteroid::{
-    calculate_velocity_for_earth_intercept, spawn_asteroid_at_position, AsteroidCounter,
+    AsteroidCounter, calculate_velocity_for_earth_intercept, spawn_asteroid_at_position,
 };
 use crate::camera::{MainCamera, RENDER_SCALE};
 use crate::ephemeris::Ephemeris;
@@ -39,9 +39,10 @@ pub fn handle_asteroid_placement(
 
     // Don't interact if egui wants the pointer
     if let Some(ctx) = contexts.try_ctx_mut()
-        && ctx.wants_pointer_input() {
-            return;
-        }
+        && ctx.wants_pointer_input()
+    {
+        return;
+    }
 
     // Handle click to place asteroid
     if mouse.just_pressed(MouseButton::Left) {
@@ -104,7 +105,8 @@ pub fn update_placement_cursor(
 ) {
     // Set cursor hint through egui when placement mode is active
     if placement_mode.active
-        && let Some(ctx) = contexts.try_ctx_mut() {
-            ctx.set_cursor_icon(bevy_egui::egui::CursorIcon::Crosshair);
-        }
+        && let Some(ctx) = contexts.try_ctx_mut()
+    {
+        ctx.set_cursor_icon(bevy_egui::egui::CursorIcon::Crosshair);
+    }
 }

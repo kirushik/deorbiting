@@ -15,7 +15,7 @@ pub mod table;
 #[cfg(test)]
 mod proptest_ephemeris;
 
-pub use data::{get_trivia, CelestialBodyData, CelestialBodyId, CelestialBodyTrivia, all_bodies};
+pub use data::{CelestialBodyData, CelestialBodyId, CelestialBodyTrivia, all_bodies, get_trivia};
 
 use crate::types::G;
 use bevy::math::DVec2;
@@ -217,33 +217,34 @@ impl Ephemeris {
         // If `time` is outside the table range, we fall back to Kepler but apply a per-body
         // offset so the transition is continuous at the boundary (for planets only).
         if let Some(h) = &self.horizons
-            && let Some(tbl) = h.table(id) {
-                let start = tbl.start_time();
-                let end = tbl.end_time();
+            && let Some(tbl) = h.table(id)
+        {
+            let start = tbl.start_time();
+            let end = tbl.end_time();
 
-                if time >= start && time <= end {
-                    if let Ok(state) = tbl.sample(time) {
-                        return Some(state.pos);
-                    }
-                    // If sampling failed for some unexpected reason, fall through to Kepler.
-                } else if time > end {
-                    // Past coverage end: patched Kepler continuation.
-                    let base = self.get_kepler_position_by_id(id, time)?;
-
-                    // For moons, the offset approach doesn't work because their heliocentric
-                    // position depends on the parent's current position, not where the parent
-                    // was at table end. Use pure Kepler for moons outside table coverage.
-                    if id.parent().is_some() {
-                        return Some(base);
-                    }
-
-                    // For planets: compute or reuse the (Δpos, Δvel) offset at the end boundary.
-                    let offset = self.get_or_compute_horizons_offset(id, end)?;
-                    return Some(base + offset.dp);
+            if time >= start && time <= end {
+                if let Ok(state) = tbl.sample(time) {
+                    return Some(state.pos);
                 }
-                // For `time < start`, we intentionally fall back to Kepler without offsets.
-                // Tables are forward-only by design; negative times are not guaranteed.
+                // If sampling failed for some unexpected reason, fall through to Kepler.
+            } else if time > end {
+                // Past coverage end: patched Kepler continuation.
+                let base = self.get_kepler_position_by_id(id, time)?;
+
+                // For moons, the offset approach doesn't work because their heliocentric
+                // position depends on the parent's current position, not where the parent
+                // was at table end. Use pure Kepler for moons outside table coverage.
+                if id.parent().is_some() {
+                    return Some(base);
+                }
+
+                // For planets: compute or reuse the (Δpos, Δvel) offset at the end boundary.
+                let offset = self.get_or_compute_horizons_offset(id, end)?;
+                return Some(base + offset.dp);
             }
+            // For `time < start`, we intentionally fall back to Kepler without offsets.
+            // Tables are forward-only by design; negative times are not guaranteed.
+        }
 
         // No table available: pure Kepler model.
         self.get_kepler_position_by_id(id, time)
@@ -269,26 +270,27 @@ impl Ephemeris {
         // If `time` is outside the table range, we fall back to Kepler but apply a per-body
         // offset so the transition is continuous at the boundary.
         if let Some(h) = &self.horizons
-            && let Some(tbl) = h.table(id) {
-                let start = tbl.start_time();
-                let end = tbl.end_time();
+            && let Some(tbl) = h.table(id)
+        {
+            let start = tbl.start_time();
+            let end = tbl.end_time();
 
-                if time >= start && time <= end {
-                    if let Ok(state) = tbl.sample(time) {
-                        return Some(state.vel);
-                    }
-                    // If sampling failed for some unexpected reason, fall through to Kepler.
-                } else if time > end {
-                    // Past coverage end: patched Kepler continuation (C0/C1 at end).
-                    let base = self.get_kepler_velocity_by_id(id, time)?;
-
-                    // Compute or reuse the (Δpos, Δvel) offset at the end boundary.
-                    let offset = self.get_or_compute_horizons_offset(id, end)?;
-                    return Some(base + offset.dv);
+            if time >= start && time <= end {
+                if let Ok(state) = tbl.sample(time) {
+                    return Some(state.vel);
                 }
-                // For `time < start`, we intentionally fall back to Kepler without offsets.
-                // Tables are forward-only by design; negative times are not guaranteed.
+                // If sampling failed for some unexpected reason, fall through to Kepler.
+            } else if time > end {
+                // Past coverage end: patched Kepler continuation (C0/C1 at end).
+                let base = self.get_kepler_velocity_by_id(id, time)?;
+
+                // Compute or reuse the (Δpos, Δvel) offset at the end boundary.
+                let offset = self.get_or_compute_horizons_offset(id, end)?;
+                return Some(base + offset.dv);
             }
+            // For `time < start`, we intentionally fall back to Kepler without offsets.
+            // Tables are forward-only by design; negative times are not guaranteed.
+        }
 
         // No table available: pure Kepler model.
         self.get_kepler_velocity_by_id(id, time)
@@ -398,7 +400,7 @@ impl Ephemeris {
             let gm = self.body_data.get(&id).map(|d| G * d.mass).unwrap_or(0.0);
             return (id, DVec2::ZERO, gm);
         }
-        
+
         if let Some(pos) = self.get_position_by_id(id, time) {
             let gm = self.body_data.get(&id).map(|d| G * d.mass).unwrap_or(0.0);
             (id, pos, gm)
@@ -464,7 +466,7 @@ impl Ephemeris {
                     .unwrap_or(0.0);
 
                 let pos_opt = table_pos.or_else(|| self.get_position_by_id(id, time));
-                
+
                 if let Some(pos) = pos_opt {
                     result[body_idx] = GravitySourceFull {
                         id,
@@ -482,7 +484,7 @@ impl Ephemeris {
                     result[body_idx] = GravitySourceFull {
                         id,
                         pos: DVec2::ZERO,
-                        gm: 0.0, // Exclude from gravity
+                        gm: 0.0,               // Exclude from gravity
                         collision_radius: 0.0, // No collision with missing body
                     };
                 }
@@ -496,7 +498,7 @@ impl Ephemeris {
                     .get(&id)
                     .map(|d| d.radius * COLLISION_MULTIPLIER)
                     .unwrap_or(0.0);
-                    
+
                 if let Some(pos) = self.get_position_by_id(id, time) {
                     result[i] = GravitySourceFull {
                         id,
@@ -514,7 +516,7 @@ impl Ephemeris {
                     result[i] = GravitySourceFull {
                         id,
                         pos: DVec2::ZERO,
-                        gm: 0.0, // Exclude from gravity
+                        gm: 0.0,               // Exclude from gravity
                         collision_radius: 0.0, // No collision with missing body
                     };
                 }
@@ -539,18 +541,20 @@ impl Ephemeris {
     pub fn check_collision(&self, pos: DVec2, time: f64) -> Option<CelestialBodyId> {
         // Check Sun (use smaller multiplier - Sun is already huge)
         if let Some(sun_data) = self.body_data.get(&CelestialBodyId::Sun)
-            && pos.length() < sun_data.radius * 2.0 {
-                return Some(CelestialBodyId::Sun);
-            }
+            && pos.length() < sun_data.radius * 2.0
+        {
+            return Some(CelestialBodyId::Sun);
+        }
 
         // Check planets - use full COLLISION_MULTIPLIER for danger zone
         // (Moons are decorative only - no collision detection)
         for &id in CelestialBodyId::PLANETS {
             if let (Some(body_pos), Some(data)) =
                 (self.get_position_by_id(id, time), self.body_data.get(&id))
-                && (pos - body_pos).length() < data.radius * COLLISION_MULTIPLIER {
-                    return Some(id);
-                }
+                && (pos - body_pos).length() < data.radius * COLLISION_MULTIPLIER
+            {
+                return Some(id);
+            }
         }
 
         None
@@ -609,9 +613,10 @@ impl Ephemeris {
     ) -> Option<StateOffset2> {
         // First, try the cache.
         if let Ok(guard) = self.horizons_fallback_offsets.read()
-            && let Some(offset) = guard.get(&id).copied() {
-                return Some(offset);
-            }
+            && let Some(offset) = guard.get(&id).copied()
+        {
+            return Some(offset);
+        }
 
         let h = self.horizons.as_ref()?;
         let tbl = h.table(id)?;
@@ -840,12 +845,8 @@ mod tests {
         );
 
         // And the Moon should be close to Earth on both sides
-        let earth_p0 = eph
-            .get_position_by_id(CelestialBodyId::Earth, t0)
-            .unwrap();
-        let earth_p1 = eph
-            .get_position_by_id(CelestialBodyId::Earth, t1)
-            .unwrap();
+        let earth_p0 = eph.get_position_by_id(CelestialBodyId::Earth, t0).unwrap();
+        let earth_p1 = eph.get_position_by_id(CelestialBodyId::Earth, t1).unwrap();
 
         let moon_earth_dist_0 = (p0 - earth_p0).length() / au;
         let moon_earth_dist_1 = (p1 - earth_p1).length() / au;

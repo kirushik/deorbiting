@@ -4,7 +4,7 @@
 //! trajectories, and stable orbits without blocking viewport interaction.
 
 use bevy::prelude::*;
-use bevy_egui::{egui, EguiContexts};
+use bevy_egui::{EguiContexts, egui};
 
 use crate::asteroid::ResetEvent;
 use crate::collision::{CollisionEvent, CollisionState};
@@ -12,7 +12,7 @@ use crate::outcome::TrajectoryOutcome;
 use crate::prediction::TrajectoryPath;
 use crate::render::SelectedBody;
 use crate::scenarios::CurrentScenario;
-use crate::types::{SelectableBody, SimulationTime, AU_TO_METERS, SECONDS_PER_DAY};
+use crate::types::{AU_TO_METERS, SECONDS_PER_DAY, SelectableBody, SimulationTime};
 
 use super::icons;
 use super::{RadialMenuState, ScenarioDrawerState};
@@ -49,11 +49,13 @@ pub fn update_banner_state(
     sim_time: Res<SimulationTime>,
 ) {
     // Handle collision notifications from actual collisions
-    if sim_time.paused && banner_state.collision.is_none()
-        && let Some(collision) = collision_state.pop_notification() {
-            banner_state.collision = Some(collision);
-            banner_state.collision_flash = 1.0;
-        }
+    if sim_time.paused
+        && banner_state.collision.is_none()
+        && let Some(collision) = collision_state.pop_notification()
+    {
+        banner_state.collision = Some(collision);
+        banner_state.collision_flash = 1.0;
+    }
 
     // Clear collision notification when simulation resumes
     if !sim_time.paused {
@@ -103,14 +105,23 @@ pub fn banner_system(
 
     // Render collision notification (actual collision, highest priority)
     if let Some(collision) = &banner_state.collision {
-        render_collision_notification(ctx, collision, banner_state.collision_flash, &mut reset_events);
+        render_collision_notification(
+            ctx,
+            collision,
+            banner_state.collision_flash,
+            &mut reset_events,
+        );
         return; // Don't show outcome banner if collision notification is showing
     }
 
     // Render trajectory outcome banner
     if let Some(outcome) = &banner_state.outcome {
         match outcome {
-            TrajectoryOutcome::Collision { body_hit, time_to_impact, impact_velocity } => {
+            TrajectoryOutcome::Collision {
+                body_hit,
+                time_to_impact,
+                impact_velocity,
+            } => {
                 render_collision_prediction_banner(
                     ctx,
                     *body_hit,
@@ -121,7 +132,10 @@ pub fn banner_system(
                     &selected,
                 );
             }
-            TrajectoryOutcome::Escape { v_infinity, direction } => {
+            TrajectoryOutcome::Escape {
+                v_infinity,
+                direction,
+            } => {
                 render_escape_banner(ctx, *v_infinity, *direction);
             }
             TrajectoryOutcome::StableOrbit {
@@ -173,23 +187,45 @@ fn render_collision_notification(
         )
         .show(ctx, |ui| {
             ui.horizontal_centered(|ui| {
-                ui.label(egui::RichText::new(icons::WARNING).size(20.0).color(colors::COLLISION_BORDER));
+                ui.label(
+                    egui::RichText::new(icons::WARNING)
+                        .size(20.0)
+                        .color(colors::COLLISION_BORDER),
+                );
                 ui.add_space(8.0);
 
                 ui.vertical(|ui| {
                     ui.label(
-                        egui::RichText::new(format!("{} IMPACTED {}", collision.asteroid_name, collision.body_hit.name()))
-                            .strong()
-                            .size(18.0)
-                            .color(egui::Color32::WHITE),
+                        egui::RichText::new(format!(
+                            "{} IMPACTED {}",
+                            collision.asteroid_name,
+                            collision.body_hit.name()
+                        ))
+                        .strong()
+                        .size(18.0)
+                        .color(egui::Color32::WHITE),
                     );
-                    ui.label(egui::RichText::new(format!("Impact velocity: {:.1} km/s", collision.impact_speed_km_s())).size(14.0));
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "Impact velocity: {:.1} km/s",
+                            collision.impact_speed_km_s()
+                        ))
+                        .size(14.0),
+                    );
                 });
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.add(egui::Button::new(
-                        egui::RichText::new("Reset").size(14.0).color(egui::Color32::WHITE)
-                    ).min_size(egui::vec2(60.0, 28.0))).clicked() {
+                    if ui
+                        .add(
+                            egui::Button::new(
+                                egui::RichText::new("Reset")
+                                    .size(14.0)
+                                    .color(egui::Color32::WHITE),
+                            )
+                            .min_size(egui::vec2(60.0, 28.0)),
+                        )
+                        .clicked()
+                    {
                         reset_events.send(ResetEvent);
                     }
                 });
@@ -219,14 +255,22 @@ fn render_collision_prediction_banner(
         )
         .show(ctx, |ui| {
             ui.horizontal_centered(|ui| {
-                ui.label(egui::RichText::new(icons::WARNING).size(18.0).color(colors::COLLISION_BORDER));
+                ui.label(
+                    egui::RichText::new(icons::WARNING)
+                        .size(18.0)
+                        .color(colors::COLLISION_BORDER),
+                );
                 ui.add_space(8.0);
 
                 ui.label(
-                    egui::RichText::new(format!("COLLISION in {:.0} days with {}", days, body_hit.name()))
-                        .strong()
-                        .size(16.0)
-                        .color(egui::Color32::WHITE),
+                    egui::RichText::new(format!(
+                        "COLLISION in {:.0} days with {}",
+                        days,
+                        body_hit.name()
+                    ))
+                    .strong()
+                    .size(16.0)
+                    .color(egui::Color32::WHITE),
                 );
 
                 ui.separator();
@@ -234,25 +278,42 @@ fn render_collision_prediction_banner(
                 ui.label(egui::RichText::new(format!("Impact: {:.1} km/s", speed_km_s)).size(14.0));
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.add(egui::Button::new(
-                        egui::RichText::new("Reset").size(14.0).color(egui::Color32::WHITE)
-                    ).min_size(egui::vec2(60.0, 28.0))).clicked() {
+                    if ui
+                        .add(
+                            egui::Button::new(
+                                egui::RichText::new("Reset")
+                                    .size(14.0)
+                                    .color(egui::Color32::WHITE),
+                            )
+                            .min_size(egui::vec2(60.0, 28.0)),
+                        )
+                        .clicked()
+                    {
                         reset_events.send(ResetEvent);
                     }
 
                     // Deflect button - opens radial menu
                     if let Some(SelectableBody::Asteroid(entity)) = selected.body
-                        && ui.add(egui::Button::new(
-                            egui::RichText::new("Deflect").size(14.0).color(egui::Color32::WHITE)
-                        ).fill(egui::Color32::from_rgb(85, 153, 221)).min_size(egui::vec2(70.0, 28.0))).clicked() {
-                            radial_menu_state.open = true;
-                            radial_menu_state.target = Some(entity);
-                            // Position will be set by context card or center of screen
-                            radial_menu_state.position = Vec2::new(
-                                ctx.screen_rect().width() / 2.0,
-                                ctx.screen_rect().height() / 2.0,
-                            );
-                        }
+                        && ui
+                            .add(
+                                egui::Button::new(
+                                    egui::RichText::new("Deflect")
+                                        .size(14.0)
+                                        .color(egui::Color32::WHITE),
+                                )
+                                .fill(egui::Color32::from_rgb(85, 153, 221))
+                                .min_size(egui::vec2(70.0, 28.0)),
+                            )
+                            .clicked()
+                    {
+                        radial_menu_state.open = true;
+                        radial_menu_state.target = Some(entity);
+                        // Position will be set by context card or center of screen
+                        radial_menu_state.position = Vec2::new(
+                            ctx.screen_rect().width() / 2.0,
+                            ctx.screen_rect().height() / 2.0,
+                        );
+                    }
                 });
             });
         });
@@ -271,7 +332,11 @@ fn render_escape_banner(ctx: &egui::Context, v_infinity: f64, _direction: bevy::
         )
         .show(ctx, |ui| {
             ui.horizontal_centered(|ui| {
-                ui.label(egui::RichText::new(icons::ARROW_RIGHT).size(18.0).color(colors::ESCAPE_BORDER));
+                ui.label(
+                    egui::RichText::new(icons::ARROW_RIGHT)
+                        .size(18.0)
+                        .color(colors::ESCAPE_BORDER),
+                );
                 ui.add_space(8.0);
 
                 ui.label(
@@ -287,7 +352,11 @@ fn render_escape_banner(ctx: &egui::Context, v_infinity: f64, _direction: bevy::
 
                 ui.separator();
 
-                ui.label(egui::RichText::new("Leaving solar system").weak().size(14.0));
+                ui.label(
+                    egui::RichText::new("Leaving solar system")
+                        .weak()
+                        .size(14.0),
+                );
             });
         });
 }
@@ -312,7 +381,11 @@ fn render_stable_orbit_banner(
         )
         .show(ctx, |ui| {
             ui.horizontal_centered(|ui| {
-                ui.label(egui::RichText::new(icons::SUCCESS).size(18.0).color(colors::STABLE_BORDER));
+                ui.label(
+                    egui::RichText::new(icons::SUCCESS)
+                        .size(18.0)
+                        .color(colors::STABLE_BORDER),
+                );
                 ui.add_space(8.0);
 
                 ui.label(
@@ -324,11 +397,17 @@ fn render_stable_orbit_banner(
 
                 ui.separator();
 
-                ui.label(egui::RichText::new(format!("Period: {:.2} years", period_years)).size(14.0));
+                ui.label(
+                    egui::RichText::new(format!("Period: {:.2} years", period_years)).size(14.0),
+                );
 
                 ui.separator();
 
-                ui.label(egui::RichText::new(format!("a = {:.3} AU, e = {:.3}", a_au, eccentricity)).weak().size(13.0));
+                ui.label(
+                    egui::RichText::new(format!("a = {:.3} AU, e = {:.3}", a_au, eccentricity))
+                        .weak()
+                        .size(13.0),
+                );
 
                 if is_deflection_challenge {
                     ui.separator();

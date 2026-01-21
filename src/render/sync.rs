@@ -50,14 +50,14 @@ pub fn sync_asteroid_positions(
 
     let viewport_size = VIEWPORT_HEIGHT * camera.zoom;
     let target_size = viewport_size * TARGET_SCREEN_FRACTION;
-    
+
     for (mut transform, body_state, visual) in query.iter_mut() {
         // Convert f64 meters to f32 render units
         // No distortion applied - render at true physics position
         transform.translation.x = (body_state.pos.x * RENDER_SCALE) as f32;
         transform.translation.y = (body_state.pos.y * RENDER_SCALE) as f32;
         transform.translation.z = z_layers::SPACECRAFT;
-        
+
         // Scale asteroid to maintain constant screen-space size
         // This makes them work like UI markers rather than physical objects
         let base_size = visual.render_radius;

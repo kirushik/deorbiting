@@ -5,13 +5,13 @@
 
 use bevy::math::DVec2;
 use bevy::prelude::*;
-use bevy_egui::{egui, EguiContexts};
+use bevy_egui::{EguiContexts, egui};
 
 use crate::asteroid::Asteroid;
 use crate::continuous::{ContinuousPayload, LaunchContinuousDeflectorEvent, ThrustDirection};
 use crate::ephemeris::{CelestialBodyId, Ephemeris};
 use crate::interceptor::{DeflectionPayload, LaunchInterceptorEvent};
-use crate::types::{BodyState, SimulationTime, AU_TO_METERS, SECONDS_PER_DAY};
+use crate::types::{AU_TO_METERS, BodyState, SECONDS_PER_DAY, SimulationTime};
 
 /// Resource for radial menu state.
 #[derive(Resource, Default)]
@@ -182,7 +182,8 @@ pub fn radial_menu_system(
             let num_methods = ALL_METHODS.len();
             for (i, method) in ALL_METHODS.iter().enumerate() {
                 // Start from top and go clockwise
-                let angle = -std::f32::consts::FRAC_PI_2 + (i as f32 * std::f32::consts::TAU / num_methods as f32);
+                let angle = -std::f32::consts::FRAC_PI_2
+                    + (i as f32 * std::f32::consts::TAU / num_methods as f32);
                 let button_pos = center + egui::vec2(angle.cos() * radius, angle.sin() * radius);
 
                 // Show keyboard shortcut number (1-7)
@@ -203,12 +204,13 @@ pub fn radial_menu_system(
 
     // Close on click outside
     if ctx.input(|i| i.pointer.any_pressed())
-        && let Some(pos) = ctx.input(|i| i.pointer.hover_pos()) {
-            let dist = ((pos.x - center.x).powi(2) + (pos.y - center.y).powi(2)).sqrt();
-            if dist > radius + 60.0 {
-                menu_state.open = false;
-            }
+        && let Some(pos) = ctx.input(|i| i.pointer.hover_pos())
+    {
+        let dist = ((pos.x - center.x).powi(2) + (pos.y - center.y).powi(2)).sqrt();
+        if dist > radius + 60.0 {
+            menu_state.open = false;
         }
+    }
 
     // Close on Escape
     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
@@ -243,7 +245,12 @@ pub fn radial_menu_system(
 }
 
 /// Render a method button. Returns true if clicked.
-fn render_method_button(ui: &mut egui::Ui, pos: egui::Pos2, method: DeflectionMethod, shortcut: &str) -> bool {
+fn render_method_button(
+    ui: &mut egui::Ui,
+    pos: egui::Pos2,
+    method: DeflectionMethod,
+    shortcut: &str,
+) -> bool {
     let button_size = 44.0;
     let rect = egui::Rect::from_center_size(pos, egui::vec2(button_size, button_size));
 
@@ -258,12 +265,8 @@ fn render_method_button(ui: &mut egui::Ui, pos: egui::Pos2, method: DeflectionMe
     let accent_color = method.color();
 
     // Draw button
-    ui.painter().rect(
-        rect,
-        6.0,
-        bg_color,
-        egui::Stroke::new(2.0, accent_color),
-    );
+    ui.painter()
+        .rect(rect, 6.0, bg_color, egui::Stroke::new(2.0, accent_color));
 
     // Keyboard shortcut badge (top-left corner)
     ui.painter().text(
@@ -293,7 +296,11 @@ fn render_method_button(ui: &mut egui::Ui, pos: egui::Pos2, method: DeflectionMe
     );
 
     // Type indicator (instant vs continuous)
-    let type_label = if method.is_continuous() { "cont." } else { "inst." };
+    let type_label = if method.is_continuous() {
+        "cont."
+    } else {
+        "inst."
+    };
     ui.painter().text(
         pos + egui::vec2(0.0, button_size / 2.0 + 22.0),
         egui::Align2::CENTER_TOP,

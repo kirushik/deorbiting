@@ -47,9 +47,8 @@ fn kepler_state(time_days: f64) -> (DVec2, DVec2) {
     let e_anomaly = solve_kepler(m, MERCURY_E);
 
     // True anomaly
-    let nu = 2.0
-        * ((1.0 + MERCURY_E).sqrt() * (e_anomaly / 2.0).tan())
-            .atan2((1.0 - MERCURY_E).sqrt());
+    let nu =
+        2.0 * ((1.0 + MERCURY_E).sqrt() * (e_anomaly / 2.0).tan()).atan2((1.0 - MERCURY_E).sqrt());
 
     // Distance from focus
     let r = MERCURY_A * (1.0 - MERCURY_E * e_anomaly.cos());
@@ -68,10 +67,7 @@ fn kepler_state(time_days: f64) -> (DVec2, DVec2) {
 
     let cos_a = angle.cos();
     let sin_a = angle.sin();
-    let vel = DVec2::new(
-        vr * cos_a - vt * sin_a,
-        vr * sin_a + vt * cos_a,
-    );
+    let vel = DVec2::new(vr * cos_a - vt * sin_a, vr * sin_a + vt * cos_a);
 
     (pos, vel)
 }
@@ -100,10 +96,11 @@ fn perturbed_state(time_days: f64) -> (DVec2, DVec2) {
     );
 
     // Velocity perturbations (~10 m/s)
-    let vel = base_vel + DVec2::new(
-        10.0 * perturbation_phase.cos(),
-        10.0 * (perturbation_phase * 0.7).sin(),
-    );
+    let vel = base_vel
+        + DVec2::new(
+            10.0 * perturbation_phase.cos(),
+            10.0 * (perturbation_phase * 0.7).sin(),
+        );
 
     (pos, vel)
 }
@@ -157,13 +154,21 @@ fn main() {
 
     let orbital_period_days = 87.97;
 
-    println!("Analyzing Mercury over one orbit ({:.0} days):\n", orbital_period_days);
+    println!(
+        "Analyzing Mercury over one orbit ({:.0} days):\n",
+        orbital_period_days
+    );
 
     // Part 1: Show that osculating elements change smoothly
     println!("=== OSCULATING ELEMENTS STABILITY ===\n");
-    println!("{:>6} | {:>12} | {:>10} | {:>10} | {:>12}",
-             "Day", "a (AU)", "e", "ω (°)", "Pos Error (m)");
-    println!("{:-<6}-+-{:-<12}-+-{:-<10}-+-{:-<10}-+-{:-<12}", "", "", "", "", "");
+    println!(
+        "{:>6} | {:>12} | {:>10} | {:>10} | {:>12}",
+        "Day", "a (AU)", "e", "ω (°)", "Pos Error (m)"
+    );
+    println!(
+        "{:-<6}-+-{:-<12}-+-{:-<10}-+-{:-<10}-+-{:-<12}",
+        "", "", "", "", ""
+    );
 
     let mut prev_omega: Option<f64> = None;
     let mut max_omega_change_deg = 0.0f64;
@@ -184,12 +189,14 @@ fn main() {
         prev_omega = Some(omega);
 
         if (day as i32) % 10 == 0 || day < 1.0 {
-            println!("{:6.0} | {:12.6} | {:10.6} | {:10.4} | {:12.2}",
-                     day,
-                     a / AU_TO_METERS,
-                     e,
-                     omega.to_degrees(),
-                     pos_error);
+            println!(
+                "{:6.0} | {:12.6} | {:10.6} | {:10.4} | {:12.2}",
+                day,
+                a / AU_TO_METERS,
+                e,
+                omega.to_degrees(),
+                pos_error
+            );
         }
 
         day += step_days;
@@ -215,18 +222,30 @@ fn main() {
 
     // Part 3: Show the difference between baked and osculating elements
     println!("=== BAKED vs OSCULATING ELEMENTS ===\n");
-    println!("Baked J2000 elements:   a = {:.4} AU, e = {:.4}, ω = {:.2}°",
-             MERCURY_A / AU_TO_METERS, MERCURY_E, MERCURY_OMEGA_DEG);
+    println!(
+        "Baked J2000 elements:   a = {:.4} AU, e = {:.4}, ω = {:.2}°",
+        MERCURY_A / AU_TO_METERS,
+        MERCURY_E,
+        MERCURY_OMEGA_DEG
+    );
 
     let (pos, vel) = perturbed_state(0.0);
     let (osc_a, osc_e, osc_omega) = osculating_elements(pos, vel);
-    println!("Osculating at day 0:    a = {:.4} AU, e = {:.4}, ω = {:.2}°",
-             osc_a / AU_TO_METERS, osc_e, osc_omega.to_degrees());
+    println!(
+        "Osculating at day 0:    a = {:.4} AU, e = {:.4}, ω = {:.2}°",
+        osc_a / AU_TO_METERS,
+        osc_e,
+        osc_omega.to_degrees()
+    );
 
     let (pos, vel) = perturbed_state(44.0); // Half orbit
     let (osc_a, osc_e, osc_omega) = osculating_elements(pos, vel);
-    println!("Osculating at day 44:   a = {:.4} AU, e = {:.4}, ω = {:.2}°",
-             osc_a / AU_TO_METERS, osc_e, osc_omega.to_degrees());
+    println!(
+        "Osculating at day 44:   a = {:.4} AU, e = {:.4}, ω = {:.2}°",
+        osc_a / AU_TO_METERS,
+        osc_e,
+        osc_omega.to_degrees()
+    );
 
     println!();
     println!("✓ Osculating elements adapt to the actual orbit shape,");

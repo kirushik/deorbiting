@@ -254,18 +254,13 @@ pub fn compute_thrust_direction(
         }
         ThrustDirection::Custom(dir) => {
             let len = dir.length();
-            if len > 1e-6 {
-                dir / len
-            } else {
-                DVec2::ZERO
-            }
+            if len > 1e-6 { dir / len } else { DVec2::ZERO }
         }
     }
 }
 
 /// Thrust direction options for continuous deflection.
-#[derive(Clone, Copy, Debug, PartialEq)]
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub enum ThrustDirection {
     /// Opposite to velocity (slows asteroid down - default for deflection)
     #[default]
@@ -281,7 +276,6 @@ pub enum ThrustDirection {
     /// User-specified direction (unit vector)
     Custom(DVec2),
 }
-
 
 #[cfg(test)]
 mod tests {

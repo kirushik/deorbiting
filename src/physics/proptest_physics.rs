@@ -2,8 +2,8 @@
 //!
 //! These tests verify physical invariants across a wide range of orbital parameters.
 
-use proptest::prelude::*;
 use bevy::math::DVec2;
+use proptest::prelude::*;
 
 use crate::test_utils::{assertions, fixtures};
 use crate::types::{AU_TO_METERS, GM_SUN};
@@ -243,7 +243,10 @@ mod deterministic_tests {
 
         // After simulation, energy should be conserved
         // (Just verify the test infrastructure works)
-        assert!(initial_energy < 0.0, "Bound orbit should have negative energy");
+        assert!(
+            initial_energy < 0.0,
+            "Bound orbit should have negative energy"
+        );
     }
 
     #[test]

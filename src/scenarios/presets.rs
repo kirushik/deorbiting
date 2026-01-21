@@ -26,9 +26,9 @@ pub static EARTH_COLLISION: Scenario = Scenario {
     id: "earth_collision",
     name: "Earth Collision Course",
     description: "Asteroid on collision course with Earth (~23 days). Tutorial scenario.",
-    asteroid_pos: None, // Computed dynamically: 45° ahead of Earth
-    asteroid_vel: None, // Computed dynamically: retrograde at Earth's orbital velocity
-    asteroid_mass: 1e12, // ~1 billion tons
+    asteroid_pos: None,   // Computed dynamically: 45° ahead of Earth
+    asteroid_vel: None,   // Computed dynamically: retrograde at Earth's orbital velocity
+    asteroid_mass: 1e12,  // ~1 billion tons
     asteroid_radius: 2.0, // Visual size
     start_time: None,
     time_scale: 10.0,
@@ -46,8 +46,8 @@ pub static APOPHIS_FLYBY: Scenario = Scenario {
     id: "apophis_flyby",
     name: "Apophis Flyby",
     description: "Close Earth approach. Watch gravity bend the trajectory.",
-    asteroid_pos: None, // Computed dynamically: ahead of Earth, outside orbit
-    asteroid_vel: None, // Computed dynamically: retrograde with inward component
+    asteroid_pos: None,    // Computed dynamically: ahead of Earth, outside orbit
+    asteroid_vel: None,    // Computed dynamically: retrograde with inward component
     asteroid_mass: 2.7e10, // Apophis mass (~27 million tons)
     asteroid_radius: 2.0,
     start_time: None,
@@ -163,7 +163,11 @@ mod tests {
     #[test]
     fn test_all_scenarios_start_paused() {
         for scenario in SCENARIOS.iter() {
-            assert!(scenario.start_paused, "Scenario {} should start paused", scenario.id);
+            assert!(
+                scenario.start_paused,
+                "Scenario {} should start paused",
+                scenario.id
+            );
         }
     }
 

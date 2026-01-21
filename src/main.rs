@@ -6,7 +6,7 @@
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
 
-use deorbiting::asteroid::{handle_reset, AsteroidCounter, ResetEvent};
+use deorbiting::asteroid::{AsteroidCounter, ResetEvent, handle_reset};
 use deorbiting::camera::CameraPlugin;
 use deorbiting::collision::CollisionPlugin;
 use deorbiting::continuous::ContinuousPlugin;
@@ -19,8 +19,8 @@ use deorbiting::render::RenderPlugin;
 use deorbiting::scenarios::ScenarioPlugin;
 use deorbiting::time::TimePlugin;
 use deorbiting::types::SimulationTime;
-use deorbiting::ui::velocity_handle::VelocityHandlePlugin;
 use deorbiting::ui::UiPlugin;
+use deorbiting::ui::velocity_handle::VelocityHandlePlugin;
 
 fn main() {
     let mut app = App::new();

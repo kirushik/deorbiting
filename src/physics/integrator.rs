@@ -33,9 +33,9 @@ pub struct IAS15Config {
 impl Default for IAS15Config {
     fn default() -> Self {
         Self {
-            initial_dt: 3600.0,          // 1 hour
-            min_dt: 60.0,                // 1 minute
-            max_dt: 86400.0,             // 1 day
+            initial_dt: 3600.0, // 1 hour
+            min_dt: 60.0,       // 1 minute
+            max_dt: 86400.0,    // 1 day
             epsilon: 1e-9,
             safety_factor: 0.25,
         }
@@ -115,7 +115,7 @@ impl IAS15State {
         let vel_new = self.vel + (self.acc + acc_new) * (0.5 * dt);
 
         // Improved error estimation based on local truncation error
-        // 
+        //
         // For Velocity Verlet, local truncation error is O(dt³) and proportional to
         // the third derivative of position (jerk rate). We estimate this using the
         // second central difference of acceleration:
@@ -128,7 +128,7 @@ impl IAS15State {
         // We normalize by position magnitude to get dimensionless error.
         let acc_second_diff = acc_new - self.acc * 2.0 + self.acc_prev;
         let position_error = (1.0 / 12.0) * dt * dt * acc_second_diff.length();
-        
+
         // Normalize by characteristic length scale (position magnitude or minimum threshold)
         let pos_scale = pos_new.length().max(1e6); // Min 1000 km to avoid issues near origin
         let relative_error = position_error / pos_scale;
@@ -166,7 +166,6 @@ impl IAS15State {
 
         (self.dt * ratio_clamped).clamp(config.min_dt, config.max_dt)
     }
-
 }
 
 /// Configuration for trajectory prediction.
@@ -188,10 +187,10 @@ pub struct PredictionConfig {
 impl Default for PredictionConfig {
     fn default() -> Self {
         Self {
-            initial_dt: 3600.0,     // 1 hour
-            min_dt: 600.0,          // 10 minutes (coarser than live physics)
-            max_dt: 86400.0 * 2.0,  // 2 days (coarser than live physics)
-            epsilon: 1e-6,          // Looser tolerance for faster prediction
+            initial_dt: 3600.0,    // 1 hour
+            min_dt: 600.0,         // 10 minutes (coarser than live physics)
+            max_dt: 86400.0 * 2.0, // 2 days (coarser than live physics)
+            epsilon: 1e-6,         // Looser tolerance for faster prediction
         }
     }
 }
@@ -200,10 +199,10 @@ impl PredictionConfig {
     /// Create config for interactive dragging (coarser for responsiveness).
     pub fn for_dragging() -> Self {
         Self {
-            initial_dt: 7200.0,     // 2 hours
-            min_dt: 3600.0,         // 1 hour minimum
-            max_dt: 86400.0 * 4.0,  // 4 days
-            epsilon: 1e-4,          // Very loose for fast feedback
+            initial_dt: 7200.0,    // 2 hours
+            min_dt: 3600.0,        // 1 hour minimum
+            max_dt: 86400.0 * 4.0, // 4 days
+            epsilon: 1e-4,         // Very loose for fast feedback
         }
     }
 }
@@ -237,7 +236,7 @@ pub fn compute_adaptive_dt(
     // Estimate error from acceleration change
     // This approximates the jerk-related error term in Velocity Verlet
     let acc_change = (acc_new - acc_old).length();
-    
+
     // Normalize by acceleration scale to get dimensionless error
     let acc_scale = acc_old.length().max(acc_new.length()).max(1e-10);
     let relative_error = acc_change / acc_scale;
@@ -427,7 +426,7 @@ mod tests {
         let config = IAS15Config {
             initial_dt: 600.0, // 10 minutes
             min_dt: 10.0,
-            max_dt: 3600.0,    // 1 hour max
+            max_dt: 3600.0, // 1 hour max
             ..Default::default()
         };
         let mut state = IAS15State::new(pos, vel, acc, &config);

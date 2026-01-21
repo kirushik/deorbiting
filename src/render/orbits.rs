@@ -16,9 +16,9 @@
 use bevy::prelude::*;
 
 use crate::camera::RENDER_SCALE;
-use crate::ephemeris::{all_bodies, CelestialBodyId, Ephemeris};
+use crate::ephemeris::{CelestialBodyId, Ephemeris, all_bodies};
 use crate::render::z_layers;
-use crate::types::{SimulationTime, GM_SUN};
+use crate::types::{GM_SUN, SimulationTime};
 
 use super::bodies::{CelestialBody, EffectiveVisualRadius};
 use super::scaling::MARGIN_FRACTION;
@@ -32,7 +32,6 @@ impl Plugin for OrbitPathPlugin {
         // Systems are added by RenderPlugin with proper ordering
     }
 }
-
 
 /// Settings for orbit path rendering.
 #[derive(Resource)]
@@ -61,7 +60,7 @@ impl Default for OrbitPathSettings {
             segments: 256,
             alpha: 0.15, // Faint but visible
             eccentricity_scale: 1.0,
-            dash_on: 1,  // Solid line
+            dash_on: 1, // Solid line
             dash_off: 0,
         }
     }
@@ -239,10 +238,7 @@ pub fn draw_moon_orbit_paths(
     for (transform, body, eff_radius) in bodies.iter() {
         if body.id.parent().is_none() && body.id != CelestialBodyId::Sun {
             // This is a planet
-            parent_data.insert(
-                body.id,
-                (transform.translation.truncate(), eff_radius.0),
-            );
+            parent_data.insert(body.id, (transform.translation.truncate(), eff_radius.0));
         }
     }
 
@@ -262,9 +258,7 @@ pub fn draw_moon_orbit_paths(
         }
 
         // Find this moon's current distorted position
-        let Some((moon_transform, _, moon_eff_radius)) = bodies
-            .iter()
-            .find(|(_, b, _)| b.id == id)
+        let Some((moon_transform, _, moon_eff_radius)) = bodies.iter().find(|(_, b, _)| b.id == id)
         else {
             continue;
         };
@@ -342,11 +336,7 @@ pub fn draw_moon_orbit_paths(
             let x = (r_local * angle.cos() * RENDER_SCALE) as f32 * actual_scale;
             let y = (r_local * angle.sin() * RENDER_SCALE) as f32 * actual_scale;
 
-            let pt = Vec3::new(
-                parent_pos.x + x,
-                parent_pos.y + y,
-                z_layers::TRAJECTORY,
-            );
+            let pt = Vec3::new(parent_pos.x + x, parent_pos.y + y, z_layers::TRAJECTORY);
 
             if first.is_none() {
                 first = Some(pt);

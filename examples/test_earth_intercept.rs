@@ -19,8 +19,16 @@ fn main() {
     let earth_pos = DVec2::new(AU, 0.0);
     let earth_vel = DVec2::new(0.0, EARTH_ORBITAL_VEL);
 
-    println!("Earth position: ({:.4} AU, {:.4} AU)", earth_pos.x / AU, earth_pos.y / AU);
-    println!("Earth velocity: ({:.2} km/s, {:.2} km/s)", earth_vel.x / 1000.0, earth_vel.y / 1000.0);
+    println!(
+        "Earth position: ({:.4} AU, {:.4} AU)",
+        earth_pos.x / AU,
+        earth_pos.y / AU
+    );
+    println!(
+        "Earth velocity: ({:.2} km/s, {:.2} km/s)",
+        earth_vel.x / 1000.0,
+        earth_vel.y / 1000.0
+    );
     println!();
 
     // Test the BROKEN approach (what we currently have)
@@ -68,12 +76,12 @@ fn test_new_approach(earth_pos: DVec2) {
 
     // Try different offsets and radii
     let configs = [
-        (30.0_f64, 1.0_f64),   // 30° ahead, same radius
-        (60.0, 1.0),           // 60° ahead, same radius
-        (90.0, 1.0),           // 90° ahead, same radius
-        (45.0, 1.05),          // 45° ahead, slightly outside
-        (30.0, 0.95),          // 30° ahead, slightly inside
-        (-30.0, 1.0),          // 30° behind, same radius (retrograde catches up)
+        (30.0_f64, 1.0_f64), // 30° ahead, same radius
+        (60.0, 1.0),         // 60° ahead, same radius
+        (90.0, 1.0),         // 90° ahead, same radius
+        (45.0, 1.05),        // 45° ahead, slightly outside
+        (30.0, 0.95),        // 30° ahead, slightly inside
+        (-30.0, 1.0),        // 30° behind, same radius (retrograde catches up)
     ];
 
     for (offset_deg, r_factor) in configs {
@@ -97,12 +105,21 @@ fn test_new_approach(earth_pos: DVec2) {
             "NO HIT".to_string()
         };
 
-        println!("    {:.0}° {:+.2} AU: vel={:.1} km/s -> {}",
-            offset_deg, r_factor, vel.length() / 1000.0, result);
+        println!(
+            "    {:.0}° {:+.2} AU: vel={:.1} km/s -> {}",
+            offset_deg,
+            r_factor,
+            vel.length() / 1000.0,
+            result
+        );
     }
 }
 
-fn simulate_trajectory(start_pos: DVec2, start_vel: DVec2, earth_pos_fn: impl Fn(f64) -> DVec2) -> (bool, f64, DVec2) {
+fn simulate_trajectory(
+    start_pos: DVec2,
+    start_vel: DVec2,
+    earth_pos_fn: impl Fn(f64) -> DVec2,
+) -> (bool, f64, DVec2) {
     let dt = 3600.0; // 1 hour steps
     let max_time = 365.0 * 86400.0; // 1 year max
 
@@ -117,7 +134,8 @@ fn simulate_trajectory(start_pos: DVec2, start_vel: DVec2, earth_pos_fn: impl Fn
         // Check Earth collision
         let earth_pos = earth_pos_fn(t);
         let dist_to_earth = (pos - earth_pos).length();
-        if dist_to_earth < earth_radius * 10.0 { // Within 10 Earth radii
+        if dist_to_earth < earth_radius * 10.0 {
+            // Within 10 Earth radii
             return (true, t, pos);
         }
 
@@ -165,10 +183,22 @@ fn test_broken_approach(earth_pos: DVec2) {
     let delta = earth_future - asteroid_pos;
     let vel = delta / intercept_time * 1.05;
 
-    println!("  Asteroid starts at ({:.4} AU, {:.4} AU)", asteroid_pos.x / AU, asteroid_pos.y / AU);
-    println!("  Velocity: ({:.2} km/s, {:.2} km/s) = {:.2} km/s",
-        vel.x / 1000.0, vel.y / 1000.0, vel.length() / 1000.0);
-    println!("  Aiming at Earth future pos: ({:.4} AU, {:.4} AU)", earth_future.x / AU, earth_future.y / AU);
+    println!(
+        "  Asteroid starts at ({:.4} AU, {:.4} AU)",
+        asteroid_pos.x / AU,
+        asteroid_pos.y / AU
+    );
+    println!(
+        "  Velocity: ({:.2} km/s, {:.2} km/s) = {:.2} km/s",
+        vel.x / 1000.0,
+        vel.y / 1000.0,
+        vel.length() / 1000.0
+    );
+    println!(
+        "  Aiming at Earth future pos: ({:.4} AU, {:.4} AU)",
+        earth_future.x / AU,
+        earth_future.y / AU
+    );
     println!("  PROBLEM: Trajectory passes through Sun at origin!");
 
     // Simulate
@@ -203,9 +233,16 @@ fn test_hohmann_approach(earth_pos: DVec2, earth_vel: DVec2) {
     // Circular velocity at r1 for comparison
     let v_circular = (SUN_GM / r1).sqrt();
 
-    println!("  Asteroid at ({:.4} AU, {:.4} AU)", asteroid_pos.x / AU, asteroid_pos.y / AU);
-    println!("  Transfer velocity: {:.2} km/s (circular would be {:.2} km/s)",
-        v_transfer / 1000.0, v_circular / 1000.0);
+    println!(
+        "  Asteroid at ({:.4} AU, {:.4} AU)",
+        asteroid_pos.x / AU,
+        asteroid_pos.y / AU
+    );
+    println!(
+        "  Transfer velocity: {:.2} km/s (circular would be {:.2} km/s)",
+        v_transfer / 1000.0,
+        v_circular / 1000.0
+    );
 
     // Simulate
     let angular_vel = EARTH_ORBITAL_VEL / AU;
@@ -231,7 +268,11 @@ fn test_radial_infall(earth_pos: DVec2) {
     // Zero initial velocity - just let it fall
     let vel = DVec2::ZERO;
 
-    println!("  Asteroid at ({:.4} AU, {:.4} AU)", asteroid_pos.x / AU, asteroid_pos.y / AU);
+    println!(
+        "  Asteroid at ({:.4} AU, {:.4} AU)",
+        asteroid_pos.x / AU,
+        asteroid_pos.y / AU
+    );
     println!("  Starting from rest - pure radial infall");
 
     let angular_vel = EARTH_ORBITAL_VEL / AU;
@@ -261,8 +302,12 @@ fn test_retrograde_approach(earth_pos: DVec2, earth_vel: DVec2) {
     let v_circular = (SUN_GM / AU).sqrt();
     let vel = -tangent * v_circular; // Negative = retrograde
 
-    println!("  Asteroid at ({:.4} AU, {:.4} AU), {:.1}° ahead of Earth",
-        asteroid_pos.x / AU, asteroid_pos.y / AU, offset_angle.to_degrees());
+    println!(
+        "  Asteroid at ({:.4} AU, {:.4} AU), {:.1}° ahead of Earth",
+        asteroid_pos.x / AU,
+        asteroid_pos.y / AU,
+        offset_angle.to_degrees()
+    );
     println!("  Retrograde velocity: {:.2} km/s", v_circular / 1000.0);
 
     let angular_vel = EARTH_ORBITAL_VEL / AU;
@@ -285,7 +330,10 @@ fn test_crossing_orbit(earth_pos: DVec2, _earth_vel: DVec2) {
     let asteroid_angle = angle - std::f64::consts::PI / 3.0; // 60 degrees behind
 
     let r_start = 1.2 * AU;
-    let asteroid_pos = DVec2::new(r_start * asteroid_angle.cos(), r_start * asteroid_angle.sin());
+    let asteroid_pos = DVec2::new(
+        r_start * asteroid_angle.cos(),
+        r_start * asteroid_angle.sin(),
+    );
 
     // Give it velocity slightly less than circular - will fall inward
     // Targeting perihelion around 0.9 AU
@@ -295,9 +343,15 @@ fn test_crossing_orbit(earth_pos: DVec2, _earth_vel: DVec2) {
     let tangent = DVec2::new(-asteroid_angle.sin(), asteroid_angle.cos());
     let vel = tangent * v_apo;
 
-    println!("  Asteroid at ({:.4} AU, {:.4} AU), 60° behind Earth",
-        asteroid_pos.x / AU, asteroid_pos.y / AU);
-    println!("  Prograde, eccentric orbit (perihelion {:.2} AU)", r_perihelion / AU);
+    println!(
+        "  Asteroid at ({:.4} AU, {:.4} AU), 60° behind Earth",
+        asteroid_pos.x / AU,
+        asteroid_pos.y / AU
+    );
+    println!(
+        "  Prograde, eccentric orbit (perihelion {:.2} AU)",
+        r_perihelion / AU
+    );
     println!("  Velocity: {:.2} km/s", v_apo / 1000.0);
 
     let angular_vel = EARTH_ORBITAL_VEL / AU;
@@ -320,16 +374,25 @@ fn test_slow_retrograde(earth_pos: DVec2, _earth_vel: DVec2) {
     let asteroid_angle = angle + offset_angle;
 
     let r_start = 1.1 * AU; // Slightly outside Earth's orbit
-    let asteroid_pos = DVec2::new(r_start * asteroid_angle.cos(), r_start * asteroid_angle.sin());
+    let asteroid_pos = DVec2::new(
+        r_start * asteroid_angle.cos(),
+        r_start * asteroid_angle.sin(),
+    );
 
     // Retrograde at this radius
     let tangent = DVec2::new(-asteroid_angle.sin(), asteroid_angle.cos());
     let v_circular = (SUN_GM / r_start).sqrt();
     let vel = -tangent * v_circular * 0.9; // Slightly slower than circular
 
-    println!("  Asteroid at ({:.4} AU, {:.4} AU), 90° ahead, 1.1 AU out",
-        asteroid_pos.x / AU, asteroid_pos.y / AU);
-    println!("  Slow retrograde velocity: {:.2} km/s", vel.length() / 1000.0);
+    println!(
+        "  Asteroid at ({:.4} AU, {:.4} AU), 90° ahead, 1.1 AU out",
+        asteroid_pos.x / AU,
+        asteroid_pos.y / AU
+    );
+    println!(
+        "  Slow retrograde velocity: {:.2} km/s",
+        vel.length() / 1000.0
+    );
 
     let angular_vel = EARTH_ORBITAL_VEL / AU;
     let angle_now = earth_pos.y.atan2(earth_pos.x);
@@ -350,7 +413,10 @@ fn test_elliptical_approach(earth_pos: DVec2, _earth_vel: DVec2) {
     let angle = earth_pos.y.atan2(earth_pos.x);
     let asteroid_angle = angle - std::f64::consts::PI / 2.0; // 90 degrees behind
 
-    let asteroid_pos = DVec2::new(1.5 * AU * asteroid_angle.cos(), 1.5 * AU * asteroid_angle.sin());
+    let asteroid_pos = DVec2::new(
+        1.5 * AU * asteroid_angle.cos(),
+        1.5 * AU * asteroid_angle.sin(),
+    );
 
     // For an ellipse from 1.5 AU to perihelion at 0.8 AU:
     let r1 = 1.5 * AU;
@@ -360,7 +426,11 @@ fn test_elliptical_approach(earth_pos: DVec2, _earth_vel: DVec2) {
     let tangent = DVec2::new(-asteroid_angle.sin(), asteroid_angle.cos());
     let vel = tangent * v_apo;
 
-    println!("  Asteroid at ({:.4} AU, {:.4} AU)", asteroid_pos.x / AU, asteroid_pos.y / AU);
+    println!(
+        "  Asteroid at ({:.4} AU, {:.4} AU)",
+        asteroid_pos.x / AU,
+        asteroid_pos.y / AU
+    );
     println!("  Elliptical orbit, perihelion at {:.2} AU", r2 / AU);
     println!("  Velocity: {:.2} km/s", v_apo / 1000.0);
 

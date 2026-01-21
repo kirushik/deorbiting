@@ -10,16 +10,19 @@ use std::time::Instant;
 
 use crate::asteroid::Asteroid;
 use crate::camera::{CameraState, RENDER_SCALE};
-use crate::continuous::{compute_continuous_thrust, ContinuousDeflector};
+use crate::continuous::{ContinuousDeflector, compute_continuous_thrust};
 use crate::ephemeris::{CelestialBodyId, Ephemeris, GravitySourcesWithId};
 use crate::input::DragState;
 use crate::physics::{
-    compute_acceleration_from_full_sources, compute_adaptive_dt, compute_gravity_full,
-    PredictionConfig,
+    PredictionConfig, compute_acceleration_from_full_sources, compute_adaptive_dt,
+    compute_gravity_full,
 };
-use crate::render::z_layers;
 use crate::render::SelectedBody;
-use crate::types::{BodyState, InputSystemSet, SelectableBody, SimulationTime, AU_TO_METERS, ESCAPE_DISTANCE, CRASH_DISTANCE};
+use crate::render::z_layers;
+use crate::types::{
+    AU_TO_METERS, BodyState, CRASH_DISTANCE, ESCAPE_DISTANCE, InputSystemSet, SelectableBody,
+    SimulationTime,
+};
 use crate::ui::velocity_handle::VelocityDragState;
 
 /// Plugin providing trajectory prediction functionality.
@@ -171,7 +174,9 @@ impl TrajectoryCache {
 
     /// Get the continuation state for an entity.
     fn get_continuation(&self, entity: Entity) -> Option<&ContinuationState> {
-        self.entries.get(&entity).and_then(|e| e.continuation.as_ref())
+        self.entries
+            .get(&entity)
+            .and_then(|e| e.continuation.as_ref())
     }
 
     /// Invalidate the cache for a specific entity.
@@ -187,7 +192,8 @@ impl TrajectoryCache {
 
     /// Clean up entries for entities that no longer exist.
     fn cleanup_stale_entries(&mut self, valid_entities: &[Entity]) {
-        self.entries.retain(|entity, _| valid_entities.contains(entity));
+        self.entries
+            .retain(|entity, _| valid_entities.contains(entity));
     }
 
     /// Store the continuation state for later extension.
@@ -282,8 +288,8 @@ impl PredictionBudget {
 
 /// Compute a simple hash of deflector configuration for cache invalidation.
 fn compute_deflector_hash(deflectors: &[ContinuousDeflector]) -> u64 {
-    use std::hash::{Hash, Hasher};
     use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
 
     let mut hasher = DefaultHasher::new();
 
@@ -325,13 +331,9 @@ fn track_selection_changes(
 }
 
 /// Run condition: should we run prediction this frame?
-fn should_run_prediction(
-    state: Res<PredictionState>,
-    settings: Res<PredictionSettings>,
-) -> bool {
+fn should_run_prediction(state: Res<PredictionState>, settings: Res<PredictionSettings>) -> bool {
     state.needs_update || state.frame_counter >= settings.update_interval
 }
-
 
 /// Find the celestial body whose gravity dominates at a given position.
 ///
@@ -346,7 +348,10 @@ fn find_dominant_body(pos: DVec2, time: f64, ephemeris: &Ephemeris) -> Option<Ce
 ///
 /// More efficient when sources have already been fetched for other calculations.
 #[inline]
-fn find_dominant_body_from_sources(pos: DVec2, sources: &GravitySourcesWithId) -> Option<CelestialBodyId> {
+fn find_dominant_body_from_sources(
+    pos: DVec2,
+    sources: &GravitySourcesWithId,
+) -> Option<CelestialBodyId> {
     let mut max_acc = 0.0_f64;
     let mut dominant = CelestialBodyId::Sun;
 
@@ -443,7 +448,8 @@ fn predict_trajectory(
         }
 
         // Is this asteroid being dragged?
-        let is_this_dragging = is_dragging && (dragging_entity == Some(entity) || velocity_drag.dragging);
+        let is_this_dragging =
+            is_dragging && (dragging_entity == Some(entity) || velocity_drag.dragging);
 
         // Collect deflector info for this asteroid
         let deflector_snapshot: Vec<ContinuousDeflector> = deflectors
@@ -456,8 +462,7 @@ fn predict_trajectory(
 
         // Determine if we can use the cache for incremental extension
         // Cache remains valid as long as: not dragging, deflectors unchanged, not terminal
-        let can_extend_cache = !is_this_dragging
-            && cache.can_extend(entity, deflector_hash);
+        let can_extend_cache = !is_this_dragging && cache.can_extend(entity, deflector_hash);
 
         if can_extend_cache {
             // Incremental extension: prune old points and continue from cached state
@@ -536,11 +541,7 @@ fn predict_trajectory(
 
             // Update budget with measured performance
             let elapsed_micros = start_time.elapsed().as_micros() as f64;
-            let steps_taken = result
-                .continuation
-                .as_ref()
-                .map(|c| c.steps)
-                .unwrap_or(0);
+            let steps_taken = result.continuation.as_ref().map(|c| c.steps).unwrap_or(0);
             budget.update_cost(steps_taken, elapsed_micros);
 
             // Update cache if not dragging
@@ -703,7 +704,11 @@ fn predict_with_verlet_full(
     let mut dt = config.initial_dt;
 
     let mut step = 0;
-    let max_steps = if is_dragging { 1000 } else { settings.max_steps };
+    let max_steps = if is_dragging {
+        1000
+    } else {
+        settings.max_steps
+    };
 
     while step < max_steps && sim_t < end_t {
         // Velocity Verlet integration
@@ -959,7 +964,10 @@ fn draw_trajectory(
         let mut prev_render_pos: Option<Vec3> = None;
 
         // For escape trajectories, calculate starting position for distance-based fade
-        let is_escape = matches!(trajectory.outcome, crate::outcome::TrajectoryOutcome::Escape { .. });
+        let is_escape = matches!(
+            trajectory.outcome,
+            crate::outcome::TrajectoryOutcome::Escape { .. }
+        );
         let start_pos = if is_escape && !trajectory.points.is_empty() {
             Some(trajectory.points[0].pos)
         } else {
@@ -1010,22 +1018,22 @@ fn draw_trajectory(
 /// Get the characteristic color for a celestial body.
 fn body_color(body_id: CelestialBodyId) -> (f32, f32, f32) {
     match body_id {
-        CelestialBodyId::Sun => (0.0, 0.85, 1.0),        // Cyan (default trajectory color)
-        CelestialBodyId::Mercury => (0.7, 0.7, 0.7),     // Gray
-        CelestialBodyId::Venus => (1.0, 0.9, 0.6),       // Yellow
-        CelestialBodyId::Earth => (0.3, 0.5, 1.0),       // Blue
-        CelestialBodyId::Mars => (1.0, 0.4, 0.3),        // Red
-        CelestialBodyId::Jupiter => (1.0, 0.7, 0.3),     // Orange
-        CelestialBodyId::Saturn => (0.9, 0.8, 0.5),      // Gold
-        CelestialBodyId::Uranus => (0.5, 0.9, 0.8),      // Cyan-green
-        CelestialBodyId::Neptune => (0.3, 0.4, 1.0),     // Deep blue
+        CelestialBodyId::Sun => (0.0, 0.85, 1.0), // Cyan (default trajectory color)
+        CelestialBodyId::Mercury => (0.7, 0.7, 0.7), // Gray
+        CelestialBodyId::Venus => (1.0, 0.9, 0.6), // Yellow
+        CelestialBodyId::Earth => (0.3, 0.5, 1.0), // Blue
+        CelestialBodyId::Mars => (1.0, 0.4, 0.3), // Red
+        CelestialBodyId::Jupiter => (1.0, 0.7, 0.3), // Orange
+        CelestialBodyId::Saturn => (0.9, 0.8, 0.5), // Gold
+        CelestialBodyId::Uranus => (0.5, 0.9, 0.8), // Cyan-green
+        CelestialBodyId::Neptune => (0.3, 0.4, 1.0), // Deep blue
         // Moons inherit parent color (simplified)
-        CelestialBodyId::Moon => (0.3, 0.5, 1.0),        // Blue (like Earth)
+        CelestialBodyId::Moon => (0.3, 0.5, 1.0), // Blue (like Earth)
         CelestialBodyId::Phobos | CelestialBodyId::Deimos => (1.0, 0.4, 0.3), // Red (like Mars)
         CelestialBodyId::Io
         | CelestialBodyId::Europa
         | CelestialBodyId::Ganymede
-        | CelestialBodyId::Callisto => (1.0, 0.7, 0.3),  // Orange (like Jupiter)
+        | CelestialBodyId::Callisto => (1.0, 0.7, 0.3), // Orange (like Jupiter)
         CelestialBodyId::Titan | CelestialBodyId::Enceladus => (0.9, 0.8, 0.5), // Gold (like Saturn)
     }
 }
@@ -1040,7 +1048,7 @@ fn trajectory_color(
 ) -> Color {
     // Base alpha fades from 1.0 to 0.2 along trajectory
     let base_alpha = 1.0 - t_normalized * 0.8;
-    
+
     // Non-selected asteroids get reduced opacity (but still visible)
     let alpha = if is_selected {
         base_alpha
@@ -1053,7 +1061,12 @@ fn trajectory_color(
         // Start orange-red, transition to bright red near collision
         let intensity = 0.6 + t_normalized * 0.4; // 0.6 → 1.0
         let green = 0.3 * (1.0 - t_normalized); // 0.3 → 0.0
-        Color::srgba(intensity, green, 0.1, alpha.max(if is_selected { 0.5 } else { 0.2 }))
+        Color::srgba(
+            intensity,
+            green,
+            0.1,
+            alpha.max(if is_selected { 0.5 } else { 0.2 }),
+        )
     } else if let Some(body_id) = dominant_body {
         // Color based on dominant body
         let (r, g, b) = body_color(body_id);
@@ -1089,7 +1102,10 @@ mod tests {
             panic!("Expected Srgba color");
         };
 
-        assert!(start.alpha > end.alpha, "Color should fade along trajectory");
+        assert!(
+            start.alpha > end.alpha,
+            "Color should fade along trajectory"
+        );
         assert!(start.alpha > 0.9, "Start should be nearly opaque");
         assert!(end.alpha < 0.3, "End should be mostly transparent");
     }
@@ -1108,7 +1124,10 @@ mod tests {
 
         // Collision should be red (high R, low G/B)
         assert!(collision_color.red > 0.8, "Collision should be red");
-        assert!(collision_color.green < 0.5, "Collision should have low green");
+        assert!(
+            collision_color.green < 0.5,
+            "Collision should have low green"
+        );
 
         // Normal should be cyan (low R, high G/B)
         assert!(normal_color.red < 0.2, "Normal should have low red");
@@ -1125,7 +1144,10 @@ mod tests {
 
         // Orange: high R, medium G, low B
         assert!(color.red > 0.8, "Jupiter should be orange (high red)");
-        assert!(color.green > 0.5 && color.green < 0.9, "Jupiter should be orange (medium green)");
+        assert!(
+            color.green > 0.5 && color.green < 0.9,
+            "Jupiter should be orange (medium green)"
+        );
         assert!(color.blue < 0.5, "Jupiter should be orange (low blue)");
 
         // Earth-dominated segment should be blue
@@ -1149,7 +1171,6 @@ mod tests {
         assert_eq!(settings.point_interval, 20);
     }
 
-
     #[test]
     fn test_trajectory_cache_empty_cannot_extend() {
         let cache = TrajectoryCache::default();
@@ -1163,7 +1184,7 @@ mod tests {
         let mut cache = TrajectoryCache::default();
         let entity = Entity::from_raw(1);
         let deflector_hash = 12345u64;
-        
+
         // Store continuation
         let continuation = ContinuationState {
             pos: DVec2::new(1e11, 0.0),
@@ -1173,15 +1194,15 @@ mod tests {
             sim_t: 0.0,
             steps: 1000,
         };
-        
+
         cache.store_continuation(entity, continuation.clone(), deflector_hash, 0.0);
-        
+
         // Can extend with same hash
         assert!(cache.can_extend(entity, deflector_hash));
-        
+
         // Cannot extend with different hash
         assert!(!cache.can_extend(entity, deflector_hash + 1));
-        
+
         // Other entity cannot extend
         assert!(!cache.can_extend(Entity::from_raw(2), deflector_hash));
     }
@@ -1190,7 +1211,7 @@ mod tests {
     fn test_trajectory_cache_invalidate_entity() {
         let mut cache = TrajectoryCache::default();
         let entity = Entity::from_raw(1);
-        
+
         let continuation = ContinuationState {
             pos: DVec2::new(1e11, 0.0),
             vel: DVec2::new(0.0, 3e4),
@@ -1199,10 +1220,10 @@ mod tests {
             sim_t: 0.0,
             steps: 100,
         };
-        
+
         cache.store_continuation(entity, continuation, 0, 0.0);
         assert!(cache.can_extend(entity, 0));
-        
+
         cache.invalidate_entity(entity);
         assert!(!cache.can_extend(entity, 0));
     }
@@ -1211,7 +1232,7 @@ mod tests {
     fn test_trajectory_cache_mark_terminal() {
         let mut cache = TrajectoryCache::default();
         let entity = Entity::from_raw(1);
-        
+
         let continuation = ContinuationState {
             pos: DVec2::new(1e11, 0.0),
             vel: DVec2::new(0.0, 3e4),
@@ -1220,10 +1241,10 @@ mod tests {
             sim_t: 0.0,
             steps: 100,
         };
-        
+
         cache.store_continuation(entity, continuation, 0, 0.0);
         assert!(cache.can_extend(entity, 0));
-        
+
         cache.mark_terminal(entity);
         // Terminal entries cannot be extended
         assert!(!cache.can_extend(entity, 0));
@@ -1232,11 +1253,11 @@ mod tests {
     #[test]
     fn test_trajectory_cache_cleanup_stale() {
         let mut cache = TrajectoryCache::default();
-        
+
         let e1 = Entity::from_raw(1);
         let e2 = Entity::from_raw(2);
         let e3 = Entity::from_raw(3);
-        
+
         let cont = ContinuationState {
             pos: DVec2::ZERO,
             vel: DVec2::ZERO,
@@ -1245,14 +1266,14 @@ mod tests {
             sim_t: 0.0,
             steps: 0,
         };
-        
+
         cache.store_continuation(e1, cont.clone(), 0, 0.0);
         cache.store_continuation(e2, cont.clone(), 0, 0.0);
         cache.store_continuation(e3, cont.clone(), 0, 0.0);
-        
+
         // Cleanup - only e1 and e2 are valid
         cache.cleanup_stale_entries(&[e1, e2]);
-        
+
         assert!(cache.can_extend(e1, 0));
         assert!(cache.can_extend(e2, 0));
         assert!(!cache.can_extend(e3, 0)); // Was cleaned up
@@ -1261,7 +1282,7 @@ mod tests {
     #[test]
     fn test_prediction_budget_defaults() {
         let budget = PredictionBudget::default();
-        
+
         assert!(budget.target_micros > 0.0);
         assert!(budget.steps_budget > 0);
         assert!(budget.min_steps > 0);
@@ -1273,10 +1294,10 @@ mod tests {
     fn test_prediction_budget_ewma_update() {
         let mut budget = PredictionBudget::default();
         let initial_cost = budget.step_cost_ewma;
-        
+
         // Simulate measured performance - 2000 steps in 4000 microseconds = 2μs/step
         budget.update_cost(2000, 4000.0);
-        
+
         // EWMA should have moved towards the measured cost
         // New = alpha * measured + (1-alpha) * old
         // With alpha=0.2, measured=2.0, old=1.0:
@@ -1289,7 +1310,7 @@ mod tests {
     fn test_prediction_budget_get_extension_budget() {
         let budget = PredictionBudget::default();
         let ext_budget = budget.get_extension_budget();
-        
+
         // Extension budget should be within bounds
         assert!(ext_budget >= budget.min_steps);
         assert!(ext_budget <= budget.max_steps);
@@ -1303,7 +1324,7 @@ mod tests {
             CelestialBodyId::Mars,
             CelestialBodyId::Jupiter,
         ];
-        
+
         for body in bodies {
             let (r, g, b) = body_color(body);
             // All components should be in [0, 1]
@@ -1317,11 +1338,18 @@ mod tests {
     fn test_trajectory_color_non_selected_dimmer() {
         let selected = trajectory_color(0.5, false, None, true);
         let non_selected = trajectory_color(0.5, false, None, false);
-        
-        let Color::Srgba(sel) = selected else { panic!("Expected Srgba"); };
-        let Color::Srgba(non_sel) = non_selected else { panic!("Expected Srgba"); };
-        
+
+        let Color::Srgba(sel) = selected else {
+            panic!("Expected Srgba");
+        };
+        let Color::Srgba(non_sel) = non_selected else {
+            panic!("Expected Srgba");
+        };
+
         // Non-selected should have lower alpha
-        assert!(non_sel.alpha < sel.alpha, "Non-selected trajectory should be dimmer");
+        assert!(
+            non_sel.alpha < sel.alpha,
+            "Non-selected trajectory should be dimmer"
+        );
     }
 }

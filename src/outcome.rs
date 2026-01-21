@@ -145,7 +145,7 @@ pub fn compute_orbital_elements(pos: DVec2, vel: DVec2, gm: f64) -> Option<Orbit
     if r < 1e6 {
         return None; // Less than 1km from Sun center
     }
-    
+
     let v = vel.length();
     let v_sq = v * v;
 
@@ -216,14 +216,13 @@ pub fn detect_outcome(
     impact_velocity: Option<f64>,
 ) -> TrajectoryOutcome {
     // Case 1: Collision detected
-    if ends_in_collision
-        && let Some(body) = collision_target {
-            return TrajectoryOutcome::Collision {
-                body_hit: body,
-                time_to_impact: prediction_time_span,
-                impact_velocity: impact_velocity.unwrap_or(final_vel.length()),
-            };
-        }
+    if ends_in_collision && let Some(body) = collision_target {
+        return TrajectoryOutcome::Collision {
+            body_hit: body,
+            time_to_impact: prediction_time_span,
+            impact_velocity: impact_velocity.unwrap_or(final_vel.length()),
+        };
+    }
 
     // Compute orbital elements from initial state (relative to Sun)
     // Returns None if position is at origin (shouldn't happen in practice)
@@ -423,28 +422,21 @@ mod tests {
             "Hyperbolic e > 1, got {}",
             elements.eccentricity
         );
-        assert!(
-            elements.period.is_none(),
-            "Hyperbolic orbit has no period"
-        );
-        assert!(
-            elements.v_infinity() > 0.0,
-            "Should have excess velocity"
-        );
+        assert!(elements.period.is_none(), "Hyperbolic orbit has no period");
+        assert!(elements.v_infinity() > 0.0, "Should have excess velocity");
     }
-
 
     #[test]
     fn test_orbital_energy_at_origin() {
         // Test that orbital_energy returns None when position is at origin
         let pos = DVec2::ZERO;
         let vel = DVec2::new(1000.0, 0.0);
-        
+
         assert!(
             orbital_energy(pos, vel, GM_SUN).is_none(),
             "Should return None for position at origin"
         );
-        
+
         // Also test compute_orbital_elements
         assert!(
             compute_orbital_elements(pos, vel, GM_SUN).is_none(),
@@ -499,7 +491,10 @@ mod tests {
             None,
         );
 
-        assert!(outcome.is_escape(), "Expected escape outcome, got {outcome:?}");
+        assert!(
+            outcome.is_escape(),
+            "Expected escape outcome, got {outcome:?}"
+        );
     }
 
     #[test]
@@ -521,10 +516,7 @@ mod tests {
                 period,
                 ..
             } => {
-                assert!(
-                    (semi_major_axis - r).abs() / r < 0.01,
-                    "a should be ~1 AU"
-                );
+                assert!((semi_major_axis - r).abs() / r < 0.01, "a should be ~1 AU");
                 assert!(eccentricity < 0.01, "e should be ~0");
                 assert!(
                     (period - 365.25 * 86400.0).abs() / (365.25 * 86400.0) < 0.01,

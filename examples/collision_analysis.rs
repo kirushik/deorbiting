@@ -26,13 +26,25 @@ fn main() {
     // Retrograde asteroid at same radius
     let relative_velocity = earth_v * 2.0; // Head-on = 2x orbital velocity
     println!("Retrograde collision scenario:");
-    println!("  Relative velocity: {:.2} km/s", relative_velocity / 1000.0);
+    println!(
+        "  Relative velocity: {:.2} km/s",
+        relative_velocity / 1000.0
+    );
 
     // Time window for collision
     let crossing_time = 2.0 * EARTH_RADIUS / relative_velocity;
-    println!("  Time to cross Earth diameter: {:.2} seconds", crossing_time);
-    println!("  At 1-hour timestep, asteroid moves: {:.0} km", relative_velocity * 3600.0 / 1000.0);
-    println!("  At 1-minute timestep, asteroid moves: {:.0} km", relative_velocity * 60.0 / 1000.0);
+    println!(
+        "  Time to cross Earth diameter: {:.2} seconds",
+        crossing_time
+    );
+    println!(
+        "  At 1-hour timestep, asteroid moves: {:.0} km",
+        relative_velocity * 3600.0 / 1000.0
+    );
+    println!(
+        "  At 1-minute timestep, asteroid moves: {:.0} km",
+        relative_velocity * 60.0 / 1000.0
+    );
     println!("  Earth radius: {:.0} km\n", EARTH_RADIUS / 1000.0);
 
     // The problem: orbit placement precision
@@ -43,7 +55,10 @@ fn main() {
     // Starting 90 degrees apart, they meet at 45 degrees each (1/8 orbit)
     let time_to_meet = earth_period / 8.0;
     println!("If asteroid at 90° ahead (retrograde):");
-    println!("  Time until paths cross: {:.1} days", time_to_meet / 86400.0);
+    println!(
+        "  Time until paths cross: {:.1} days",
+        time_to_meet / 86400.0
+    );
 
     // But "paths crossing" doesn't mean collision!
     // At exact same radius, they cross at the same point
@@ -53,8 +68,12 @@ fn main() {
     for radius_error_km in [1.0, 10.0, 100.0, 1000.0, 10000.0] {
         let miss = radius_error_km * 1000.0; // Convert to meters
         let hits = miss < EARTH_RADIUS;
-        println!("  Radius error {:.0} km -> miss by {:.0} km -> {}",
-            radius_error_km, miss / 1000.0, if hits { "HIT" } else { "MISS" });
+        println!(
+            "  Radius error {:.0} km -> miss by {:.0} km -> {}",
+            radius_error_km,
+            miss / 1000.0,
+            if hits { "HIT" } else { "MISS" }
+        );
     }
 
     println!("\n=== Solution Analysis ===\n");
@@ -63,7 +82,11 @@ fn main() {
     println!("Solution 1: Larger collision detection radius");
     for multiplier in [1.0, 10.0, 50.0, 100.0] {
         let effective_radius = EARTH_RADIUS * multiplier;
-        println!("  {}x radius = {:.0} km", multiplier, effective_radius / 1000.0);
+        println!(
+            "  {}x radius = {:.0} km",
+            multiplier,
+            effective_radius / 1000.0
+        );
     }
 
     // Solution 2: Interpolation
@@ -86,7 +109,10 @@ fn main() {
 
     let omega = earth_v / earth_r; // rad/s
     println!("Angular velocity: {:.2e} rad/s", omega);
-    println!("  = {:.4} deg/day", omega * 86400.0 * 180.0 / std::f64::consts::PI);
+    println!(
+        "  = {:.4} deg/day",
+        omega * 86400.0 * 180.0 / std::f64::consts::PI
+    );
 
     // For collision, they need to be at exactly the same point
     // This only happens if they start at positions that, when evolved, coincide
@@ -141,7 +167,11 @@ fn test_elliptical_intercept() {
             let (hit_direct, time_direct, closest_direct) = simulate(pos, direct_vel);
             let (hit_retro, time_retro, closest_retro) = simulate(pos, retrograde_vel);
 
-            if hit_direct || hit_retro || closest_direct < EARTH_RADIUS * 100.0 || closest_retro < EARTH_RADIUS * 100.0 {
+            if hit_direct
+                || hit_retro
+                || closest_direct < EARTH_RADIUS * 100.0
+                || closest_retro < EARTH_RADIUS * 100.0
+            {
                 println!("{}° ahead, r={:.2} AU:", angle_deg, r_factor);
                 if hit_direct {
                     println!("  Direct: HIT at {:.1} days", time_direct / 86400.0);

@@ -21,8 +21,8 @@ pub use thrust::ThrustDirection;
 
 use crate::asteroid::Asteroid;
 use crate::physics::IntegratorStates;
-use crate::prediction::{mark_prediction_dirty, PredictionState};
-use crate::types::{BodyState, SimulationTime, AU_TO_METERS};
+use crate::prediction::{PredictionState, mark_prediction_dirty};
+use crate::types::{AU_TO_METERS, BodyState, SimulationTime};
 
 use self::thrust::{
     compute_thrust_direction, gravity_tractor_acceleration, ion_beam_acceleration,
@@ -66,9 +66,7 @@ pub enum ContinuousDeflectorState {
 
 impl Default for ContinuousDeflectorState {
     fn default() -> Self {
-        ContinuousDeflectorState::EnRoute {
-            arrival_time: 0.0,
-        }
+        ContinuousDeflectorState::EnRoute { arrival_time: 0.0 }
     }
 }
 
@@ -120,9 +118,10 @@ impl ContinuousDeflector {
     pub fn fuel_fraction(&self) -> Option<f64> {
         if let ContinuousDeflectorState::Operating { fuel_consumed, .. } = &self.state
             && let Some(initial) = self.payload.initial_fuel()
-                && initial > 0.0 {
-                    return Some(1.0 - (fuel_consumed / initial).min(1.0));
-                }
+            && initial > 0.0
+        {
+            return Some(1.0 - (fuel_consumed / initial).min(1.0));
+        }
         None
     }
 }
@@ -261,18 +260,18 @@ fn update_continuous_deflectors(
                 };
 
                 if should_complete {
-                    let new_state = if matches!(deflector.payload, ContinuousPayload::IonBeam { .. })
-                    {
-                        ContinuousDeflectorState::FuelDepleted {
-                            ended_at: current_time,
-                            total_delta_v: accumulated_delta_v,
-                        }
-                    } else {
-                        ContinuousDeflectorState::Complete {
-                            ended_at: current_time,
-                            total_delta_v: accumulated_delta_v,
-                        }
-                    };
+                    let new_state =
+                        if matches!(deflector.payload, ContinuousPayload::IonBeam { .. }) {
+                            ContinuousDeflectorState::FuelDepleted {
+                                ended_at: current_time,
+                                total_delta_v: accumulated_delta_v,
+                            }
+                        } else {
+                            ContinuousDeflectorState::Complete {
+                                ended_at: current_time,
+                                total_delta_v: accumulated_delta_v,
+                            }
+                        };
 
                     deflector.state = new_state;
 
@@ -357,12 +356,17 @@ pub fn compute_continuous_thrust(
                 ..
             } => {
                 let solar_distance_au = asteroid_pos.length() / AU_TO_METERS;
-                solar_sail_acceleration(sail_area_m2 * reflectivity, solar_distance_au, asteroid_mass)
+                solar_sail_acceleration(
+                    sail_area_m2 * reflectivity,
+                    solar_distance_au,
+                    asteroid_mass,
+                )
             }
         };
 
         // Compute thrust direction
-        let direction = compute_thrust_direction(asteroid_vel, asteroid_pos, deflector.payload.direction());
+        let direction =
+            compute_thrust_direction(asteroid_vel, asteroid_pos, deflector.payload.direction());
 
         // Add to total acceleration
         total_acc += direction * acc_magnitude;
@@ -417,7 +421,11 @@ pub fn update_deflector_progress(
                 ..
             } => {
                 let solar_distance_au = asteroid_pos.length() / AU_TO_METERS;
-                solar_sail_acceleration(sail_area_m2 * reflectivity, solar_distance_au, asteroid_mass)
+                solar_sail_acceleration(
+                    sail_area_m2 * reflectivity,
+                    solar_distance_au,
+                    asteroid_mass,
+                )
             }
         };
 
@@ -443,7 +451,9 @@ mod tests {
             payload: ContinuousPayload::ion_beam_default(),
             launch_time: 0.0,
             launch_position: DVec2::ZERO,
-            state: ContinuousDeflectorState::EnRoute { arrival_time: 100.0 },
+            state: ContinuousDeflectorState::EnRoute {
+                arrival_time: 100.0,
+            },
         };
 
         assert!(!deflector.is_operating());
@@ -549,7 +559,9 @@ mod tests {
             payload: ContinuousPayload::ion_beam_default(),
             launch_time: 0.0,
             launch_position: DVec2::ZERO,
-            state: ContinuousDeflectorState::EnRoute { arrival_time: 100.0 },
+            state: ContinuousDeflectorState::EnRoute {
+                arrival_time: 100.0,
+            },
         };
 
         let target = Entity::from_raw(1);
