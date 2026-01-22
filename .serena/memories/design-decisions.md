@@ -195,6 +195,29 @@ Four continuous deflection methods implemented in `src/continuous/`:
   - Expanded nuclear yield slider: 1-10000 kt (was 1-1000)
   - Makes scenario solvable with various methods
 
+## Ephemeris Extrapolation Fix (2026-01-22)
+
+### Problem
+When simulation time exceeded table coverage (year 2200+), the offset-based extrapolation formula caused catastrophic errors for outer planets:
+
+| Planet | With Offset Extrapolation | With Pure Kepler |
+|--------|--------------------------|------------------|
+| Mars at year 2222 | 92 AU | 1.5 AU ✓ |
+| Jupiter at year 2222 | 2.9 AU | 5.2 AU ✓ |
+
+### Root Cause
+The formula `drifted_dp = offset.dp + offset.dv * dt` multiplied velocity offset by time-past-boundary. At 22 years past table end, this produced ~23 AU position offsets.
+
+Even the simpler constant offset (`offset.dp` only) failed because the offset computed at year 2200 doesn't remain valid 22 years later when the planet has moved 2+ orbits.
+
+### Solution
+**Removed offset extrapolation entirely.** Past table end, use pure Kepler with no corrections.
+
+Trade-off: Small discontinuity at boundary (< 0.1 AU for inner planets) vs correct orbital shapes for all time past boundary.
+
+### Regression Test
+`test_drifting_offset_does_not_distort_orbits` in `src/ephemeris/mod.rs` verifies Mars < Jupiter distance at year 2222.
+
 ## Key Constants
 
 - J2000 Unix timestamp: 946728000

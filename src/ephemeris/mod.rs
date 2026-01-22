@@ -16,12 +16,12 @@ pub mod table;
 mod proptest_ephemeris;
 
 pub use data::{CelestialBodyData, CelestialBodyId, CelestialBodyTrivia, all_bodies, get_trivia};
+pub use horizons_tables::TableCoverage;
 
 use crate::types::G;
 use bevy::math::DVec2;
 use bevy::prelude::*;
 use std::collections::HashMap;
-use std::sync::RwLock;
 
 /// Multiplier for planet collision detection radius.
 ///
@@ -68,13 +68,6 @@ pub struct GravitySourceFull {
 /// Fixed-size array of full gravity sources (no heap allocation).
 pub type GravitySourcesFull = [GravitySourceFull; GRAVITY_SOURCE_COUNT];
 
-/// A constant (Δpos, Δvel) offset applied to a base ephemeris state.
-#[derive(Clone, Copy, Debug, Default)]
-struct StateOffset2 {
-    dp: DVec2,
-    dv: DVec2,
-}
-
 /// Pre-computed GM values for all bodies in standard order.
 /// Order: Sun, Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune,
 ///        Moon, Io, Europa, Ganymede, Callisto, Titan.
@@ -92,17 +85,6 @@ pub struct Ephemeris {
 
     /// Optional high-accuracy ephemeris tables generated from JPL Horizons.
     horizons: Option<horizons_tables::HorizonsTables>,
-
-    /// Continuity offsets used when we fall back from Horizons tables to Kepler past table end.
-    ///
-    /// For each body with a table, if `t > table.end_time()`, we compute the Kepler state at the
-    /// table end and apply a (Δpos, Δvel) offset so that Kepler matches the table exactly at the
-    /// boundary. This avoids discontinuities when table coverage expires (e.g. after ~200 years
-    /// for outer planets and major moons).
-    ///
-    /// This is cached via a thread-safe lock so `get_position_by_id` / `get_velocity_by_id` can
-    /// remain `&self` while still satisfying Bevy `Resource` bounds.
-    horizons_fallback_offsets: RwLock<HashMap<CelestialBodyId, StateOffset2>>,
 
     /// Pre-computed GM values for all bodies (computed once at startup).
     gm_cache: GmCache,
@@ -155,7 +137,6 @@ impl Ephemeris {
             id_to_entity: HashMap::new(),
             body_data,
             horizons,
-            horizons_fallback_offsets: RwLock::new(HashMap::new()),
             gm_cache,
         }
     }
@@ -214,8 +195,13 @@ impl Ephemeris {
     pub fn get_position_by_id(&self, id: CelestialBodyId, time: f64) -> Option<DVec2> {
         // Prefer high-accuracy Horizons table ephemeris when available.
         //
-        // If `time` is outside the table range, we fall back to Kepler but apply a per-body
-        // offset so the transition is continuous at the boundary (for planets only).
+        // If `time` is outside the table range, we fall back to pure Kepler orbits.
+        // We don't use offset extrapolation because:
+        // 1. The Horizons-Kepler offset at the boundary rotates with each orbit
+        // 2. Applying a constant offset far from the boundary causes large errors
+        //    (e.g., Jupiter can appear at 3 AU instead of 5 AU)
+        // 3. Pure Kepler produces stable, physically meaningful elliptical orbits
+        //    even if less accurate than perturbed solutions.
         if let Some(h) = &self.horizons
             && let Some(tbl) = h.table(id)
         {
@@ -227,26 +213,12 @@ impl Ephemeris {
                     return Some(state.pos);
                 }
                 // If sampling failed for some unexpected reason, fall through to Kepler.
-            } else if time > end {
-                // Past coverage end: patched Kepler continuation.
-                let base = self.get_kepler_position_by_id(id, time)?;
-
-                // For moons, the offset approach doesn't work because their heliocentric
-                // position depends on the parent's current position, not where the parent
-                // was at table end. Use pure Kepler for moons outside table coverage.
-                if id.parent().is_some() {
-                    return Some(base);
-                }
-
-                // For planets: compute or reuse the (Δpos, Δvel) offset at the end boundary.
-                let offset = self.get_or_compute_horizons_offset(id, end)?;
-                return Some(base + offset.dp);
             }
-            // For `time < start`, we intentionally fall back to Kepler without offsets.
-            // Tables are forward-only by design; negative times are not guaranteed.
+            // For `time < start` or `time > end`, fall through to Kepler.
+            // Tables are forward-only by design; extrapolation uses pure Kepler.
         }
 
-        // No table available: pure Kepler model.
+        // No table available or outside coverage: pure Kepler model.
         self.get_kepler_position_by_id(id, time)
     }
 
@@ -267,8 +239,9 @@ impl Ephemeris {
     pub fn get_velocity_by_id(&self, id: CelestialBodyId, time: f64) -> Option<DVec2> {
         // Prefer high-accuracy Horizons table ephemeris when available.
         //
-        // If `time` is outside the table range, we fall back to Kepler but apply a per-body
-        // offset so the transition is continuous at the boundary.
+        // If `time` is outside the table range, we fall back to pure Kepler orbits.
+        // This matches the position extrapolation behavior - no offset tricks,
+        // just pure Kepler for physically meaningful results outside table coverage.
         if let Some(h) = &self.horizons
             && let Some(tbl) = h.table(id)
         {
@@ -280,19 +253,12 @@ impl Ephemeris {
                     return Some(state.vel);
                 }
                 // If sampling failed for some unexpected reason, fall through to Kepler.
-            } else if time > end {
-                // Past coverage end: patched Kepler continuation (C0/C1 at end).
-                let base = self.get_kepler_velocity_by_id(id, time)?;
-
-                // Compute or reuse the (Δpos, Δvel) offset at the end boundary.
-                let offset = self.get_or_compute_horizons_offset(id, end)?;
-                return Some(base + offset.dv);
             }
-            // For `time < start`, we intentionally fall back to Kepler without offsets.
-            // Tables are forward-only by design; negative times are not guaranteed.
+            // For `time < start` or `time > end`, fall through to Kepler.
+            // Tables are forward-only by design; extrapolation uses pure Kepler.
         }
 
-        // No table available: pure Kepler model.
+        // No table available or outside coverage: pure Kepler model.
         self.get_kepler_velocity_by_id(id, time)
     }
 
@@ -565,6 +531,42 @@ impl Ephemeris {
         self.entity_to_id.iter().map(|(&e, &id)| (e, id))
     }
 
+    /// Get the Horizons table coverage for a celestial body.
+    ///
+    /// Returns the time range covered by the ephemeris table, if one exists.
+    /// Returns None if no table is loaded or if the body has no table.
+    pub fn horizons_coverage(&self, id: CelestialBodyId) -> Option<TableCoverage> {
+        self.horizons.as_ref()?.coverage(id)
+    }
+
+    /// Check if the current simulation time is beyond the ephemeris table coverage
+    /// for any planet.
+    ///
+    /// When true, planet positions are computed using Kepler approximations
+    /// rather than high-accuracy table data. This is useful for displaying
+    /// an "Estimated" indicator in the UI.
+    ///
+    /// # Arguments
+    /// * `time` - Time in seconds since J2000 epoch
+    ///
+    /// # Returns
+    /// `true` if time is beyond the table coverage end for planets (year ~2200),
+    /// `false` if within table coverage or if no tables are loaded.
+    pub fn is_beyond_table_coverage(&self, time: f64) -> bool {
+        let Some(h) = &self.horizons else {
+            // No tables loaded - pure Kepler always, but don't flag as "beyond"
+            return false;
+        };
+
+        // Check Earth's coverage as representative of planet tables
+        // (all planets have the same coverage range)
+        if let Some(cov) = h.coverage(CelestialBodyId::Earth) {
+            return time > cov.end;
+        }
+
+        false
+    }
+
     fn get_kepler_position_by_id(&self, id: CelestialBodyId, time: f64) -> Option<DVec2> {
         let data = self.body_data.get(&id)?;
 
@@ -603,39 +605,6 @@ impl Ephemeris {
                 }
             }
         }
-    }
-
-    /// Computes (or reuses) the table→Kepler continuity offset at `t_end`.
-    fn get_or_compute_horizons_offset(
-        &self,
-        id: CelestialBodyId,
-        t_end: f64,
-    ) -> Option<StateOffset2> {
-        // First, try the cache.
-        if let Ok(guard) = self.horizons_fallback_offsets.read()
-            && let Some(offset) = guard.get(&id).copied()
-        {
-            return Some(offset);
-        }
-
-        let h = self.horizons.as_ref()?;
-        let tbl = h.table(id)?;
-
-        let table_end = tbl.sample(t_end).ok()?;
-        let kepler_end_pos = self.get_kepler_position_by_id(id, t_end)?;
-        let kepler_end_vel = self.get_kepler_velocity_by_id(id, t_end)?;
-
-        let offset = StateOffset2 {
-            dp: table_end.pos - kepler_end_pos,
-            dv: table_end.vel - kepler_end_vel,
-        };
-
-        // Cache it (best-effort; if lock is poisoned, just skip caching).
-        if let Ok(mut guard) = self.horizons_fallback_offsets.write() {
-            guard.insert(id, offset);
-        }
-
-        Some(offset)
     }
 }
 
@@ -755,6 +724,18 @@ mod tests {
 
     #[test]
     fn test_continuity_offsets_do_not_introduce_jumps_when_tables_expire() {
+        // This test documents the expected behavior at table boundary.
+        //
+        // When Horizons table coverage ends, we switch to pure Kepler orbits.
+        // This produces a discontinuity (jump) at the boundary equal to the
+        // accumulated Horizons-Kepler drift over the table duration (~200 years).
+        //
+        // We accept this trade-off because:
+        // 1. The jump is typically < 0.1 AU for inner planets
+        // 2. The alternative (offset extrapolation) produces MUCH larger errors
+        //    for outer planets (e.g., Jupiter at 3 AU instead of 5 AU)
+        // 3. For a visualization app, correct orbital shapes matter more than
+        //    momentary boundary discontinuities
         let eph = Ephemeris::new();
 
         // If no Horizons tables are loaded (common in CI), this test is a no-op.
@@ -762,42 +743,40 @@ mod tests {
             return;
         };
 
-        // Pick a representative body that likely has a table if tables are present.
-        // (Earth is included in all documented export sets.)
         let id = CelestialBodyId::Earth;
         let Some(cov) = h.coverage(id) else {
             return;
         };
 
-        // Test just beyond the end boundary. We sample both sides of the boundary using a small dt.
-        // dt is chosen small enough to approximate continuity while being > 0.
         let dt = 1.0; // 1 second
         let t0 = cov.end;
         let t1 = cov.end + dt;
 
         let p0 = eph.get_position_by_id(id, t0).unwrap();
         let p1 = eph.get_position_by_id(id, t1).unwrap();
-        let v0 = eph.get_velocity_by_id(id, t0).unwrap();
-        let v1 = eph.get_velocity_by_id(id, t1).unwrap();
 
-        // Expect that the position advances roughly according to v0 * dt (first-order),
-        // and that v is continuous (no huge instantaneous delta).
-        let predicted = p0 + v0 * dt;
-        let pos_err = (p1 - predicted).length();
-        let vel_jump = (v1 - v0).length();
+        // Expect a discontinuity (Horizons-Kepler offset) at the boundary.
+        // For Earth after 200 years, this is typically < 0.05 AU.
+        let jump = (p1 - p0).length() / AU_TO_METERS;
 
-        // These are intentionally loose game-physics tolerances:
-        // - position error on the order of km over 1 second would be absurd
-        // - velocity jump on the order of km/s would be a visible discontinuity
+        // Verify the jump is bounded - not absurdly large
         assert!(
-            pos_err < 1.0e6,
-            "Position should remain continuous across table expiry (pos_err = {} m)",
-            pos_err
+            jump < 0.1,
+            "Boundary jump should be < 0.1 AU for Earth, got {} AU",
+            jump
         );
+
+        // After the boundary, positions should follow pure Kepler
+        // (no further offset-induced distortions)
+        let t2 = cov.end + 365.25 * SECONDS_PER_DAY; // 1 year past boundary
+        let p2 = eph.get_position_by_id(id, t2).unwrap();
+        let r2 = p2.length() / AU_TO_METERS;
+
+        // Earth should still be ~1 AU from Sun (Kepler gives stable orbits)
         assert!(
-            vel_jump < 1.0e3,
-            "Velocity should remain continuous across table expiry (vel_jump = {} m/s)",
-            vel_jump
+            r2 > 0.95 && r2 < 1.05,
+            "Earth should remain ~1 AU from Sun after boundary, got {} AU",
+            r2
         );
     }
 
@@ -862,6 +841,171 @@ mod tests {
             moon_earth_dist_1 < 0.02,
             "Moon past table end should be close to Earth, got {} AU",
             moon_earth_dist_1
+        );
+    }
+
+    #[test]
+    fn test_long_extrapolation_orbit_stability() {
+        // Verify that Earth's orbit remains elliptical and Sun-centered at year 2844
+        // (644 years past table end). With the constant offset approach, orbits would
+        // be offset from the Sun. With pure Kepler fallback, orbits remain centered.
+        let eph = Ephemeris::new();
+
+        // Time at year 2844 (844 years after J2000)
+        let time_2844 = 844.0 * 365.25 * SECONDS_PER_DAY;
+
+        // Sample Earth position over one orbit (12 points)
+        let period = 365.25 * SECONDS_PER_DAY;
+        let mut positions = vec![];
+        for i in 0..12 {
+            let t = time_2844 + (i as f64 / 12.0) * period;
+            if let Some(pos) = eph.get_position_by_id(CelestialBodyId::Earth, t) {
+                positions.push(pos);
+            }
+        }
+
+        assert_eq!(positions.len(), 12, "Should get 12 position samples");
+
+        // Compute orbit center (should be near origin for Sun-centered orbit)
+        let center = positions.iter().fold(DVec2::ZERO, |a, &b| a + b) / 12.0;
+        let center_offset_au = center.length() / AU_TO_METERS;
+
+        // Center should be within 0.05 AU of origin (Sun)
+        // Pure Kepler orbits use mean elements that differ slightly from actual positions,
+        // but this is MUCH better than the old constant-offset approach which could
+        // produce offsets of many AU over centuries due to accumulated phase errors.
+        assert!(
+            center_offset_au < 0.05,
+            "Orbit center should be near Sun at year 2844, got offset {} AU",
+            center_offset_au
+        );
+
+        // Verify orbit radii are reasonable (Earth: perihelion ~0.98 AU, aphelion ~1.02 AU)
+        for pos in &positions {
+            let r_au = pos.length() / AU_TO_METERS;
+            assert!(
+                r_au > 0.95 && r_au < 1.05,
+                "Earth should be ~1 AU from Sun at year 2844, got {} AU",
+                r_au
+            );
+        }
+    }
+
+    #[test]
+    fn test_pure_kepler_is_stable_at_large_times() {
+        // Pure Kepler should produce stable ellipses at any time
+        let eph = Ephemeris::new();
+
+        // Test at 1000 years past J2000
+        let time_far_future = 1000.0 * 365.25 * SECONDS_PER_DAY;
+
+        // Earth
+        let earth_pos = eph
+            .get_position_by_id(CelestialBodyId::Earth, time_far_future)
+            .expect("Should get Earth position");
+        let earth_r_au = earth_pos.length() / AU_TO_METERS;
+        assert!(
+            earth_r_au > 0.95 && earth_r_au < 1.05,
+            "Earth should be ~1 AU from Sun at far future, got {} AU",
+            earth_r_au
+        );
+
+        // Jupiter
+        let jupiter_pos = eph
+            .get_position_by_id(CelestialBodyId::Jupiter, time_far_future)
+            .expect("Should get Jupiter position");
+        let jupiter_r_au = jupiter_pos.length() / AU_TO_METERS;
+        assert!(
+            jupiter_r_au > 4.9 && jupiter_r_au < 5.5,
+            "Jupiter should be ~5.2 AU from Sun at far future, got {} AU",
+            jupiter_r_au
+        );
+
+        // Neptune (outermost)
+        let neptune_pos = eph
+            .get_position_by_id(CelestialBodyId::Neptune, time_far_future)
+            .expect("Should get Neptune position");
+        let neptune_r_au = neptune_pos.length() / AU_TO_METERS;
+        assert!(
+            neptune_r_au > 29.0 && neptune_r_au < 31.0,
+            "Neptune should be ~30 AU from Sun at far future, got {} AU",
+            neptune_r_au
+        );
+    }
+
+    #[test]
+    fn test_is_beyond_table_coverage() {
+        let eph = Ephemeris::new();
+
+        // J2000 should be within coverage (if tables are loaded)
+        let within = eph.is_beyond_table_coverage(0.0);
+
+        // Year 2844 should be beyond coverage
+        let time_2844 = 844.0 * 365.25 * SECONDS_PER_DAY;
+        let beyond = eph.is_beyond_table_coverage(time_2844);
+
+        // If no tables loaded, both should be false
+        if eph.horizons.is_some() {
+            assert!(!within, "J2000 should be within table coverage");
+            assert!(beyond, "Year 2844 should be beyond table coverage");
+        } else {
+            // No tables - always returns false
+            assert!(!within);
+            assert!(!beyond);
+        }
+    }
+
+
+    #[test]
+    fn test_drifting_offset_does_not_distort_orbits() {
+        // Regression test for drifting offset bug:
+        // At year 2222 (22 years past table end in 2200), the formula:
+        //   drifted_dp = offset.dp + offset.dv * dt
+        // produces offsets of ~23 AU because dt is huge (22 years in seconds).
+        //
+        // This test verifies that Mars stays closer to Sun than Jupiter
+        // when extrapolating 22 years past table end (within 50-year limit).
+        let eph = Ephemeris::new();
+
+        // Skip if no tables loaded - this bug only manifests with tables
+        let Some(h) = &eph.horizons else { return };
+        let Some(cov) = h.coverage(CelestialBodyId::Earth) else { return };
+
+        // 22 years past table end - within the 50-year drifting offset window
+        let time_22y_past_end = cov.end + 22.0 * 365.25 * SECONDS_PER_DAY;
+
+        // Get positions for Mars and Jupiter
+        let mars_pos = eph
+            .get_position_by_id(CelestialBodyId::Mars, time_22y_past_end)
+            .expect("Mars position should be available");
+        let jupiter_pos = eph
+            .get_position_by_id(CelestialBodyId::Jupiter, time_22y_past_end)
+            .expect("Jupiter position should be available");
+
+        let mars_r = mars_pos.length() / AU_TO_METERS;
+        let jupiter_r = jupiter_pos.length() / AU_TO_METERS;
+
+        // Mars (~1.5 AU) must be closer to Sun than Jupiter (~5.2 AU)
+        assert!(
+            mars_r < jupiter_r,
+            "Mars ({:.2} AU) should be closer to Sun than Jupiter ({:.2} AU)",
+            mars_r,
+            jupiter_r
+        );
+
+        // Verify reasonable orbital radii
+        // Mars: 1.38 AU perihelion to 1.67 AU aphelion, allow some margin
+        assert!(
+            mars_r > 1.0 && mars_r < 2.0,
+            "Mars should be ~1.5 AU from Sun, got {:.2} AU",
+            mars_r
+        );
+
+        // Jupiter: 4.95 AU perihelion to 5.46 AU aphelion, allow some margin
+        assert!(
+            jupiter_r > 4.5 && jupiter_r < 6.0,
+            "Jupiter should be ~5.2 AU from Sun, got {:.2} AU",
+            jupiter_r
         );
     }
 }

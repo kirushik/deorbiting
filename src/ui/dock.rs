@@ -15,6 +15,7 @@ use bevy_egui::{EguiContexts, egui};
 use crate::asteroid::{
     Asteroid, AsteroidName, AsteroidVisual, ResetEvent, indicator_color_from_material,
 };
+use crate::ephemeris::Ephemeris;
 use crate::render::SelectedBody;
 use crate::scenarios::{CurrentScenario, get_scenario};
 use crate::types::{SelectableBody, SimulationTime};
@@ -52,6 +53,7 @@ pub fn dock_system(
     mut selected: ResMut<SelectedBody>,
     mut placement_mode: ResMut<super::AsteroidPlacementMode>,
     mut camera_focus_events: MessageWriter<crate::camera::FocusOnEntityEvent>,
+    ephemeris: Res<Ephemeris>,
 ) {
     let Some(ctx) = contexts.ctx_mut().ok() else {
         return;
@@ -94,15 +96,32 @@ pub fn dock_system(
 
                 // ===== Date Display (fixed width to prevent jumping) =====
                 let date_str = format_date_human(sim_time.current);
-                ui.add_sized(
+                let is_estimated = ephemeris.is_beyond_table_coverage(sim_time.current);
+                let display_str = if is_estimated {
+                    format!("{} (Est.)", date_str)
+                } else {
+                    date_str
+                };
+                let date_color = if is_estimated {
+                    colors::SPEED_INACTIVE // Dimmed when estimated
+                } else {
+                    colors::TEXT
+                };
+                let date_response = ui.add_sized(
                     [DATE_WIDTH, DOCK_BUTTON_SIZE],
                     egui::Label::new(
-                        egui::RichText::new(date_str)
+                        egui::RichText::new(display_str)
                             .monospace()
                             .size(14.0)
-                            .color(colors::TEXT),
+                            .color(date_color),
                     ),
                 );
+                if is_estimated {
+                    date_response.on_hover_text(
+                        "Beyond ephemeris table coverage (year 2200+).\n\
+                        Planet positions are estimated using Keplerian orbits.",
+                    );
+                }
 
                 ui.add_space(12.0);
                 ui.separator();
@@ -304,7 +323,8 @@ pub fn dock_system(
 /// Standard button size for dock alignment (square buttons).
 const DOCK_BUTTON_SIZE: f32 = 32.0;
 /// Fixed width for date display to prevent layout jumping.
-const DATE_WIDTH: f32 = 110.0;
+/// Extended to accommodate "(Est.)" suffix when beyond table coverage.
+const DATE_WIDTH: f32 = 160.0;
 /// Width for speed buttons.
 const SPEED_BUTTON_WIDTH: f32 = 44.0;
 /// Width for scenario name.

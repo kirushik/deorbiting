@@ -2,7 +2,7 @@
 
 ## 1. Data Source
 
-We use tables exported by JPL Horizons, falling back to **Analytic Keplerian Orbits** (with alignment to the table-provided data at the boundary, to avoid trajectory discontinuities) rather than N-body simulation for planets (too unstable for a game background).
+We use tables exported by JPL Horizons, falling back to **Analytic Keplerian Orbits** (pure Kepler, no offset corrections) rather than N-body simulation for planets (too unstable for a game background). See [EPHEMERIS_TABLES.md](./EPHEMERIS_TABLES.md#extrapolation-past-table-end) for details on why offset-based extrapolation was removed.
 
  - **Source:** [NASA JPL Horizons System](https://ssd.jpl.nasa.gov/horizons/)
  - **Simplified Model:** For 2D, we ignore Inclination ($i$) and Longitude of Ascending Node ($\Omega$)
