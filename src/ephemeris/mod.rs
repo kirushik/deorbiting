@@ -955,7 +955,6 @@ mod tests {
         }
     }
 
-
     #[test]
     fn test_drifting_offset_does_not_distort_orbits() {
         // Regression test for drifting offset bug:
@@ -969,7 +968,9 @@ mod tests {
 
         // Skip if no tables loaded - this bug only manifests with tables
         let Some(h) = &eph.horizons else { return };
-        let Some(cov) = h.coverage(CelestialBodyId::Earth) else { return };
+        let Some(cov) = h.coverage(CelestialBodyId::Earth) else {
+            return;
+        };
 
         // 22 years past table end - within the 50-year drifting offset window
         let time_22y_past_end = cov.end + 22.0 * 365.25 * SECONDS_PER_DAY;

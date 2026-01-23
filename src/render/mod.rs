@@ -6,6 +6,7 @@
 mod background;
 pub mod bodies;
 mod deflectors;
+pub mod effects;
 pub mod highlight;
 mod labels;
 mod orbits;
@@ -17,6 +18,7 @@ use bevy::prelude::*;
 use self::background::BackgroundPlugin;
 use self::bodies::CelestialBodyPlugin;
 use self::deflectors::draw_deflector_trajectories;
+use self::effects::{animate_impact_effects, spawn_impact_effects};
 use self::highlight::HighlightPlugin;
 use self::labels::LabelPlugin;
 use self::orbits::{OrbitPathPlugin, draw_moon_orbit_paths, draw_orbit_paths};
@@ -25,6 +27,7 @@ use self::sync::{sync_asteroid_positions, sync_celestial_positions};
 
 // Re-export for use in other modules
 pub use self::bodies::CelestialBody;
+pub use self::effects::{ImpactEffect, ImpactEffectType, SpawnImpactEffectEvent};
 pub use self::highlight::{HoveredBody, SelectedBody};
 pub use self::scaling::ScalingSettings;
 
@@ -41,12 +44,16 @@ impl Plugin for RenderPlugin {
             LabelPlugin,
             ScalingPlugin,
         ))
+        // Register message channel for impact effects
+        .init_resource::<Messages<effects::SpawnImpactEffectEvent>>()
         // Add all position-related systems with explicit ordering:
         // 1. sync_asteroid_positions - sets asteroid positions from BodyState (with distortion)
         // 2. sync_celestial_positions - sets celestial body positions from ephemeris
         // 3. compute_hierarchical_scales - calculates sizes (needs positions for parent lookup)
         // 4. apply_moon_position_distortion - pushes moons outward (needs scales)
         // 5. draw_orbit_paths & draw_moon_orbit_paths - draw orbits (needs final positions)
+        // 6. spawn_impact_effects - process effect spawn events
+        // 7. animate_impact_effects - render and despawn effects
         .add_systems(
             Update,
             (
@@ -56,6 +63,8 @@ impl Plugin for RenderPlugin {
                 apply_moon_position_distortion,
                 (draw_orbit_paths, draw_moon_orbit_paths),
                 draw_deflector_trajectories,
+                spawn_impact_effects,
+                animate_impact_effects,
             )
                 .chain(),
         );

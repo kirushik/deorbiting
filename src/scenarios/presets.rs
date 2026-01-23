@@ -20,21 +20,21 @@ pub static SCENARIOS: &[Scenario] = &[
 /// Scenario 1: Earth Collision Course (Default/Tutorial)
 ///
 /// An asteroid is positioned ahead of Earth in its orbit, moving retrograde.
-/// This creates a collision course with Earth in approximately 23 days.
-/// Perfect for understanding collision mechanics and the basics of interception.
+/// This creates a collision course with Earth in approximately 180 days.
+/// Allows realistic continuous deflection methods to work.
 pub static EARTH_COLLISION: Scenario = Scenario {
     id: "earth_collision",
     name: "Earth Collision Course",
-    description: "Asteroid on collision course with Earth (~23 days). Tutorial scenario.",
-    asteroid_pos: None,   // Computed dynamically: 45° ahead of Earth
+    description: "Asteroid on collision course with Earth (~180 days). Allows realistic continuous deflection.",
+    asteroid_pos: None,   // Computed dynamically: ~180° ahead of Earth
     asteroid_vel: None,   // Computed dynamically: retrograde at Earth's orbital velocity
-    asteroid_mass: 1e12,  // ~1 billion tons
+    asteroid_mass: 1e10,  // ~170m diameter (challenging, may need heavy weapon)
     asteroid_radius: 2.0, // Visual size
     start_time: None,
     time_scale: 10.0,
-    start_paused: true, // Start paused so user can look around
-    camera_target: CameraTarget::Body(CelestialBodyId::Earth),
-    camera_zoom: 0.5,
+    start_paused: true,               // Start paused so user can look around
+    camera_target: CameraTarget::Sun, // Sun-centered to see both Earth and asteroid (180° apart)
+    camera_zoom: 1.2,                 // Wide view to see full inner solar system
 };
 
 /// Scenario 2: Apophis Flyby (Gravity Assist Demo)
@@ -46,9 +46,9 @@ pub static APOPHIS_FLYBY: Scenario = Scenario {
     id: "apophis_flyby",
     name: "Apophis Flyby",
     description: "Close Earth approach. Watch gravity bend the trajectory.",
-    asteroid_pos: None,    // Computed dynamically: ahead of Earth, outside orbit
-    asteroid_vel: None,    // Computed dynamically: retrograde with inward component
-    asteroid_mass: 2.7e10, // Apophis mass (~27 million tons)
+    asteroid_pos: None, // Computed dynamically: ahead of Earth, outside orbit
+    asteroid_vel: None, // Computed dynamically: retrograde with inward component
+    asteroid_mass: 5e9, // ~100m diameter (inspired by Apophis scale)
     asteroid_radius: 2.0,
     start_time: None,
     time_scale: 10.0,
@@ -66,9 +66,9 @@ pub static JUPITER_SLINGSHOT: Scenario = Scenario {
     id: "jupiter_slingshot",
     name: "Jupiter Slingshot",
     description: "Gravity assist at Jupiter. Watch energy transfer from the planet.",
-    asteroid_pos: None, // Computed dynamically: behind Jupiter, inside its orbit
-    asteroid_vel: None, // Computed dynamically: prograde, faster than circular
-    asteroid_mass: 5e11,
+    asteroid_pos: None,  // Computed dynamically: behind Jupiter, inside its orbit
+    asteroid_vel: None,  // Computed dynamically: prograde, faster than circular
+    asteroid_mass: 1e11, // Educational scenario
     asteroid_radius: 2.0,
     start_time: None,
     time_scale: 100.0, // Faster for Jupiter's longer orbital period
@@ -88,7 +88,7 @@ pub static INTERSTELLAR_VISITOR: Scenario = Scenario {
     description: "Hyperbolic escape trajectory at 40 km/s. 'Oumuamua-style visitor.",
     asteroid_pos: None, // Computed dynamically: approaching from outer solar system
     asteroid_vel: None, // Computed dynamically: ~40 km/s toward inner system
-    asteroid_mass: 4e9, // Small, like 'Oumuamua
+    asteroid_mass: 8e8, // ~50m diameter (tiny 'Oumuamua-style)
     asteroid_radius: 2.0,
     start_time: None,
     time_scale: 50.0,
@@ -108,7 +108,7 @@ pub static DEFLECTION_CHALLENGE: Scenario = Scenario {
     description: "~46 day warning. Can you deflect it with minimal delta-v?",
     asteroid_pos: None, // Computed dynamically: 90° ahead of Earth
     asteroid_vel: None, // Computed dynamically: retrograde at Earth's orbital velocity
-    asteroid_mass: 5e9, // ~150m diameter rock (solvable with nuclear/heavy kinetic)
+    asteroid_mass: 1e9, // ~80m diameter rock (solvable with single countermeasure)
     asteroid_radius: 2.0,
     start_time: None,
     time_scale: 10.0,
@@ -126,9 +126,9 @@ pub static SANDBOX: Scenario = Scenario {
     id: "sandbox",
     name: "Sandbox",
     description: "Free experimentation. Drag the velocity to create any orbit.",
-    asteroid_pos: None, // Computed dynamically: near Earth
-    asteroid_vel: None, // Computed dynamically: zero velocity
-    asteroid_mass: 1e12,
+    asteroid_pos: None,  // Computed dynamically: near Earth
+    asteroid_vel: None,  // Computed dynamically: zero velocity
+    asteroid_mass: 2e11, // Experimentation, moderate mass
     asteroid_radius: 2.0,
     start_time: None,
     time_scale: 10.0,

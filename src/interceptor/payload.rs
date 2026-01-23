@@ -48,28 +48,35 @@ pub enum DeflectionPayload {
 
 impl Default for DeflectionPayload {
     fn default() -> Self {
-        // DART-like default
+        // Heavy kinetic impactor - effective at gameplay timescales
         Self::Kinetic {
-            mass_kg: 560.0,
-            beta: 3.6,
+            mass_kg: 10_000.0, // 10 tons (inflated from DART's 560 kg)
+            beta: 5.0,         // Higher momentum enhancement
         }
     }
 }
 
 impl DeflectionPayload {
-    /// Create a DART-like kinetic impactor.
+    /// Create a heavy kinetic impactor (effective for gameplay).
+    ///
+    /// Default parameters are significantly inflated from real DART mission values
+    /// to be effective at gameplay timescales (days to months).
+    ///
+    /// Against a 300m asteroid (3e10 kg) at 30 km/s relative velocity:
+    /// - Provides ~8 m/s delta-v per impact
+    /// - 4 impacts = ~32 m/s (effective for intercepts at 0.1 AU / 6 days out)
     pub fn dart() -> Self {
         Self::Kinetic {
-            mass_kg: 560.0,
-            beta: 3.6,
+            mass_kg: 200_000.0, // 200 tons (gameplay-scaled from real 560 kg)
+            beta: 40.0,         // High momentum enhancement for gameplay
         }
     }
 
-    /// Create a heavy kinetic impactor.
+    /// Create an extra-heavy kinetic impactor.
     pub fn heavy_kinetic() -> Self {
         Self::Kinetic {
-            mass_kg: 1000.0,
-            beta: 3.0,
+            mass_kg: 250_000.0, // 250 tons (gameplay-scaled)
+            beta: 20.0,         // High momentum enhancement for gameplay
         }
     }
 
@@ -83,6 +90,29 @@ impl DeflectionPayload {
         Self::NuclearSplit {
             yield_kt,
             split_ratio: split_ratio.clamp(0.1, 0.9),
+        }
+    }
+
+    /// Create a nuclear standoff device with gameplay-balanced defaults.
+    ///
+    /// Returns a 12 megaton device (inflated from realistic values for gameplay).
+    /// Against a 300m asteroid (3e10 kg):
+    /// - Provides ~36 m/s delta-v per detonation
+    /// - Single use effective at 0.1 AU (6 days before impact)
+    /// - 2 detonations = ~72 m/s (effective at 0.05 AU / 3 days out)
+    pub fn nuclear_default() -> Self {
+        Self::Nuclear { yield_kt: 12_000.0 }
+    }
+
+    /// Create a nuclear splitting device with gameplay-balanced defaults.
+    ///
+    /// Returns a 20 megaton device with 50/50 split ratio.
+    /// Creates two fragments with diverging trajectories - use with caution
+    /// as both fragments may still pose a threat!
+    pub fn nuclear_split_default() -> Self {
+        Self::NuclearSplit {
+            yield_kt: 20_000.0,
+            split_ratio: 0.5,
         }
     }
 
@@ -114,13 +144,13 @@ impl DeflectionPayload {
             }
 
             DeflectionPayload::Nuclear { yield_kt } => {
-                // Based on LLNL research (Wie et al.):
-                // ~2 cm/s per 100 kt for a 300m asteroid (~3×10^10 kg)
-                // Scale: Δv ∝ yield / mass
+                // Inspired by LLNL research (Wie et al.), boosted ~15× for gameplay.
+                // Real physics: ~2 cm/s per 100 kt for a 300m asteroid.
+                // Gameplay: 30 cm/s reference for meaningful deflection within days.
                 //
-                // Reference point: 100 kt → 0.02 m/s for 3e10 kg
-                // So: Δv = 0.02 * (yield_kt / 100) * (3e10 / asteroid_mass)
-                let reference_delta_v = 0.02; // m/s
+                // Reference point: 100 kt → 0.30 m/s for 3e10 kg
+                // So: Δv = 0.30 * (yield_kt / 100) * (3e10 / asteroid_mass)
+                let reference_delta_v = 0.30; // m/s (~15× boost for gameplay)
                 let reference_yield = 100.0; // kt
                 let reference_mass = 3e10; // kg (300m rocky asteroid)
 
@@ -221,8 +251,14 @@ mod tests {
         // - β ≈ 3.6 (measured)
         // - Dimorphos mass ~4.3×10^9 kg
         // - Measured Δv ≈ 2.7 mm/s
+        //
+        // Note: The dart() function now returns inflated values for gameplay.
+        // This test uses explicit real DART parameters.
 
-        let payload = DeflectionPayload::dart();
+        let payload = DeflectionPayload::Kinetic {
+            mass_kg: 560.0,
+            beta: 3.6,
+        };
         let dimorphos_mass = 4.3e9; // kg
         let relative_velocity = 6100.0; // m/s
         let direction = DVec2::X;
@@ -250,7 +286,8 @@ mod tests {
 
     #[test]
     fn test_nuclear_reference() {
-        // Reference: 100 kt → 2 cm/s for 300m asteroid (3×10^10 kg)
+        // Reference: 100 kt → 30 cm/s for 300m asteroid (3×10^10 kg)
+        // (Boosted ~15× from real physics for gameplay)
         let payload = DeflectionPayload::nuclear(100.0);
         let asteroid_mass = 3e10;
         let direction = DVec2::X;
@@ -258,8 +295,8 @@ mod tests {
         let delta_v = payload.calculate_delta_v(asteroid_mass, 0.0, direction);
 
         assert!(
-            (delta_v.length() - 0.02).abs() < 1e-10,
-            "100 kt should give 2 cm/s for 3e10 kg asteroid, got {} m/s",
+            (delta_v.length() - 0.30).abs() < 1e-10,
+            "100 kt should give 30 cm/s for 3e10 kg asteroid, got {} m/s",
             delta_v.length()
         );
     }
@@ -322,7 +359,11 @@ mod tests {
 
     #[test]
     fn test_description() {
-        let kinetic = DeflectionPayload::dart();
+        // Test with explicit parameters (dart() now uses inflated values)
+        let kinetic = DeflectionPayload::Kinetic {
+            mass_kg: 560.0,
+            beta: 3.6,
+        };
         assert!(kinetic.description().contains("Kinetic"));
         assert!(kinetic.description().contains("560"));
 
@@ -332,5 +373,101 @@ mod tests {
 
         let big_nuclear = DeflectionPayload::nuclear(2000.0);
         assert!(big_nuclear.description().contains("Mt"));
+    }
+
+    #[test]
+    fn test_nuclear_default() {
+        let payload = DeflectionPayload::nuclear_default();
+        match payload {
+            DeflectionPayload::Nuclear { yield_kt } => {
+                assert!(
+                    (yield_kt - 12_000.0).abs() < f64::EPSILON,
+                    "nuclear_default should have 12000 kt (12 MT) yield, got {yield_kt}"
+                );
+            }
+            _ => panic!("nuclear_default should return Nuclear variant"),
+        }
+    }
+
+    #[test]
+    fn test_nuclear_split_default() {
+        let payload = DeflectionPayload::nuclear_split_default();
+        match payload {
+            DeflectionPayload::NuclearSplit {
+                yield_kt,
+                split_ratio,
+            } => {
+                assert!(
+                    (yield_kt - 20_000.0).abs() < f64::EPSILON,
+                    "nuclear_split_default should have 20000 kt (20 MT) yield, got {yield_kt}"
+                );
+                assert!(
+                    (split_ratio - 0.5).abs() < f64::EPSILON,
+                    "nuclear_split_default should have 0.5 split_ratio, got {split_ratio}"
+                );
+            }
+            _ => panic!("nuclear_split_default should return NuclearSplit variant"),
+        }
+    }
+
+    /// Verify that default deflection parameters are effective for gameplay scenarios.
+    ///
+    /// These tests ensure that 3-5 launches can deflect a typical asteroid when
+    /// intercepted at reasonable distances (0.1-0.25 AU from Earth).
+    #[test]
+    fn test_deflection_gameplay_effectiveness() {
+        const AU_TO_METERS: f64 = 1.495978707e11;
+        const EARTH_RADIUS_M: f64 = 6.371e6;
+        const ASTEROID_VELOCITY: f64 = 29_000.0; // m/s
+
+        // Medium asteroid: 300m, ~3e10 kg
+        let asteroid_mass = 3e10;
+        let relative_velocity = 30_000.0; // m/s (typical high-speed intercept)
+        let direction = DVec2::X;
+
+        // Required delta-v to miss Earth by 2.5× Earth radius at given distance
+        let miss_threshold = EARTH_RADIUS_M * 2.5; // ~16,000 km
+
+        // Kinetic impactor: dart() should give ~8 m/s per impact
+        let dart = DeflectionPayload::dart();
+        let dv_dart = dart
+            .calculate_delta_v(asteroid_mass, relative_velocity, direction)
+            .length();
+
+        // Nuclear: nuclear_default() should give ~36 m/s per detonation
+        let nuclear = DeflectionPayload::nuclear_default();
+        let dv_nuclear = nuclear
+            .calculate_delta_v(asteroid_mass, relative_velocity, direction)
+            .length();
+
+        // Scenario 1: 0.25 AU intercept (15 days out) - 3 kinetic should work
+        let required_at_0_25_au = miss_threshold * ASTEROID_VELOCITY / (0.25 * AU_TO_METERS);
+        let three_kinetic = dv_dart * 3.0;
+        assert!(
+            three_kinetic > required_at_0_25_au,
+            "3 kinetic impacts ({:.1} m/s) should exceed {:.1} m/s for 0.25 AU",
+            three_kinetic,
+            required_at_0_25_au
+        );
+
+        // Scenario 2: 0.1 AU intercept (6 days out) - single nuclear should work
+        let required_at_0_1_au = miss_threshold * ASTEROID_VELOCITY / (0.1 * AU_TO_METERS);
+        assert!(
+            dv_nuclear > required_at_0_1_au,
+            "Single nuclear ({:.1} m/s) should exceed {:.1} m/s for 0.1 AU",
+            dv_nuclear,
+            required_at_0_1_au
+        );
+
+        // Scenario 3: 0.05 AU intercept (3 days out - emergency) - 5 launches needed
+        // This is a last-ditch scenario requiring maximum effort: 3 kinetic + 2 nuclear
+        let required_at_0_05_au = miss_threshold * ASTEROID_VELOCITY / (0.05 * AU_TO_METERS);
+        let emergency_total = dv_dart * 3.0 + dv_nuclear * 2.0;
+        assert!(
+            emergency_total > required_at_0_05_au,
+            "Emergency 3 kinetic + 2 nuclear ({:.1} m/s) should handle 0.05 AU ({:.1} m/s required)",
+            emergency_total,
+            required_at_0_05_au
+        );
     }
 }

@@ -197,6 +197,7 @@ fn handle_load_scenario_event(
             &mut counter,
             pos,
             vel,
+            scenario.asteroid_mass,
         );
 
         // 7. Auto-select the asteroid so UI shows its info
@@ -253,7 +254,7 @@ pub fn compute_scenario_asteroid_state(
     // First check for scenario-specific dynamic computation
     match scenario.id {
         "earth_collision" => {
-            // Dynamic: 45° ahead of Earth, retrograde → collision ~23 days
+            // Dynamic: ~180° ahead of Earth, retrograde → collision ~180 days
             crate::asteroid::calculate_earth_intercept(ephemeris, time)
         }
 

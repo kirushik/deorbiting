@@ -588,6 +588,7 @@ fn predict_trajectory(
             trajectory.collision_target,
             final_pos,
             final_vel,
+            sim_time.current,
             prediction_time_span,
             impact_velocity,
         );

@@ -201,18 +201,21 @@ fn render_scenario_card(
         egui::Color32::WHITE,
     );
 
-    // Description (truncated)
-    let desc_short = if description.len() > 35 {
-        format!("{}...", &description[..32])
+    // Description (truncated at word boundary, with tooltip for full text)
+    let max_chars = 28;
+    let desc_short = if description.len() > max_chars {
+        // Find last space before max_chars to truncate at word boundary
+        let truncate_at = description[..max_chars].rfind(' ').unwrap_or(max_chars - 3);
+        format!("{}...", &description[..truncate_at])
     } else {
         description.to_string()
     };
     ui.painter().text(
         egui::pos2(inner_rect.center().x, inner_rect.top() + 80.0),
         egui::Align2::CENTER_CENTER,
-        desc_short,
-        egui::FontId::proportional(12.0),
-        egui::Color32::from_rgb(180, 180, 190), // Secondary text for better contrast
+        &desc_short,
+        egui::FontId::proportional(11.0), // Slightly smaller font
+        egui::Color32::from_rgb(160, 160, 175),
     );
 
     // Current indicator - use Phosphor check icon, not ASCII asterisk
@@ -226,7 +229,8 @@ fn render_scenario_card(
         );
     }
 
-    response.clicked()
+    // Show full description on hover
+    response.clone().on_hover_text(description).clicked()
 }
 
 /// Get icon for a scenario based on its ID.

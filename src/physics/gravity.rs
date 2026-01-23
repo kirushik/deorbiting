@@ -110,7 +110,8 @@ pub fn compute_gravity_full(pos: DVec2, sources: &GravitySourcesFull) -> Gravity
         }
 
         // Gravity computation with singularity guard
-        if r_squared > 1.0 {
+        // MUST use same threshold as compute_acceleration_from_sources() for consistency
+        if r_squared > SINGULARITY_THRESHOLD_SQ {
             let factor = source.gm / (r_squared * dist);
             acc += delta * factor;
 
@@ -145,7 +146,8 @@ pub fn compute_acceleration_from_full_sources(pos: DVec2, sources: &GravitySourc
         let delta = source.pos - pos;
         let r_squared = delta.length_squared();
 
-        if r_squared > 1.0 {
+        // MUST use same threshold as compute_acceleration_from_sources() for consistency
+        if r_squared > SINGULARITY_THRESHOLD_SQ {
             let r = r_squared.sqrt();
             acc += delta * (source.gm / (r_squared * r));
         }
@@ -346,5 +348,111 @@ mod tests {
         for (i, (pos, gm)) in sources.iter().enumerate() {
             println!("  {}: pos=({:.3e}, {:.3e}), GM={:.4e}", i, pos.x, pos.y, gm);
         }
+    }
+
+    /// Test that prediction gravity matches physics gravity.
+    ///
+    /// BUG: `compute_gravity_full()` (used in trajectory prediction) and
+    /// `compute_acceleration_from_sources()` (used in main physics) use
+    /// DIFFERENT singularity thresholds:
+    /// - prediction: 1.0 m² threshold (includes objects at 100m)
+    /// - physics: 1e6 m² threshold (excludes objects closer than 1000m)
+    ///
+    /// This causes trajectory prediction to diverge from actual physics
+    /// when asteroids pass within 1000m of a body but outside 1m.
+    #[test]
+    fn test_prediction_gravity_matches_physics_gravity() {
+        // Use ephemeris to get properly-formatted gravity sources
+        let ephemeris = Ephemeris::default();
+
+        // Get gravity sources at J2000
+        let simple_sources = ephemeris.get_gravity_sources(0.0);
+        let full_sources = ephemeris.get_gravity_sources_full(0.0);
+
+        // Test at various distances from the Sun (at origin)
+        // The key range is between 1m (prediction threshold) and 1000m (physics threshold)
+        let test_distances = [
+            0.5,    // 0.5m - both should clamp (below both thresholds)
+            10.0,   // 10m - prediction includes, physics excludes
+            100.0,  // 100m - prediction includes, physics excludes
+            500.0,  // 500m - prediction includes, physics excludes
+            1000.0, // 1000m = exactly at physics threshold
+            2000.0, // 2000m - both should include (above both thresholds)
+            1e6,    // 1 million m - both should include
+        ];
+
+        println!("\nGravity consistency test (near Sun):");
+        println!("  Distance |   Physics acc   | Prediction acc  |   Difference   | Status");
+        println!("  ---------|-----------------|-----------------|----------------|-------");
+
+        let mut found_mismatch = false;
+
+        for &dist in &test_distances {
+            let pos = DVec2::new(dist, 0.0);
+
+            // Physics calculation (used by main simulation)
+            let physics_acc = compute_acceleration_from_sources(pos, &simple_sources);
+
+            // Prediction calculation (used by trajectory prediction)
+            let prediction_result = compute_gravity_full(pos, &full_sources);
+            let prediction_acc = prediction_result.acceleration;
+
+            let physics_mag = physics_acc.length();
+            let prediction_mag = prediction_acc.length();
+
+            // Check if they match (either both zero or both equal)
+            let both_zero = physics_mag == 0.0 && prediction_mag == 0.0;
+            let magnitudes_match = if physics_mag > 0.0 && prediction_mag > 0.0 {
+                ((prediction_mag - physics_mag) / physics_mag).abs() < 0.01 // 1% tolerance
+            } else {
+                both_zero
+            };
+
+            // Key check: if one is zero and other isn't, that's a mismatch
+            let one_zero_other_not = (physics_mag == 0.0) != (prediction_mag == 0.0);
+
+            let status = if one_zero_other_not || !magnitudes_match {
+                found_mismatch = true;
+                "MISMATCH"
+            } else {
+                "ok"
+            };
+
+            let diff_str = if one_zero_other_not {
+                if physics_mag == 0.0 {
+                    format!("physics=0, pred≠0")
+                } else {
+                    format!("physics≠0, pred=0")
+                }
+            } else if both_zero {
+                format!("both zero")
+            } else {
+                format!(
+                    "{:.1}%",
+                    ((prediction_mag - physics_mag) / physics_mag).abs() * 100.0
+                )
+            };
+
+            println!(
+                "  {:>8.1}m | {:>13.4e} | {:>13.4e} | {:>14} | {}",
+                dist, physics_mag, prediction_mag, diff_str, status
+            );
+        }
+
+        // THE CORE ASSERTION: prediction gravity MUST match physics gravity
+        // This test SHOULD FAIL until we fix the singularity threshold inconsistency
+        assert!(
+            !found_mismatch,
+            "\n\nBUG DETECTED: Trajectory prediction uses different gravity than physics!\n\
+             \n\
+             Root cause: compute_gravity_full() uses singularity threshold of 1.0 m²,\n\
+             while compute_acceleration_from_sources() uses 1e6 m² (SINGULARITY_THRESHOLD_SQ).\n\
+             \n\
+             Impact: Predicted trajectories diverge from actual simulation when\n\
+             asteroids pass within 1000m of a body.\n\
+             \n\
+             Fix: Make compute_gravity_full() and compute_acceleration_from_full_sources()\n\
+             use SINGULARITY_THRESHOLD_SQ instead of hardcoded 1.0."
+        );
     }
 }

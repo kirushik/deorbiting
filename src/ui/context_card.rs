@@ -10,18 +10,19 @@ use crate::asteroid::{Asteroid, AsteroidName};
 use crate::camera::{MainCamera, RENDER_SCALE};
 use crate::collision::CollisionState;
 use crate::continuous::{
-    ContinuousDeflector, ContinuousDeflectorState, ContinuousPayload,
-    LaunchContinuousDeflectorEvent, ThrustDirection,
+    ContinuousDeflector, ContinuousDeflectorState, LaunchContinuousDeflectorEvent,
 };
 use crate::ephemeris::{CelestialBodyData, CelestialBodyId, Ephemeris, get_trivia};
-use crate::interceptor::{DeflectionPayload, LaunchInterceptorEvent};
+use crate::interceptor::LaunchInterceptorEvent;
 use crate::physics::IntegratorStates;
 use crate::render::{CelestialBody, SelectedBody};
 use crate::types::{AU_TO_METERS, BodyState, SECONDS_PER_DAY, SelectableBody, SimulationTime};
 
 use super::RadialMenuState;
+use super::deflection_helpers::{
+    ALL_METHODS, DeflectionMethod, apply_deflection, calculate_flight_time_from_earth,
+};
 use super::icons;
-use super::radial_menu::DeflectionMethod;
 
 mod colors {
     use bevy_egui::egui::Color32;
@@ -45,20 +46,6 @@ const EARTH_MASS: f64 = 5.972e24; // kg
 const JUPITER_MASS: f64 = 1.898e27; // kg
 const SOLAR_MASS: f64 = 1.989e30; // kg
 const EARTH_RADIUS: f64 = 6.371e6; // meters
-
-/// Base interceptor speed in m/s (for flight time calculation).
-const BASE_INTERCEPTOR_SPEED: f64 = 15_000.0;
-
-/// All deflection methods available in the inline strip.
-const ALL_METHODS: [DeflectionMethod; 7] = [
-    DeflectionMethod::Kinetic,
-    DeflectionMethod::Nuclear,
-    DeflectionMethod::NuclearSplit,
-    DeflectionMethod::IonBeam,
-    DeflectionMethod::GravityTractor,
-    DeflectionMethod::LaserAblation,
-    DeflectionMethod::SolarSail,
-];
 
 /// Format mass in appropriate units (Earth/Jupiter/Solar masses).
 fn format_mass(mass_kg: f64) -> String {
@@ -289,8 +276,8 @@ pub fn context_card_system(
                     let earth_pos = ephemeris
                         .get_position_by_id(CelestialBodyId::Earth, sim_time.current)
                         .unwrap_or(bevy::math::DVec2::new(AU_TO_METERS, 0.0));
-                    let distance = (body_state.pos - earth_pos).length();
-                    let flight_time_seconds = distance / BASE_INTERCEPTOR_SPEED;
+                    let flight_time_seconds =
+                        calculate_flight_time_from_earth(body_state.pos, earth_pos);
                     let flight_time_days = flight_time_seconds / SECONDS_PER_DAY;
 
                     let result = render_asteroid_card(
@@ -578,10 +565,7 @@ fn render_asteroid_card(
             )
             .fill(colors::DANGER);
 
-            if ui
-                .add_sized([80.0, 28.0], delete_button)
-                .clicked()
-            {
+            if ui.add_sized([80.0, 28.0], delete_button).clicked() {
                 result.delete_clicked = true;
             }
         });
@@ -657,101 +641,6 @@ fn render_deflection_status(ui: &mut egui::Ui, deflector: &ContinuousDeflector) 
                         .color(colors::DANGER)
                         .size(12.0),
                 );
-            });
-        }
-    }
-}
-
-/// Apply a deflection method with default parameters.
-fn apply_deflection(
-    target: Entity,
-    method: DeflectionMethod,
-    asteroid_state: &BodyState,
-    flight_time_seconds: f64,
-    launch_events: &mut MessageWriter<LaunchInterceptorEvent>,
-    continuous_launch_events: &mut MessageWriter<LaunchContinuousDeflectorEvent>,
-) {
-    // Default direction: retrograde (opposite to velocity)
-    let direction = -asteroid_state.vel.normalize_or_zero();
-
-    match method {
-        DeflectionMethod::Kinetic => {
-            launch_events.write(LaunchInterceptorEvent {
-                target,
-                payload: DeflectionPayload::Kinetic {
-                    mass_kg: 560.0,
-                    beta: 3.6,
-                },
-                direction: Some(direction),
-                flight_time: Some(flight_time_seconds),
-            });
-        }
-        DeflectionMethod::Nuclear => {
-            launch_events.write(LaunchInterceptorEvent {
-                target,
-                payload: DeflectionPayload::Nuclear { yield_kt: 100.0 },
-                direction: Some(direction),
-                flight_time: Some(flight_time_seconds),
-            });
-        }
-        DeflectionMethod::NuclearSplit => {
-            launch_events.write(LaunchInterceptorEvent {
-                target,
-                payload: DeflectionPayload::NuclearSplit {
-                    yield_kt: 500.0,
-                    split_ratio: 0.5,
-                },
-                direction: Some(direction),
-                flight_time: Some(flight_time_seconds),
-            });
-        }
-        DeflectionMethod::IonBeam => {
-            continuous_launch_events.write(LaunchContinuousDeflectorEvent {
-                target,
-                payload: ContinuousPayload::IonBeam {
-                    thrust_n: 0.1,
-                    fuel_mass_kg: 500.0,
-                    specific_impulse: 3500.0,
-                    hover_distance_m: 200.0,
-                    direction: ThrustDirection::Retrograde,
-                },
-                flight_time: flight_time_seconds,
-            });
-        }
-        DeflectionMethod::GravityTractor => {
-            continuous_launch_events.write(LaunchContinuousDeflectorEvent {
-                target,
-                payload: ContinuousPayload::GravityTractor {
-                    spacecraft_mass_kg: 20_000.0,
-                    hover_distance_m: 200.0,
-                    mission_duration: 10.0 * 365.25 * 86400.0,
-                    direction: ThrustDirection::Retrograde,
-                },
-                flight_time: flight_time_seconds,
-            });
-        }
-        DeflectionMethod::LaserAblation => {
-            continuous_launch_events.write(LaunchContinuousDeflectorEvent {
-                target,
-                payload: ContinuousPayload::LaserAblation {
-                    power_kw: 100.0,
-                    mission_duration: 12.0 * 30.44 * 86400.0,
-                    efficiency: 0.8,
-                    direction: ThrustDirection::Retrograde,
-                },
-                flight_time: flight_time_seconds,
-            });
-        }
-        DeflectionMethod::SolarSail => {
-            continuous_launch_events.write(LaunchContinuousDeflectorEvent {
-                target,
-                payload: ContinuousPayload::SolarSail {
-                    sail_area_m2: 10_000.0,
-                    mission_duration: 2.0 * 365.25 * 86400.0,
-                    reflectivity: 0.9,
-                    direction: ThrustDirection::SunPointing,
-                },
-                flight_time: flight_time_seconds,
             });
         }
     }

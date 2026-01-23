@@ -6,6 +6,7 @@
 mod banners;
 mod box_selection;
 mod context_card;
+pub mod deflection_helpers;
 mod dock;
 pub mod icons;
 mod radial_menu;

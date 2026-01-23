@@ -10,6 +10,7 @@ pub mod continuous;
 pub mod ephemeris;
 pub mod input;
 pub mod interceptor;
+pub mod lambert;
 pub mod outcome;
 pub mod physics;
 pub mod prediction;

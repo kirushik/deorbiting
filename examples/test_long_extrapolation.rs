@@ -32,10 +32,7 @@ fn main() {
     if let Some(cov) = eph.horizons_coverage(CelestialBodyId::Earth) {
         let end_year = 2000.0 + cov.end / (365.25 * SECONDS_PER_DAY);
         println!("Earth table coverage ends at: year {:.1}", end_year);
-        println!(
-            "Table end time: {:.2e} seconds from J2000\n",
-            cov.end
-        );
+        println!("Table end time: {:.2e} seconds from J2000\n", cov.end);
     }
 
     // Test at different time points
@@ -124,7 +121,10 @@ fn main() {
         );
 
         if !is_stable {
-            println!("  - Center offset should be < 0.05 AU, got {:.6} AU", center_offset_au);
+            println!(
+                "  - Center offset should be < 0.05 AU, got {:.6} AU",
+                center_offset_au
+            );
             println!("  - Perihelion should be > 0.95 AU, got {:.6} AU", min_r);
             println!("  - Aphelion should be < 1.05 AU, got {:.6} AU", max_r);
         }

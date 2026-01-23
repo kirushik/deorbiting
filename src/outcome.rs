@@ -21,8 +21,9 @@ pub enum TrajectoryOutcome {
     Collision {
         /// Body that will be hit.
         body_hit: CelestialBodyId,
-        /// Time until impact (seconds).
-        time_to_impact: f64,
+        /// Absolute simulation time of impact (seconds since J2000).
+        /// To get countdown: impact_time - current_sim_time
+        impact_time: f64,
         /// Impact velocity magnitude (m/s).
         impact_velocity: f64,
     },
@@ -203,6 +204,7 @@ pub fn compute_orbital_elements(pos: DVec2, vel: DVec2, gm: f64) -> Option<Orbit
 /// * `collision_target` - Body hit (if collision)
 /// * `final_pos` - Final position from prediction
 /// * `final_vel` - Final velocity from prediction
+/// * `prediction_start_time` - Simulation time when prediction started (seconds since J2000)
 /// * `prediction_time_span` - How long the prediction ran (seconds)
 /// * `impact_velocity` - Velocity at impact (if collision)
 pub fn detect_outcome(
@@ -212,6 +214,7 @@ pub fn detect_outcome(
     collision_target: Option<CelestialBodyId>,
     _final_pos: DVec2,
     final_vel: DVec2,
+    prediction_start_time: f64,
     prediction_time_span: f64,
     impact_velocity: Option<f64>,
 ) -> TrajectoryOutcome {
@@ -219,7 +222,7 @@ pub fn detect_outcome(
     if ends_in_collision && let Some(body) = collision_target {
         return TrajectoryOutcome::Collision {
             body_hit: body,
-            time_to_impact: prediction_time_span,
+            impact_time: prediction_start_time + prediction_time_span,
             impact_velocity: impact_velocity.unwrap_or(final_vel.length()),
         };
     }
@@ -448,6 +451,7 @@ mod tests {
     fn test_detect_collision_outcome() {
         let pos = DVec2::new(AU_TO_METERS, 0.0);
         let vel = DVec2::new(-30_000.0, 0.0);
+        let start_time = 1000.0; // Arbitrary start time
 
         let outcome = detect_outcome(
             pos,
@@ -456,18 +460,21 @@ mod tests {
             Some(CelestialBodyId::Earth),
             pos, // final pos doesn't matter for collision
             vel,
-            20.0 * 86400.0, // 20 days
+            start_time,
+            20.0 * 86400.0, // 20 days prediction span
             Some(30_000.0),
         );
 
         match outcome {
             TrajectoryOutcome::Collision {
                 body_hit,
-                time_to_impact,
+                impact_time,
                 impact_velocity,
             } => {
                 assert_eq!(body_hit, CelestialBodyId::Earth);
-                assert!((time_to_impact - 20.0 * 86400.0).abs() < 1.0);
+                // impact_time = start_time + prediction_span
+                let expected_impact_time = start_time + 20.0 * 86400.0;
+                assert!((impact_time - expected_impact_time).abs() < 1.0);
                 assert!((impact_velocity - 30_000.0).abs() < 1.0);
             }
             _ => panic!("Expected collision outcome, got {outcome:?}"),
@@ -487,7 +494,8 @@ mod tests {
             None,
             DVec2::new(10.0 * AU_TO_METERS, 0.0),
             vel,
-            365.0 * 86400.0,
+            0.0,             // start time
+            365.0 * 86400.0, // prediction span
             None,
         );
 
@@ -505,9 +513,9 @@ mod tests {
         let vel = DVec2::new(0.0, v_circular);
 
         // Simulate for 100 days (about 27% of a year)
-        let sim_time = 100.0 * 86400.0;
+        let prediction_span = 100.0 * 86400.0;
 
-        let outcome = detect_outcome(pos, vel, false, None, pos, vel, sim_time, None);
+        let outcome = detect_outcome(pos, vel, false, None, pos, vel, 0.0, prediction_span, None);
 
         match outcome {
             TrajectoryOutcome::StableOrbit {

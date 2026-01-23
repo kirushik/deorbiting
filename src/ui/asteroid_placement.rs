@@ -78,7 +78,9 @@ pub fn handle_asteroid_placement(
             vel.length() / 1000.0
         );
 
-        // Spawn the asteroid
+        // Spawn the asteroid with default mass (user can adjust via mass editor)
+        // 3e10 kg = ~300m rocky asteroid, matches deflection parameter tuning
+        let default_mass = 3e10;
         spawn_asteroid_at_position(
             &mut commands,
             &mut meshes,
@@ -86,6 +88,7 @@ pub fn handle_asteroid_placement(
             &mut counter,
             physics_pos,
             vel,
+            default_mass,
         );
 
         // Exit placement mode after placing

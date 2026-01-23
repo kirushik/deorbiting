@@ -679,5 +679,8 @@ Three distinct overlays with visual differentiation:
 | 2026-01 | NuclearSplit payload | Armageddon-style asteroid splitting; creates two fragments with diverging trajectories |
 | 2026-01 | Asteroid mass editor | Collapsible UI in info panel with logarithmic slider (10^6-10^15 kg) and presets |
 | 2026-01 | Deflection Challenge rebalanced | Reduced asteroid mass from 5e11 to 5e9 kg; expanded kinetic/nuclear slider ranges |
+| 2026-01 | Interceptor speed inflation | BASE_INTERCEPTOR_SPEED: 15 km/s → 100 km/s for reasonable flight times (days not months) |
+| 2026-01 | Deflection parameter boost | Kinetic: 50t/β=20 → 200t/β=40 (8 m/s); Nuclear: 2 MT → 12 MT (36 m/s) for multi-launch scenarios |
+| 2026-01 | Default asteroid mass | Dock placement: 1e12 → 3e10 kg to match deflection tuning baseline |
 
 > **Tip:** When starting a new coding session, run `list_memories` to see available context, then `read_memory` for relevant memories before beginning work.

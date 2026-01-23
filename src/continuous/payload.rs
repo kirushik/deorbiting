@@ -85,11 +85,11 @@ impl Default for ContinuousPayload {
 impl ContinuousPayload {
     /// Default ion beam shepherd configuration.
     ///
-    /// Based on typical mission parameters for ~300m asteroid deflection.
+    /// Parameters inflated for effectiveness at gameplay timescales.
     pub fn ion_beam_default() -> Self {
         ContinuousPayload::IonBeam {
-            thrust_n: 0.1,            // 100 mN
-            fuel_mass_kg: 500.0,      // 500 kg propellant
+            thrust_n: 10.0,           // 10 N (was 0.1 N)
+            fuel_mass_kg: 5_000.0,    // 5,000 kg propellant
             specific_impulse: 3500.0, // Typical xenon ion engine
             hover_distance_m: 200.0,  // 200 m from surface
             direction: ThrustDirection::Retrograde,
@@ -98,10 +98,10 @@ impl ContinuousPayload {
 
     /// Default gravity tractor configuration.
     ///
-    /// Based on Lu & Love (2005) reference mission.
+    /// Parameters inflated for effectiveness at gameplay timescales.
     pub fn gravity_tractor_default() -> Self {
         ContinuousPayload::GravityTractor {
-            spacecraft_mass_kg: 20_000.0,              // 20 tons
+            spacecraft_mass_kg: 500_000.0,             // 500 tons (was 20 tons)
             hover_distance_m: 200.0,                   // 200 m from center
             mission_duration: 10.0 * 365.25 * 86400.0, // 10 years
             direction: ThrustDirection::Retrograde,
@@ -110,10 +110,10 @@ impl ContinuousPayload {
 
     /// Default laser ablation configuration.
     ///
-    /// Based on DE-STARLITE concept for Apophis-class asteroid.
+    /// Parameters inflated for effectiveness at gameplay timescales.
     pub fn laser_ablation_default() -> Self {
         ContinuousPayload::LaserAblation {
-            power_kw: 100.0,                          // 100 kW laser
+            power_kw: 10_000.0,                       // 10 MW (was 100 kW)
             mission_duration: 1.0 * 365.25 * 86400.0, // 1 year
             efficiency: 0.8,                          // 80% efficiency
             direction: ThrustDirection::Retrograde,
@@ -122,10 +122,10 @@ impl ContinuousPayload {
 
     /// Default solar sail configuration.
     ///
-    /// Based on NASA Solar Cruiser concept scaled up for asteroid deflection.
+    /// Parameters inflated for effectiveness at gameplay timescales.
     pub fn solar_sail_default() -> Self {
         ContinuousPayload::SolarSail {
-            sail_area_m2: 10_000.0,                   // 10,000 m² (100m × 100m sail)
+            sail_area_m2: 1_000_000.0,                // 1 km² (was 10,000 m²)
             mission_duration: 2.0 * 365.25 * 86400.0, // 2 years
             reflectivity: 0.9,                        // 90% reflective
             direction: ThrustDirection::SunPointing,  // Solar sails push away from Sun
@@ -281,8 +281,9 @@ mod tests {
                 fuel_mass_kg,
                 ..
             } => {
-                assert!((thrust_n - 0.1).abs() < 1e-10);
-                assert!((fuel_mass_kg - 500.0).abs() < 1e-10);
+                // Inflated values for gameplay effectiveness
+                assert!((thrust_n - 10.0).abs() < 1e-10);
+                assert!((fuel_mass_kg - 5_000.0).abs() < 1e-10);
             }
             _ => panic!("Expected IonBeam"),
         }
@@ -297,7 +298,8 @@ mod tests {
                 hover_distance_m,
                 ..
             } => {
-                assert!((spacecraft_mass_kg - 20_000.0).abs() < 1e-10);
+                // Inflated values for gameplay effectiveness
+                assert!((spacecraft_mass_kg - 500_000.0).abs() < 1e-10);
                 assert!((hover_distance_m - 200.0).abs() < 1e-10);
             }
             _ => panic!("Expected GravityTractor"),
@@ -309,7 +311,8 @@ mod tests {
         let payload = ContinuousPayload::laser_ablation_default();
         match payload {
             ContinuousPayload::LaserAblation { power_kw, .. } => {
-                assert!((power_kw - 100.0).abs() < 1e-10);
+                // Inflated for gameplay effectiveness
+                assert!((power_kw - 10_000.0).abs() < 1e-10);
             }
             _ => panic!("Expected LaserAblation"),
         }
@@ -350,8 +353,8 @@ mod tests {
         let payload = ContinuousPayload::gravity_tractor_default();
         let asteroid_mass = 1e10;
         let delta_v = payload.estimate_total_delta_v(asteroid_mass, 1.0);
-        // Gravity tractor is very slow
+        // Inflated gravity tractor (500 tons) produces more delta-v
         assert!(delta_v > 0.0);
-        assert!(delta_v < 0.1); // Very small delta-v even over 10 years
+        assert!(delta_v < 5.0); // Still relatively slow even with inflated mass
     }
 }

@@ -189,6 +189,7 @@ pub fn spawn_asteroid(
 /// * `counter` - Counter resource for generating unique names
 /// * `pos` - Initial position in meters from solar system barycenter
 /// * `vel` - Initial velocity in m/s
+/// * `mass` - Mass in kilograms
 ///
 /// # Returns
 /// The spawned asteroid's Entity ID
@@ -199,13 +200,16 @@ pub fn spawn_asteroid_at_position(
     counter: &mut ResMut<AsteroidCounter>,
     pos: DVec2,
     vel: DVec2,
+    mass: f64,
 ) -> Entity {
     counter.0 += 1;
     let name = format!("Asteroid {}", counter.0);
-    let mass = 1e12; // Default mass: 1 trillion kg
     let color = asteroid_color(counter.0);
 
-    info!("Spawning {} at ({:.2e}, {:.2e}) m", name, pos.x, pos.y);
+    info!(
+        "Spawning {} at ({:.2e}, {:.2e}) m, mass {:.2e} kg",
+        name, pos.x, pos.y, mass
+    );
 
     spawn_asteroid(commands, meshes, materials, name, pos, vel, mass, color)
 }
@@ -213,13 +217,13 @@ pub fn spawn_asteroid_at_position(
 /// Calculate position and velocity for an Earth intercept trajectory.
 ///
 /// Places the asteroid on Earth's exact elliptical orbit, traveling backwards.
-/// This guarantees collision in approximately 23 days regardless of Earth's
+/// This guarantees collision in approximately 180 days regardless of Earth's
 /// orbital phase.
 ///
 /// The key insight is that Earth has an elliptical orbit (e=0.0167). For
 /// guaranteed collision, the asteroid must be on the SAME elliptical orbit
 /// as Earth, just traveling in the opposite direction. This is achieved by:
-/// 1. Computing where Earth will be 45° ahead in its orbit
+/// 1. Computing where Earth will be ~180° ahead in its orbit
 /// 2. Placing asteroid at that exact point on Earth's orbital path
 /// 3. Computing Earth's actual velocity at that point (including radial component)
 /// 4. Reversing the velocity so asteroid travels backwards along Earth's orbit
@@ -234,14 +238,15 @@ pub fn spawn_asteroid_at_position(
 /// # Returns
 /// Tuple of (position, velocity) in meters and m/s
 pub fn calculate_earth_intercept(ephemeris: &Ephemeris, time: f64) -> (DVec2, DVec2) {
-    // Time offset for 45° ahead in Earth's orbit
-    // Earth moves at ~0.986°/day, so 45° = ~45.6 days
-    let days_for_45_degrees = 45.0 / 0.9856;
-    let time_offset = days_for_45_degrees * 86400.0;
+    // Time offset for ~180° ahead in Earth's orbit
+    // Earth moves at ~0.986°/day, so 180° = ~182.5 days
+    // Using 177° gives ~180 days collision time
+    let days_for_180_degrees = 177.0 / 0.9856;
+    let time_offset = days_for_180_degrees * 86400.0;
 
     let future_time = time + time_offset;
 
-    // Get Earth's position 45° ahead in its orbit
+    // Get Earth's position ~180° ahead in its orbit
     let asteroid_pos = ephemeris
         .get_position_by_id(CelestialBodyId::Earth, future_time)
         .unwrap_or(DVec2::new(AU_TO_METERS, 0.0));
@@ -352,7 +357,9 @@ pub fn spawn_test_asteroid(
         vel.length() / 1000.0
     );
 
-    spawn_asteroid_at_position(commands, meshes, materials, counter, pos, vel)
+    // Default mass for test asteroids: 1 trillion kg
+    let default_mass = 1e12;
+    spawn_asteroid_at_position(commands, meshes, materials, counter, pos, vel, default_mass)
 }
 
 /// Startup system to spawn an initial test asteroid.
