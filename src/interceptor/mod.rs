@@ -23,7 +23,7 @@ use crate::types::{AU_TO_METERS, BodyState, GM_SUN, SimulationTime};
 pub use payload::DeflectionPayload;
 
 /// Number of points to generate for transfer orbit visualization.
-const TRANSFER_ARC_POINTS: usize = 50;
+pub const TRANSFER_ARC_POINTS: usize = 50;
 
 /// State of an interceptor mission.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -129,7 +129,7 @@ impl Plugin for InterceptorPlugin {
 ///
 /// This is a lightweight prediction that doesn't store trajectory points,
 /// just returns the final position and velocity.
-fn predict_asteroid_at_time(
+pub fn predict_asteroid_at_time(
     initial_state: &BodyState,
     start_time: f64,
     target_time: f64,
@@ -212,7 +212,7 @@ fn predict_asteroid_at_time_with_collision(
 }
 
 /// Generate transfer orbit arc points using Kepler propagation from Lambert solution.
-fn generate_transfer_arc(
+pub fn generate_transfer_arc(
     launch_pos: DVec2,
     departure_vel: DVec2,
     tof: f64,

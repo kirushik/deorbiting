@@ -14,7 +14,8 @@ Visual representation of orbits, trajectories, and celestial bodies with accurat
  - [Architecture Overview](./docs/ARCHITECTURE.md) - Split-world pattern, ECS components, coordinate systems
  - [Physics Specification](./docs/PHYSICS.md) - IAS15 integrator, time system, gravity model
  - [Ephemeris & Orbital Elements](./docs/EPHEMERIS.md) - Kepler solver, J2000 orbital elements
-  - [Ephemeris Tables Usage](./docs/EPHEMERIS_TABLES.md) - Description of the optional ephemeris tables usage for planets' and moons' trajectories
+ - [Ephemeris Tables Usage](./docs/EPHEMERIS_TABLES.md) - Description of the optional ephemeris tables usage for planets' and moons' trajectories
+ - [Deflection Methods](./docs/DEFLECTION_METHODS.md) - All deflection methods, physics formulas, gameplay parameters, visualization details
  - [UI Specification](./docs/UI.md) - Time controls, velocity handle, panels, overlays
  - [UI/UX Guidelines](./docs/UI_GUIDELINES.md) - Design principles, typography, colors, interaction patterns
 

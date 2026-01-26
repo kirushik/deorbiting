@@ -11,20 +11,38 @@ use crate::asteroid::Asteroid;
 use crate::camera::RENDER_SCALE;
 use crate::continuous::{ContinuousDeflector, ContinuousDeflectorState, ContinuousPayload};
 use crate::ephemeris::{CelestialBodyId, Ephemeris};
+use crate::types::AU_TO_METERS;
 use crate::types::{BodyState, SimulationTime};
 
+use super::bodies::{CelestialBody, EffectiveVisualRadius};
 use super::z_layers;
+
+/// Base visual size unit (fraction of 1 AU in render space).
+/// This matches the scale used by interceptor icons.
+const VISUAL_UNIT: f32 = 0.01 * AU_TO_METERS as f32 * RENDER_SCALE as f32;
 
 /// System to draw continuous deflector visualization.
 pub fn draw_deflector_trajectories(
     deflectors: Query<(Entity, &ContinuousDeflector)>,
     asteroids: Query<&BodyState, With<Asteroid>>,
+    celestial_bodies: Query<(&Transform, &CelestialBody, &EffectiveVisualRadius)>,
     ephemeris: Res<Ephemeris>,
     sim_time: Res<SimulationTime>,
     mut gizmos: Gizmos,
 ) {
     // Animation time for flickering effects
     let anim_time = sim_time.current as f32;
+
+    // Collect occluder data (position + visual radius) for Sun and planets
+    // Used by laser beam to check for visual occlusion
+    let occluders: Vec<(Vec3, f32)> = celestial_bodies
+        .iter()
+        .filter(|(_, body, _)| {
+            // Only Sun and planets can occlude (not moons - they're too small visually)
+            body.id == CelestialBodyId::Sun || body.id.parent().is_none()
+        })
+        .map(|(transform, _, radius)| (transform.translation, radius.0))
+        .collect();
 
     // Count deflectors per target for offset calculation
     let mut target_counts: std::collections::HashMap<Entity, usize> =
@@ -60,7 +78,7 @@ pub fn draw_deflector_trajectories(
 
         match &deflector.state {
             ContinuousDeflectorState::EnRoute { arrival_time } => {
-                // Calculate interpolated spacecraft position
+                // Calculate progress along transfer arc
                 let total_time = *arrival_time - deflector.launch_time;
                 let elapsed = sim_time.current - deflector.launch_time;
                 let progress = if total_time > 0.0 {
@@ -72,23 +90,49 @@ pub fn draw_deflector_trajectories(
                 // Apply position offset for visual differentiation of multiple en-route deflectors
                 let target_pos = asteroid_pos + pos_offset;
 
-                // Simple linear interpolation for spacecraft position (to offset target)
-                let current_pos = earth_pos.lerp(target_pos, progress);
+                // Use transfer arc for curved trajectory visualization
+                if !deflector.transfer_arc.is_empty() {
+                    let arc_len = deflector.transfer_arc.len();
+                    let progress_idx = (progress * arc_len as f64) as usize;
+                    let progress_idx = progress_idx.min(arc_len.saturating_sub(1));
 
-                // Draw traveled portion (solid line)
-                draw_solid_line(&mut gizmos, earth_pos, current_pos, color);
+                    // Draw traveled portion of arc (solid)
+                    for i in 0..progress_idx {
+                        let p0 = deflector.transfer_arc[i];
+                        let p1 = deflector.transfer_arc[i + 1];
+                        draw_solid_line(&mut gizmos, p0, p1, color);
+                    }
 
-                // Draw remaining portion (dashed line, semi-transparent)
-                draw_dashed_line(
-                    &mut gizmos,
-                    current_pos,
-                    target_pos,
-                    color.with_alpha(0.4),
-                    ((1.0 - progress) * 10.0).max(1.0) as usize,
-                );
+                    // Draw remaining portion of arc (dashed, semi-transparent)
+                    for i in progress_idx..arc_len.saturating_sub(1) {
+                        let p0 = deflector.transfer_arc[i];
+                        let p1 = deflector.transfer_arc[i + 1];
+                        // Use single dash segment for each arc segment
+                        draw_dashed_line(&mut gizmos, p0, p1, color.with_alpha(0.4), 2);
+                    }
 
-                // Draw spacecraft icon at current position
-                draw_spacecraft_icon(&mut gizmos, current_pos, color);
+                    // Draw spacecraft icon at current position along arc
+                    let current_pos = deflector.transfer_arc[progress_idx];
+                    draw_spacecraft_icon(&mut gizmos, current_pos, color);
+                } else {
+                    // Fallback to linear interpolation if no arc available (e.g., instant laser)
+                    let current_pos = earth_pos.lerp(target_pos, progress);
+
+                    // Draw traveled portion (solid line)
+                    draw_solid_line(&mut gizmos, earth_pos, current_pos, color);
+
+                    // Draw remaining portion (dashed line, semi-transparent)
+                    draw_dashed_line(
+                        &mut gizmos,
+                        current_pos,
+                        target_pos,
+                        color.with_alpha(0.4),
+                        ((1.0 - progress) * 10.0).max(1.0) as usize,
+                    );
+
+                    // Draw spacecraft icon at current position
+                    draw_spacecraft_icon(&mut gizmos, current_pos, color);
+                }
             }
             ContinuousDeflectorState::Operating { .. } => {
                 // Get asteroid velocity for thrust direction
@@ -116,24 +160,14 @@ pub fn draw_deflector_trajectories(
                         draw_laser_beam(
                             &mut gizmos,
                             offset_pos,
-                            asteroid_vel,
-                            &deflector.payload,
+                            earth_pos,
+                            &occluders,
                             anim_time,
                             color,
                         );
                     }
                     ContinuousPayload::SolarSail { sail_area_m2, .. } => {
                         draw_solar_sail(&mut gizmos, offset_pos, *sail_area_m2, color);
-                    }
-                    ContinuousPayload::GravityTractor {
-                        hover_distance_m, ..
-                    } => {
-                        draw_gravity_tractor_field(
-                            &mut gizmos,
-                            offset_pos,
-                            *hover_distance_m,
-                            color,
-                        );
                     }
                 }
 
@@ -153,7 +187,6 @@ pub fn draw_deflector_trajectories(
 fn method_color(payload: &ContinuousPayload) -> Color {
     match payload {
         ContinuousPayload::IonBeam { .. } => Color::srgba(0.0, 0.8, 1.0, 1.0), // Cyan
-        ContinuousPayload::GravityTractor { .. } => Color::srgba(0.8, 0.4, 1.0, 1.0), // Purple
         ContinuousPayload::LaserAblation { .. } => Color::srgba(1.0, 0.6, 0.2, 1.0), // Orange
         ContinuousPayload::SolarSail { .. } => Color::srgba(1.0, 0.9, 0.3, 1.0), // Yellow/Gold
     }
@@ -279,8 +312,8 @@ fn draw_spacecraft_icon(gizmos: &mut Gizmos, pos: bevy::math::DVec2, color: Colo
         z_layers::SPACECRAFT + 0.1,
     );
 
-    // Diamond shape size (in render units)
-    let size = 0.02;
+    // Diamond shape size using VISUAL_UNIT for proper scaling
+    let size = VISUAL_UNIT;
 
     let top = center + Vec3::new(0.0, size, 0.0);
     let right = center + Vec3::new(size, 0.0, 0.0);
@@ -301,8 +334,8 @@ fn draw_completed_icon(gizmos: &mut Gizmos, pos: bevy::math::DVec2, color: Color
         z_layers::SPACECRAFT + 0.1,
     );
 
-    // Draw a small circle
-    let radius = 0.01;
+    // Draw a small circle using VISUAL_UNIT for proper scaling
+    let radius = VISUAL_UNIT * 0.5;
     let segments = 8;
     for i in 0..segments {
         let angle1 = (i as f32 / segments as f32) * std::f32::consts::TAU;
@@ -350,45 +383,73 @@ fn draw_ion_beam_exhaust(
     // Perpendicular direction for cone spread
     let perp_dir = Vec3::new(-exhaust_dir.y as f32, exhaust_dir.x as f32, 0.0);
 
-    // Draw 5 exhaust lines in a cone pattern with flickering
-    let cone_half_angle = 0.3; // radians
-    let exhaust_length = 0.08;
+    // Use VISUAL_UNIT for proper scaling
+    let exhaust_length = VISUAL_UNIT * 3.0;
 
-    for i in 0..5 {
+    // Draw spacecraft body first (small box)
+    let sc_offset = VISUAL_UNIT * 1.0;
+    let sc_pos = center - exhaust_dir_3d * sc_offset;
+    let sc_size = VISUAL_UNIT * 0.4;
+    let sc_perp = perp_dir * sc_size;
+    let sc_color = color.with_alpha(0.8);
+
+    gizmos.line(sc_pos + sc_perp, sc_pos - sc_perp, sc_color);
+    gizmos.line(
+        sc_pos + sc_perp,
+        sc_pos + exhaust_dir_3d * sc_size + sc_perp * 0.5,
+        sc_color,
+    );
+    gizmos.line(
+        sc_pos - sc_perp,
+        sc_pos + exhaust_dir_3d * sc_size - sc_perp * 0.5,
+        sc_color,
+    );
+
+    // Draw 7 exhaust lines in a cone pattern with flickering
+    let cone_half_angle = 0.35; // radians
+
+    for i in 0..7 {
         // Spread across the cone
-        let spread = (i as f32 - 2.0) / 2.0 * cone_half_angle;
+        let spread = (i as f32 - 3.0) / 3.0 * cone_half_angle;
 
         // Flickering intensity
         let flicker = 0.7 + 0.3 * ((anim_time * 10.0 + i as f32 * 1.7).sin());
-        let line_alpha = flicker * 0.8;
+        let line_alpha = flicker * 0.9;
 
         // Line direction with spread
         let line_dir = exhaust_dir_3d * spread.cos() + perp_dir * spread.sin();
-        let line_end = center + line_dir.normalize() * exhaust_length * flicker;
+        let line_start = sc_pos + exhaust_dir_3d * sc_size * 0.5;
+        let line_end = line_start + line_dir.normalize() * exhaust_length * flicker;
 
         // Gradient: bright cyan at start, fading to transparent
         let Srgba {
             red, green, blue, ..
         } = color.to_srgba();
         let start_color = Color::srgba(red, green, blue, line_alpha);
-        let end_color = Color::srgba(red * 0.5, green * 0.5, blue, line_alpha * 0.3);
+        let end_color = Color::srgba(red * 0.5, green * 0.5, blue, line_alpha * 0.2);
 
-        // Draw line with approximate gradient (two segments)
-        let mid = center + line_dir.normalize() * exhaust_length * 0.5 * flicker;
-        gizmos.line(center, mid, start_color);
-        gizmos.line(mid, line_end, end_color);
+        // Draw line with approximate gradient (three segments)
+        let seg1 = line_start + line_dir.normalize() * exhaust_length * 0.33 * flicker;
+        let seg2 = line_start + line_dir.normalize() * exhaust_length * 0.66 * flicker;
+        gizmos.line(line_start, seg1, start_color);
+        gizmos.line(
+            seg1,
+            seg2,
+            Color::srgba(red * 0.7, green * 0.7, blue, line_alpha * 0.6),
+        );
+        gizmos.line(seg2, line_end, end_color);
     }
 
-    // Draw small particle dots at exhaust ends
-    for i in 0..3 {
-        let spread = (i as f32 - 1.0) / 1.0 * cone_half_angle * 0.5;
+    // Draw particle dots at exhaust ends
+    let dot_size = VISUAL_UNIT * 0.15;
+    for i in 0..5 {
+        let spread = (i as f32 - 2.0) / 2.0 * cone_half_angle * 0.6;
         let particle_dist =
             exhaust_length * (0.6 + 0.4 * ((anim_time * 8.0 + i as f32 * 2.3).sin()));
         let line_dir = exhaust_dir_3d * spread.cos() + perp_dir * spread.sin();
-        let particle_pos = center + line_dir.normalize() * particle_dist;
+        let particle_pos = sc_pos + line_dir.normalize() * particle_dist;
 
-        let dot_size = 0.003;
-        let particle_alpha = 0.6 + 0.4 * ((anim_time * 12.0 + i as f32).sin());
+        let particle_alpha = 0.5 + 0.3 * ((anim_time * 12.0 + i as f32).sin());
         let particle_color = color.with_alpha(particle_alpha);
 
         gizmos.line(
@@ -396,108 +457,229 @@ fn draw_ion_beam_exhaust(
             particle_pos + Vec3::X * dot_size,
             particle_color,
         );
+        gizmos.line(
+            particle_pos - Vec3::Y * dot_size,
+            particle_pos + Vec3::Y * dot_size,
+            particle_color,
+        );
     }
 }
 
-/// Draw laser ablation beam - solid line from spacecraft to asteroid with glow at impact.
+/// Draw laser ablation beam - full beam from Earth toward asteroid with effects and occlusion.
+///
+/// The beam is drawn from Earth's position to the asteroid, with:
+/// - Traveling energy pulses along the beam
+/// - Pulsing/flickering intensity
+/// - Ablation glow and plume at the impact point
+/// - Occlusion: beam stops if it passes through a celestial body's visual representation
 fn draw_laser_beam(
     gizmos: &mut Gizmos,
     asteroid_pos: bevy::math::DVec2,
-    asteroid_vel: bevy::math::DVec2,
-    payload: &ContinuousPayload,
+    earth_pos: bevy::math::DVec2,
+    occluders: &[(Vec3, f32)],
     anim_time: f32,
-    color: Color,
+    _color: Color,
 ) {
-    use crate::continuous::thrust::compute_thrust_direction;
-
-    let direction = payload.direction();
-    let thrust_dir = compute_thrust_direction(asteroid_vel, asteroid_pos, direction);
-
-    if thrust_dir.length() < 0.01 {
-        return;
-    }
-
-    let center = Vec3::new(
+    let asteroid_render = Vec3::new(
         (asteroid_pos.x * RENDER_SCALE) as f32,
         (asteroid_pos.y * RENDER_SCALE) as f32,
         z_layers::SPACECRAFT + 0.1,
     );
 
-    // Spacecraft position is offset from asteroid in thrust direction
-    let spacecraft_offset = 0.05;
-    let spacecraft_pos = center
-        + Vec3::new(
-            thrust_dir.x as f32 * spacecraft_offset,
-            thrust_dir.y as f32 * spacecraft_offset,
-            0.0,
-        );
+    let earth_render = Vec3::new(
+        (earth_pos.x * RENDER_SCALE) as f32,
+        (earth_pos.y * RENDER_SCALE) as f32,
+        z_layers::SPACECRAFT + 0.1,
+    );
 
-    // Laser beam from spacecraft to asteroid
-    // Flickering intensity
-    let flicker = 0.8 + 0.2 * (anim_time * 20.0).sin();
-    let beam_color = Color::srgba(1.0, 0.4, 0.1, flicker);
+    // Direction and distance from Earth to asteroid
+    let beam_vec = asteroid_render - earth_render;
+    let beam_dist = beam_vec.length();
+    if beam_dist < 0.01 {
+        return;
+    }
+    let beam_dir = beam_vec / beam_dist;
 
-    gizmos.line(spacecraft_pos, center, beam_color);
+    // Check for occlusion by celestial bodies
+    // Find the closest intersection point (if any)
+    let mut effective_end = asteroid_render;
+    let mut is_occluded = false;
 
-    // Glow circle at impact point (pulsing)
-    let glow_radius = 0.012 + 0.004 * (anim_time * 15.0).sin();
+    for &(body_pos, body_radius) in occluders {
+        // Skip if body is very close to Earth (Earth itself shouldn't occlude its own beam)
+        let earth_to_body = (body_pos - earth_render).length();
+        if earth_to_body < body_radius * 2.0 {
+            continue;
+        }
+
+        // Line-circle intersection test
+        // Parametric line: P(t) = earth_render + t * beam_dir, t in [0, beam_dist]
+        // Circle: |P - body_pos| = body_radius
+        let to_body = body_pos - earth_render;
+        let to_body_2d = Vec3::new(to_body.x, to_body.y, 0.0);
+        let beam_dir_2d = Vec3::new(beam_dir.x, beam_dir.y, 0.0);
+
+        // Project body center onto beam line
+        let t_closest = to_body_2d.dot(beam_dir_2d);
+
+        // Skip if body is behind Earth or past asteroid
+        if t_closest < 0.0 || t_closest > beam_dist {
+            continue;
+        }
+
+        // Distance from body center to beam line
+        let closest_point = earth_render + beam_dir * t_closest;
+        let dist_to_line = (body_pos - closest_point).length();
+
+        // Check if beam passes through body's visual radius
+        if dist_to_line < body_radius {
+            // Calculate intersection point (entry into the body)
+            // Using quadratic formula for line-circle intersection
+            let discriminant = body_radius * body_radius - dist_to_line * dist_to_line;
+            if discriminant > 0.0 {
+                let half_chord = discriminant.sqrt();
+                let t_entry = t_closest - half_chord;
+
+                // If intersection is before current effective end, update it
+                if t_entry > 0.0 && t_entry < (effective_end - earth_render).length() {
+                    effective_end = earth_render + beam_dir * t_entry;
+                    is_occluded = true;
+                }
+            }
+        }
+    }
+
+    // Flickering intensity for energy effect
+    let flicker = 0.7 + 0.3 * (anim_time * 30.0).sin().abs();
+
+    // If occluded, draw a dashed line from Earth to occlusion point only
+    if is_occluded {
+        let occluded_dist = (effective_end - earth_render).length();
+        let dash_color = Color::srgba(1.0, 0.3, 0.1, 0.4); // Dimmer, semi-transparent
+        let num_dashes = (occluded_dist / (VISUAL_UNIT * 0.5)).max(5.0) as usize;
+        let dash_delta = (effective_end - earth_render) / (num_dashes as f32 * 2.0);
+
+        for i in 0..num_dashes {
+            let dash_start = earth_render + dash_delta * (i as f32 * 2.0);
+            let dash_end = earth_render + dash_delta * (i as f32 * 2.0 + 1.0);
+            gizmos.line(dash_start, dash_end, dash_color);
+        }
+
+        // Draw "blocked" indicator at the occlusion point
+        let block_color = Color::srgba(1.0, 0.2, 0.1, 0.6 * flicker);
+        let block_size = VISUAL_UNIT * 0.5;
+        // Draw X at occlusion point
+        let p1 = effective_end + Vec3::new(-block_size, -block_size, 0.0);
+        let p2 = effective_end + Vec3::new(block_size, block_size, 0.0);
+        let p3 = effective_end + Vec3::new(-block_size, block_size, 0.0);
+        let p4 = effective_end + Vec3::new(block_size, -block_size, 0.0);
+        gizmos.line(p1, p2, block_color);
+        gizmos.line(p3, p4, block_color);
+        return; // Don't draw impact effects if occluded
+    }
+
+    // Active beam (not occluded): draw solid beam with effects
+    let perp = Vec3::new(-beam_dir.y, beam_dir.x, 0.0);
+    let beam_width = VISUAL_UNIT * 0.1;
+
+    // Main beam core (multiple parallel lines for thickness)
+    for i in -2..=2 {
+        let offset = perp * (i as f32 * beam_width * 0.2);
+        let alpha = flicker * (1.0 - (i as f32).abs() * 0.15);
+        let line_color = Color::srgba(1.0, 0.3, 0.1, alpha * 0.8);
+        gizmos.line(earth_render + offset, asteroid_render + offset, line_color);
+    }
+
+    // Traveling energy pulses along the beam
+    let pulse_count = 8;
+    let pulse_speed = 0.3; // Fraction of beam per second
+    let pulse_size = VISUAL_UNIT * 0.3;
+
+    for i in 0..pulse_count {
+        // Each pulse travels from Earth to asteroid
+        let base_offset = i as f32 / pulse_count as f32;
+        let pulse_t = (base_offset + anim_time * pulse_speed).fract();
+        let pulse_pos_along_beam = pulse_t * beam_dist;
+
+        let pulse_center = earth_render + beam_dir * pulse_pos_along_beam;
+
+        // Pulse brightness varies (brighter in the middle of its cycle)
+        let pulse_brightness = 0.5 + 0.5 * (pulse_t * std::f32::consts::TAU).sin().abs();
+        let pulse_alpha = pulse_brightness * flicker;
+
+        // Draw pulse as a bright spot (small circle)
+        let pulse_color = Color::srgba(1.0, 0.6, 0.3, pulse_alpha);
+        let segments = 6;
+        for j in 0..segments {
+            let angle1 = (j as f32 / segments as f32) * std::f32::consts::TAU;
+            let angle2 = ((j + 1) as f32 / segments as f32) * std::f32::consts::TAU;
+            let p1 = pulse_center
+                + Vec3::new(angle1.cos() * pulse_size, angle1.sin() * pulse_size, 0.0);
+            let p2 = pulse_center
+                + Vec3::new(angle2.cos() * pulse_size, angle2.sin() * pulse_size, 0.0);
+            gizmos.line(p1, p2, pulse_color);
+        }
+    }
+
+    // Impact effects at asteroid (only if not occluded)
+    let glow_radius = VISUAL_UNIT * (0.4 + 0.15 * (anim_time * 15.0).sin());
     let glow_alpha = 0.6 + 0.3 * (anim_time * 15.0).cos();
     let glow_color = Color::srgba(1.0, 0.6, 0.2, glow_alpha);
 
-    let segments = 8;
+    // Outer glow circle
+    let segments = 12;
     for i in 0..segments {
         let angle1 = (i as f32 / segments as f32) * std::f32::consts::TAU;
         let angle2 = ((i + 1) as f32 / segments as f32) * std::f32::consts::TAU;
-
-        let p1 = center + Vec3::new(angle1.cos() * glow_radius, angle1.sin() * glow_radius, 0.0);
-        let p2 = center + Vec3::new(angle2.cos() * glow_radius, angle2.sin() * glow_radius, 0.0);
-
+        let p1 = asteroid_render
+            + Vec3::new(angle1.cos() * glow_radius, angle1.sin() * glow_radius, 0.0);
+        let p2 = asteroid_render
+            + Vec3::new(angle2.cos() * glow_radius, angle2.sin() * glow_radius, 0.0);
         gizmos.line(p1, p2, glow_color);
     }
 
-    // Inner bright spot
-    let inner_radius = glow_radius * 0.4;
-    let inner_color = Color::srgba(1.0, 0.9, 0.6, glow_alpha * 0.8);
-    for i in 0..4 {
-        let angle1 = (i as f32 / 4.0) * std::f32::consts::TAU;
-        let angle2 = ((i + 1) as f32 / 4.0) * std::f32::consts::TAU;
-
-        let p1 = center
+    // Inner bright spot (plasma/ablation point)
+    let inner_radius = glow_radius * 0.5;
+    let inner_color = Color::srgba(1.0, 0.95, 0.8, glow_alpha);
+    for i in 0..6 {
+        let angle1 = (i as f32 / 6.0) * std::f32::consts::TAU;
+        let angle2 = ((i + 1) as f32 / 6.0) * std::f32::consts::TAU;
+        let p1 = asteroid_render
             + Vec3::new(
                 angle1.cos() * inner_radius,
                 angle1.sin() * inner_radius,
                 0.0,
             );
-        let p2 = center
+        let p2 = asteroid_render
             + Vec3::new(
                 angle2.cos() * inner_radius,
                 angle2.sin() * inner_radius,
                 0.0,
             );
-
         gizmos.line(p1, p2, inner_color);
     }
 
-    // Draw spacecraft position marker (small triangle)
-    let sc_size = 0.015;
-    let sc_dir = Vec3::new(-thrust_dir.x as f32, -thrust_dir.y as f32, 0.0).normalize();
-    let sc_perp = Vec3::new(-sc_dir.y, sc_dir.x, 0.0);
+    // Ablation plume - particles flying away from impact (toward Earth)
+    let plume_dir = -beam_dir;
+    let plume_perp = Vec3::new(plume_dir.y, -plume_dir.x, 0.0);
+    let plume_color = Color::srgba(0.9, 0.7, 0.4, 0.5 * flicker);
 
-    let sc_tip = spacecraft_pos + sc_dir * sc_size;
-    let sc_left = spacecraft_pos - sc_dir * sc_size * 0.5 + sc_perp * sc_size * 0.5;
-    let sc_right = spacecraft_pos - sc_dir * sc_size * 0.5 - sc_perp * sc_size * 0.5;
-
-    gizmos.line(sc_tip, sc_left, color);
-    gizmos.line(sc_left, sc_right, color);
-    gizmos.line(sc_right, sc_tip, color);
+    for i in 0..5 {
+        let spread = (i as f32 - 2.0) * 0.3;
+        let length = VISUAL_UNIT * (0.8 + (anim_time * 10.0 + i as f32).sin().abs() * 0.4);
+        let start = asteroid_render + plume_perp * spread * VISUAL_UNIT * 0.3;
+        let end = start + plume_dir * length;
+        gizmos.line(start, end, plume_color);
+    }
 }
 
 /// Draw solar sail - large reflective square/diamond perpendicular to sun direction.
+/// Includes visualization of incoming solar rays and reflected beams.
 fn draw_solar_sail(
     gizmos: &mut Gizmos,
     asteroid_pos: bevy::math::DVec2,
     sail_area_m2: f64,
-    color: Color,
+    _color: Color,
 ) {
     let center = Vec3::new(
         (asteroid_pos.x * RENDER_SCALE) as f32,
@@ -512,13 +694,14 @@ fn draw_solar_sail(
     // Sail is perpendicular to sun direction
     let sail_perp = Vec3::new(-sun_dir.y, sun_dir.x, 0.0);
 
-    // Sail size based on area (square root, then scaled for visibility)
-    // sqrt(1,000,000 m²) = 1000m, scale down significantly for render
-    let sail_side = (sail_area_m2.sqrt() / 1e7) as f32 * 0.1;
-    let sail_size = sail_side.clamp(0.03, 0.15);
+    // Sail size: base size with scaling by area, using VISUAL_UNIT for proper visibility
+    // 1 km² (1e6 m²) = 1x base size, 10 km² (1e7 m²) = ~3x base size
+    let area_factor = (sail_area_m2 / 1e6).sqrt().clamp(0.5, 4.0) as f32;
+    let sail_size = VISUAL_UNIT * 1.5 * area_factor;
 
-    // Offset sail slightly toward sun (it's between asteroid and sun)
-    let sail_center = center + sun_dir * 0.03;
+    // Offset sail toward sun (it's between asteroid and sun)
+    let sail_offset = VISUAL_UNIT * 2.0;
+    let sail_center = center + sun_dir * sail_offset;
 
     // Draw diamond shape
     let top = sail_center + sail_perp * sail_size;
@@ -526,7 +709,7 @@ fn draw_solar_sail(
     let front = sail_center + sun_dir * sail_size * 0.3;
     let back = sail_center - sun_dir * sail_size * 0.3;
 
-    // Bright reflective color (yellow-white)
+    // Bright reflective color (golden-white)
     let sail_color = Color::srgba(1.0, 0.95, 0.7, 0.9);
 
     gizmos.line(top, front, sail_color);
@@ -535,96 +718,37 @@ fn draw_solar_sail(
     gizmos.line(back, top, sail_color);
 
     // Draw support struts (cross pattern)
-    let strut_color = color.with_alpha(0.6);
+    let strut_color = Color::srgba(0.9, 0.85, 0.6, 0.6);
     gizmos.line(top, bottom, strut_color);
     gizmos.line(front, back, strut_color);
 
     // Draw connecting tether to asteroid
-    let tether_color = color.with_alpha(0.4);
+    let tether_color = Color::srgba(0.8, 0.8, 0.6, 0.4);
     gizmos.line(sail_center, center, tether_color);
-}
 
-/// Draw gravity tractor field lines - curved dashed lines between spacecraft and asteroid.
-fn draw_gravity_tractor_field(
-    gizmos: &mut Gizmos,
-    asteroid_pos: bevy::math::DVec2,
-    hovering_distance_m: f64,
-    color: Color,
-) {
-    let center = Vec3::new(
-        (asteroid_pos.x * RENDER_SCALE) as f32,
-        (asteroid_pos.y * RENDER_SCALE) as f32,
-        z_layers::SPACECRAFT + 0.1,
-    );
+    // Draw incoming solar rays (dashed yellow lines from Sun direction)
+    let ray_color = Color::srgba(1.0, 0.9, 0.2, 0.7);
+    let reflected_color = Color::srgba(1.0, 0.95, 0.7, 0.9);
+    let ray_count = 5;
+    let ray_length = VISUAL_UNIT * 4.0;
+    let reflected_length = VISUAL_UNIT * 2.5;
 
-    // Spacecraft hovers at a distance (scale for visibility)
-    // 200m real distance → ~0.04 render units offset
-    let hover_scale = (hovering_distance_m / 5000.0) as f32;
-    let hover_dist = hover_scale.clamp(0.03, 0.08);
+    for i in 0..ray_count {
+        let offset = (i as f32 - (ray_count - 1) as f32 / 2.0) * sail_size * 0.4;
+        let ray_hit_point = sail_center + sail_perp * offset;
+        let ray_start = ray_hit_point - sun_dir * ray_length;
 
-    // Draw 3 curved field lines at different angles
-    let field_color = color.with_alpha(0.5);
-
-    for i in 0..3 {
-        let angle_offset = (i as f32 - 1.0) * 0.4; // -0.4, 0, +0.4 radians
-
-        // Spacecraft position for this field line
-        let sc_angle = angle_offset;
-        let sc_offset = Vec3::new(
-            sc_angle.cos() * hover_dist,
-            sc_angle.sin() * hover_dist,
-            0.0,
-        );
-        let sc_pos = center + sc_offset;
-
-        // Draw curved field line using multiple segments
-        draw_curved_field_line(gizmos, center, sc_pos, field_color, 6);
-
-        // Small dot at spacecraft position
-        let dot_size = 0.005;
-        gizmos.line(
-            sc_pos - Vec3::X * dot_size,
-            sc_pos + Vec3::X * dot_size,
-            color,
-        );
-        gizmos.line(
-            sc_pos - Vec3::Y * dot_size,
-            sc_pos + Vec3::Y * dot_size,
-            color,
-        );
-    }
-}
-
-/// Draw a curved dashed field line between two points.
-fn draw_curved_field_line(
-    gizmos: &mut Gizmos,
-    start: Vec3,
-    end: Vec3,
-    color: Color,
-    segments: usize,
-) {
-    let mid = (start + end) / 2.0;
-    let diff = end - start;
-    let perp = Vec3::new(-diff.y, diff.x, 0.0).normalize();
-
-    // Curve outward
-    let curve_amount = diff.length() * 0.3;
-    let control = mid + perp * curve_amount;
-
-    // Draw dashed quadratic bezier approximation
-    let mut prev = start;
-    for i in 1..=segments {
-        let t = i as f32 / segments as f32;
-
-        // Quadratic bezier: (1-t)²P0 + 2(1-t)tP1 + t²P2
-        let one_minus_t = 1.0 - t;
-        let point =
-            start * one_minus_t * one_minus_t + control * 2.0 * one_minus_t * t + end * t * t;
-
-        // Draw every other segment (dashed)
-        if i % 2 == 1 {
-            gizmos.line(prev, point, color);
+        // Draw dashed incoming ray (from sun toward sail)
+        let num_dashes = 6;
+        let dash_delta = (ray_hit_point - ray_start) / (num_dashes as f32 * 2.0);
+        for j in 0..num_dashes {
+            let dash_start = ray_start + dash_delta * (j as f32 * 2.0);
+            let dash_end = ray_start + dash_delta * (j as f32 * 2.0 + 1.0);
+            gizmos.line(dash_start, dash_end, ray_color);
         }
-        prev = point;
+
+        // Draw solid reflected ray (bouncing away from sail, pushing asteroid)
+        let reflected_end = ray_hit_point + sun_dir * reflected_length;
+        gizmos.line(ray_hit_point, reflected_end, reflected_color);
     }
 }

@@ -20,13 +20,16 @@ pub use payload::ContinuousPayload;
 pub use thrust::ThrustDirection;
 
 use crate::asteroid::Asteroid;
+use crate::ephemeris::{CelestialBodyId, Ephemeris};
+use crate::interceptor::{TRANSFER_ARC_POINTS, generate_transfer_arc, predict_asteroid_at_time};
+use crate::lambert::solve_lambert_auto;
 use crate::physics::IntegratorStates;
 use crate::prediction::{PredictionState, mark_prediction_dirty};
-use crate::types::{AU_TO_METERS, BodyState, SimulationTime};
+use crate::types::{AU_TO_METERS, BodyState, GM_SUN, SimulationTime};
 
 use self::thrust::{
-    compute_thrust_direction, gravity_tractor_acceleration, ion_beam_acceleration,
-    ion_fuel_consumption_rate, laser_ablation_acceleration, solar_sail_acceleration,
+    compute_thrust_direction, ion_beam_acceleration, ion_fuel_consumption_rate,
+    laser_ablation_acceleration, solar_sail_acceleration,
 };
 
 /// State of a continuous deflection mission.
@@ -79,8 +82,15 @@ pub struct ContinuousDeflector {
     pub payload: ContinuousPayload,
     /// Launch time (J2000 seconds).
     pub launch_time: f64,
-    /// Launch position (for trajectory rendering).
+    /// Launch position (Earth position at launch).
     pub launch_position: DVec2,
+    /// Predicted arrival position (asteroid position at arrival time).
+    pub arrival_position: DVec2,
+    /// Transfer orbit arc points for curved trajectory visualization.
+    /// If empty, falls back to linear interpolation.
+    pub transfer_arc: Vec<DVec2>,
+    /// Departure velocity from Lambert solution (for display).
+    pub departure_velocity: DVec2,
     /// Current mission state.
     pub state: ContinuousDeflectorState,
 }
@@ -160,38 +170,89 @@ impl Plugin for ContinuousPlugin {
 }
 
 /// Handle launch events to spawn new continuous deflectors.
+///
+/// Uses Lambert solver to compute realistic transfer orbit from Earth to
+/// the predicted asteroid position at arrival time.
 fn handle_launch_event(
     mut commands: Commands,
     mut events: MessageReader<LaunchContinuousDeflectorEvent>,
     mut registry: ResMut<ContinuousDeflectorRegistry>,
     sim_time: Res<SimulationTime>,
+    ephemeris: Res<Ephemeris>,
     asteroids: Query<&BodyState, With<Asteroid>>,
 ) {
     for event in events.read() {
         // Verify target exists
-        if asteroids.get(event.target).is_err() {
+        let Ok(asteroid_state) = asteroids.get(event.target) else {
             warn!("Continuous deflector launch failed: target asteroid not found");
             continue;
-        }
+        };
 
-        let arrival_time = sim_time.current + event.flight_time;
+        // Get Earth position for launch point
+        let earth_pos = ephemeris
+            .get_position_by_id(CelestialBodyId::Earth, sim_time.current)
+            .unwrap_or(DVec2::new(AU_TO_METERS, 0.0));
+
+        let flight_time = event.flight_time;
+        let arrival_time = sim_time.current + flight_time;
+
+        // Predict asteroid position at arrival time
+        let (arrival_position, _arrival_vel) =
+            predict_asteroid_at_time(asteroid_state, sim_time.current, arrival_time, &ephemeris);
+
+        // For instant deployment (flight_time = 0), skip Lambert calculation
+        let (transfer_arc, departure_velocity) = if flight_time > 0.0 {
+            // Try to solve Lambert's problem for transfer orbit
+            match solve_lambert_auto(earth_pos, arrival_position, flight_time, GM_SUN) {
+                Some(solution) => {
+                    // Generate arc points for visualization
+                    let arc = generate_transfer_arc(
+                        earth_pos,
+                        solution.v1,
+                        flight_time,
+                        TRANSFER_ARC_POINTS,
+                    );
+                    (arc, solution.v1)
+                }
+                None => {
+                    // Fallback: no curved arc, just linear interpolation
+                    warn!(
+                        "Lambert solver did not converge for continuous deflector, using linear trajectory"
+                    );
+                    (Vec::new(), DVec2::ZERO)
+                }
+            }
+        } else {
+            // Instant deployment - no transit
+            (Vec::new(), DVec2::ZERO)
+        };
 
         // Spawn the deflector entity
         commands.spawn(ContinuousDeflector {
             target: event.target,
             payload: event.payload.clone(),
             launch_time: sim_time.current,
-            launch_position: DVec2::ZERO, // Could be Earth position, simplified for now
+            launch_position: earth_pos,
+            arrival_position,
+            transfer_arc,
+            departure_velocity,
             state: ContinuousDeflectorState::EnRoute { arrival_time },
         });
 
         registry.total_launched += 1;
 
-        info!(
-            "Launched {} continuous deflector, arrival in {:.1} days",
-            event.payload.name(),
-            event.flight_time / 86400.0
-        );
+        if flight_time > 0.0 {
+            info!(
+                "Launched {} continuous deflector, arrival in {:.1} days",
+                event.payload.name(),
+                flight_time / 86400.0
+            );
+        } else {
+            info!(
+                "Deployed {} (instant effect from Earth-based platform)",
+                event.payload.name()
+            );
+        }
     }
 }
 
@@ -249,9 +310,6 @@ fn update_continuous_deflectors(
                     ContinuousPayload::IonBeam { fuel_mass_kg, .. } => {
                         fuel_consumed >= *fuel_mass_kg
                     }
-                    ContinuousPayload::GravityTractor {
-                        mission_duration, ..
-                    } => (current_time - started_at) >= *mission_duration,
                     ContinuousPayload::LaserAblation {
                         mission_duration, ..
                     } => (current_time - started_at) >= *mission_duration,
@@ -337,11 +395,6 @@ pub fn compute_continuous_thrust(
             ContinuousPayload::IonBeam { thrust_n, .. } => {
                 ion_beam_acceleration(*thrust_n, asteroid_mass)
             }
-            ContinuousPayload::GravityTractor {
-                spacecraft_mass_kg,
-                hover_distance_m,
-                ..
-            } => gravity_tractor_acceleration(*spacecraft_mass_kg, *hover_distance_m),
             ContinuousPayload::LaserAblation {
                 power_kw,
                 efficiency,
@@ -403,11 +456,6 @@ pub fn update_deflector_progress(
 
                 ion_beam_acceleration(*thrust_n, asteroid_mass)
             }
-            ContinuousPayload::GravityTractor {
-                spacecraft_mass_kg,
-                hover_distance_m,
-                ..
-            } => gravity_tractor_acceleration(*spacecraft_mass_kg, *hover_distance_m),
             ContinuousPayload::LaserAblation {
                 power_kw,
                 efficiency,
@@ -452,6 +500,9 @@ mod tests {
             payload: ContinuousPayload::ion_beam_default(),
             launch_time: 0.0,
             launch_position: DVec2::ZERO,
+            arrival_position: DVec2::ZERO,
+            transfer_arc: Vec::new(),
+            departure_velocity: DVec2::ZERO,
             state: ContinuousDeflectorState::EnRoute {
                 arrival_time: 100.0,
             },
@@ -475,6 +526,9 @@ mod tests {
             payload: ContinuousPayload::ion_beam_default(),
             launch_time: 0.0,
             launch_position: DVec2::ZERO,
+            arrival_position: DVec2::ZERO,
+            transfer_arc: Vec::new(),
+            departure_velocity: DVec2::ZERO,
             state: ContinuousDeflectorState::Operating {
                 started_at: 100.0,
                 fuel_consumed: 0.0,
@@ -505,6 +559,9 @@ mod tests {
             },
             launch_time: 0.0,
             launch_position: DVec2::ZERO,
+            arrival_position: DVec2::ZERO,
+            transfer_arc: Vec::new(),
+            departure_velocity: DVec2::ZERO,
             state: ContinuousDeflectorState::Operating {
                 started_at: 100.0,
                 fuel_consumed: 25.0, // 25% consumed
@@ -529,6 +586,9 @@ mod tests {
             },
             launch_time: 0.0,
             launch_position: DVec2::ZERO,
+            arrival_position: DVec2::ZERO,
+            transfer_arc: Vec::new(),
+            departure_velocity: DVec2::ZERO,
             state: ContinuousDeflectorState::Operating {
                 started_at: 100.0,
                 fuel_consumed: 0.0,
@@ -560,6 +620,9 @@ mod tests {
             payload: ContinuousPayload::ion_beam_default(),
             launch_time: 0.0,
             launch_position: DVec2::ZERO,
+            arrival_position: DVec2::ZERO,
+            transfer_arc: Vec::new(),
+            departure_velocity: DVec2::ZERO,
             state: ContinuousDeflectorState::EnRoute {
                 arrival_time: 100.0,
             },

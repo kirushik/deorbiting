@@ -32,7 +32,6 @@ pub enum DeflectionMethod {
     NuclearSplit,
     // Continuous methods
     IonBeam,
-    GravityTractor,
     LaserAblation,
     SolarSail,
 }
@@ -45,7 +44,6 @@ impl DeflectionMethod {
             DeflectionMethod::Nuclear => icons::NUCLEAR,
             DeflectionMethod::NuclearSplit => icons::NUCLEAR_SPLIT,
             DeflectionMethod::IonBeam => icons::ION_BEAM,
-            DeflectionMethod::GravityTractor => icons::GRAVITY_TRACTOR,
             DeflectionMethod::LaserAblation => icons::LASER,
             DeflectionMethod::SolarSail => icons::SOLAR_SAIL,
         }
@@ -58,7 +56,6 @@ impl DeflectionMethod {
             DeflectionMethod::Nuclear => "Nuclear",
             DeflectionMethod::NuclearSplit => "Split",
             DeflectionMethod::IonBeam => "Ion Beam",
-            DeflectionMethod::GravityTractor => "Gravity",
             DeflectionMethod::LaserAblation => "Laser",
             DeflectionMethod::SolarSail => "Solar Sail",
         }
@@ -71,7 +68,6 @@ impl DeflectionMethod {
             DeflectionMethod::Nuclear => egui::Color32::from_rgb(255, 100, 100),
             DeflectionMethod::NuclearSplit => egui::Color32::from_rgb(255, 80, 150),
             DeflectionMethod::IonBeam => egui::Color32::from_rgb(100, 200, 255),
-            DeflectionMethod::GravityTractor => egui::Color32::from_rgb(180, 120, 255),
             DeflectionMethod::LaserAblation => egui::Color32::from_rgb(255, 200, 80),
             DeflectionMethod::SolarSail => egui::Color32::from_rgb(255, 230, 100),
         }
@@ -82,7 +78,6 @@ impl DeflectionMethod {
         matches!(
             self,
             DeflectionMethod::IonBeam
-                | DeflectionMethod::GravityTractor
                 | DeflectionMethod::LaserAblation
                 | DeflectionMethod::SolarSail
         )
@@ -90,12 +85,11 @@ impl DeflectionMethod {
 }
 
 /// All deflection methods available.
-pub const ALL_METHODS: [DeflectionMethod; 7] = [
+pub const ALL_METHODS: [DeflectionMethod; 6] = [
     DeflectionMethod::Kinetic,
     DeflectionMethod::Nuclear,
     DeflectionMethod::NuclearSplit,
     DeflectionMethod::IonBeam,
-    DeflectionMethod::GravityTractor,
     DeflectionMethod::LaserAblation,
     DeflectionMethod::SolarSail,
 ];
@@ -159,18 +153,11 @@ pub fn apply_deflection(
                 flight_time: flight_time_seconds,
             });
         }
-        DeflectionMethod::GravityTractor => {
-            continuous_launch_events.write(LaunchContinuousDeflectorEvent {
-                target,
-                payload: ContinuousPayload::gravity_tractor_default(),
-                flight_time: flight_time_seconds,
-            });
-        }
         DeflectionMethod::LaserAblation => {
             continuous_launch_events.write(LaunchContinuousDeflectorEvent {
                 target,
                 payload: ContinuousPayload::laser_ablation_default(),
-                flight_time: flight_time_seconds,
+                flight_time: 0.0, // Instant - Earth-based laser platform (DE-STAR concept)
             });
         }
         DeflectionMethod::SolarSail => {
@@ -220,8 +207,8 @@ mod tests {
     fn test_all_methods_count() {
         assert_eq!(
             ALL_METHODS.len(),
-            7,
-            "Should have exactly 7 deflection methods"
+            6,
+            "Should have exactly 6 deflection methods"
         );
     }
 
@@ -234,7 +221,6 @@ mod tests {
 
         // Continuous methods
         assert!(DeflectionMethod::IonBeam.is_continuous());
-        assert!(DeflectionMethod::GravityTractor.is_continuous());
         assert!(DeflectionMethod::LaserAblation.is_continuous());
         assert!(DeflectionMethod::SolarSail.is_continuous());
     }
@@ -245,7 +231,6 @@ mod tests {
         assert_eq!(DeflectionMethod::Nuclear.name(), "Nuclear");
         assert_eq!(DeflectionMethod::NuclearSplit.name(), "Split");
         assert_eq!(DeflectionMethod::IonBeam.name(), "Ion Beam");
-        assert_eq!(DeflectionMethod::GravityTractor.name(), "Gravity");
         assert_eq!(DeflectionMethod::LaserAblation.name(), "Laser");
         assert_eq!(DeflectionMethod::SolarSail.name(), "Solar Sail");
     }

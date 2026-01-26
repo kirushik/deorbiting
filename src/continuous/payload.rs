@@ -28,25 +28,10 @@ pub enum ContinuousPayload {
         direction: ThrustDirection,
     },
 
-    /// Gravity Tractor - spacecraft mass gravitationally pulls asteroid.
-    ///
-    /// Slowest method but most precise and predictable.
-    /// Requires decades of lead time for meaningful deflection.
-    GravityTractor {
-        /// Spacecraft mass in kg (typical: 10,000-20,000 kg).
-        spacecraft_mass_kg: f64,
-        /// Hover distance from asteroid center in meters (150-300 m).
-        hover_distance_m: f64,
-        /// Mission duration in seconds. Operation is passive (no fuel consumption).
-        mission_duration: f64,
-        /// Direction of gravitational pull (spacecraft positioning).
-        direction: ThrustDirection,
-    },
-
     /// Laser Ablation - vaporizes asteroid surface, creating thrust plume.
     ///
     /// Effectiveness varies with solar distance (solar-powered).
-    /// Based on DE-STARLITE concept.
+    /// Based on DE-STARLITE concept (gameplay-boosted for effectiveness).
     LaserAblation {
         /// Laser power in kilowatts (typical: 50-1000 kW).
         power_kw: f64,
@@ -62,7 +47,7 @@ pub enum ContinuousPayload {
     ///
     /// Uses solar radiation pressure for propellantless deflection.
     /// Effectiveness varies with solar distance (1/r² scaling).
-    /// Based on NASA Solar Cruiser and similar concepts.
+    /// Based on NASA Solar Cruiser and similar concepts (gameplay-boosted).
     SolarSail {
         /// Sail area in square meters (typical: 1,000 - 100,000 m²).
         sail_area_m2: f64,
@@ -86,24 +71,13 @@ impl ContinuousPayload {
     /// Default ion beam shepherd configuration.
     ///
     /// Parameters inflated for effectiveness at gameplay timescales.
+    /// 50 kN thrust with 2,000,000 kg fuel provides meaningful delta-v.
     pub fn ion_beam_default() -> Self {
         ContinuousPayload::IonBeam {
-            thrust_n: 10.0,           // 10 N (was 0.1 N)
-            fuel_mass_kg: 5_000.0,    // 5,000 kg propellant
-            specific_impulse: 3500.0, // Typical xenon ion engine
-            hover_distance_m: 200.0,  // 200 m from surface
-            direction: ThrustDirection::Retrograde,
-        }
-    }
-
-    /// Default gravity tractor configuration.
-    ///
-    /// Parameters inflated for effectiveness at gameplay timescales.
-    pub fn gravity_tractor_default() -> Self {
-        ContinuousPayload::GravityTractor {
-            spacecraft_mass_kg: 500_000.0,             // 500 tons (was 20 tons)
-            hover_distance_m: 200.0,                   // 200 m from center
-            mission_duration: 10.0 * 365.25 * 86400.0, // 10 years
+            thrust_n: 50_000.0,        // 50 kN (highly boosted for gameplay)
+            fuel_mass_kg: 2_000_000.0, // 2,000 tons propellant
+            specific_impulse: 3500.0,  // Typical xenon ion engine
+            hover_distance_m: 200.0,   // 200 m from surface
             direction: ThrustDirection::Retrograde,
         }
     }
@@ -111,10 +85,11 @@ impl ContinuousPayload {
     /// Default laser ablation configuration.
     ///
     /// Parameters inflated for effectiveness at gameplay timescales.
+    /// Earth-based DE-STAR concept: 50 MW over 6 months provides ~48 m/s delta-v.
     pub fn laser_ablation_default() -> Self {
         ContinuousPayload::LaserAblation {
-            power_kw: 10_000.0,                       // 10 MW (was 100 kW)
-            mission_duration: 1.0 * 365.25 * 86400.0, // 1 year
+            power_kw: 50_000.0,                       // 50 MW (boosted for gameplay)
+            mission_duration: 0.5 * 365.25 * 86400.0, // 6 months
             efficiency: 0.8,                          // 80% efficiency
             direction: ThrustDirection::Retrograde,
         }
@@ -123,9 +98,10 @@ impl ContinuousPayload {
     /// Default solar sail configuration.
     ///
     /// Parameters inflated for effectiveness at gameplay timescales.
+    /// 10 km² sail over 2 years provides ~86 m/s delta-v.
     pub fn solar_sail_default() -> Self {
         ContinuousPayload::SolarSail {
-            sail_area_m2: 1_000_000.0,                // 1 km² (was 10,000 m²)
+            sail_area_m2: 10_000_000.0,               // 10 km² (boosted for gameplay)
             mission_duration: 2.0 * 365.25 * 86400.0, // 2 years
             reflectivity: 0.9,                        // 90% reflective
             direction: ThrustDirection::SunPointing,  // Solar sails push away from Sun
@@ -136,7 +112,6 @@ impl ContinuousPayload {
     pub fn direction(&self) -> ThrustDirection {
         match self {
             ContinuousPayload::IonBeam { direction, .. } => *direction,
-            ContinuousPayload::GravityTractor { direction, .. } => *direction,
             ContinuousPayload::LaserAblation { direction, .. } => *direction,
             ContinuousPayload::SolarSail { direction, .. } => *direction,
         }
@@ -147,9 +122,6 @@ impl ContinuousPayload {
         match self {
             ContinuousPayload::IonBeam { .. } => {
                 "Ion Beam Shepherd: Spacecraft hovers near asteroid, directing ion exhaust at surface"
-            }
-            ContinuousPayload::GravityTractor { .. } => {
-                "Gravity Tractor: Spacecraft mass gravitationally pulls asteroid over time"
             }
             ContinuousPayload::LaserAblation { .. } => {
                 "Laser Ablation: High-power laser vaporizes surface, creating thrust plume"
@@ -164,7 +136,6 @@ impl ContinuousPayload {
     pub fn name(&self) -> &'static str {
         match self {
             ContinuousPayload::IonBeam { .. } => "Ion Beam",
-            ContinuousPayload::GravityTractor { .. } => "Gravity Tractor",
             ContinuousPayload::LaserAblation { .. } => "Laser Ablation",
             ContinuousPayload::SolarSail { .. } => "Solar Sail",
         }
@@ -187,9 +158,6 @@ impl ContinuousPayload {
     pub fn mission_duration(&self) -> Option<f64> {
         match self {
             ContinuousPayload::IonBeam { .. } => None, // Limited by fuel, not time
-            ContinuousPayload::GravityTractor {
-                mission_duration, ..
-            } => Some(*mission_duration),
             ContinuousPayload::LaserAblation {
                 mission_duration, ..
             } => Some(*mission_duration),
@@ -209,8 +177,8 @@ impl ContinuousPayload {
     /// Estimated total delta-v in m/s
     pub fn estimate_total_delta_v(&self, asteroid_mass_kg: f64, solar_distance_au: f64) -> f64 {
         use super::thrust::{
-            gravity_tractor_acceleration, ion_beam_acceleration, ion_fuel_consumption_rate,
-            laser_ablation_acceleration, solar_sail_acceleration,
+            ion_beam_acceleration, ion_fuel_consumption_rate, laser_ablation_acceleration,
+            solar_sail_acceleration,
         };
 
         match self {
@@ -228,15 +196,6 @@ impl ContinuousPayload {
                 } else {
                     0.0
                 }
-            }
-            ContinuousPayload::GravityTractor {
-                spacecraft_mass_kg,
-                hover_distance_m,
-                mission_duration,
-                ..
-            } => {
-                let acc = gravity_tractor_acceleration(*spacecraft_mass_kg, *hover_distance_m);
-                acc * mission_duration
             }
             ContinuousPayload::LaserAblation {
                 power_kw,
@@ -281,28 +240,11 @@ mod tests {
                 fuel_mass_kg,
                 ..
             } => {
-                // Inflated values for gameplay effectiveness
-                assert!((thrust_n - 10.0).abs() < 1e-10);
-                assert!((fuel_mass_kg - 5_000.0).abs() < 1e-10);
+                // Highly boosted values for gameplay effectiveness
+                assert!((thrust_n - 50_000.0).abs() < 1e-10);
+                assert!((fuel_mass_kg - 2_000_000.0).abs() < 1e-10);
             }
             _ => panic!("Expected IonBeam"),
-        }
-    }
-
-    #[test]
-    fn test_gravity_tractor_default() {
-        let payload = ContinuousPayload::gravity_tractor_default();
-        match payload {
-            ContinuousPayload::GravityTractor {
-                spacecraft_mass_kg,
-                hover_distance_m,
-                ..
-            } => {
-                // Inflated values for gameplay effectiveness
-                assert!((spacecraft_mass_kg - 500_000.0).abs() < 1e-10);
-                assert!((hover_distance_m - 200.0).abs() < 1e-10);
-            }
-            _ => panic!("Expected GravityTractor"),
         }
     }
 
@@ -310,9 +252,16 @@ mod tests {
     fn test_laser_ablation_default() {
         let payload = ContinuousPayload::laser_ablation_default();
         match payload {
-            ContinuousPayload::LaserAblation { power_kw, .. } => {
+            ContinuousPayload::LaserAblation {
+                power_kw,
+                mission_duration,
+                ..
+            } => {
                 // Inflated for gameplay effectiveness
-                assert!((power_kw - 10_000.0).abs() < 1e-10);
+                assert!((power_kw - 50_000.0).abs() < 1e-10);
+                // 6 months mission duration
+                let expected_duration = 0.5 * 365.25 * 86400.0;
+                assert!((mission_duration - expected_duration).abs() < 1.0);
             }
             _ => panic!("Expected LaserAblation"),
         }
@@ -322,39 +271,35 @@ mod tests {
     fn test_payload_names() {
         assert_eq!(ContinuousPayload::ion_beam_default().name(), "Ion Beam");
         assert_eq!(
-            ContinuousPayload::gravity_tractor_default().name(),
-            "Gravity Tractor"
-        );
-        assert_eq!(
             ContinuousPayload::laser_ablation_default().name(),
             "Laser Ablation"
         );
+        assert_eq!(ContinuousPayload::solar_sail_default().name(), "Solar Sail");
     }
 
     #[test]
     fn test_uses_fuel() {
         assert!(ContinuousPayload::ion_beam_default().uses_fuel());
-        assert!(!ContinuousPayload::gravity_tractor_default().uses_fuel());
         assert!(!ContinuousPayload::laser_ablation_default().uses_fuel());
+        assert!(!ContinuousPayload::solar_sail_default().uses_fuel());
     }
 
     #[test]
     fn test_estimate_delta_v_ion_beam() {
         let payload = ContinuousPayload::ion_beam_default();
-        let asteroid_mass = 1e10; // 10 billion kg
+        let asteroid_mass = 3e10; // 30 billion kg (typical gameplay asteroid)
         let delta_v = payload.estimate_total_delta_v(asteroid_mass, 1.0);
-        // Should be positive and reasonable
-        assert!(delta_v > 0.0);
-        assert!(delta_v < 1.0); // Less than 1 m/s for this size asteroid
-    }
-
-    #[test]
-    fn test_estimate_delta_v_gravity_tractor() {
-        let payload = ContinuousPayload::gravity_tractor_default();
-        let asteroid_mass = 1e10;
-        let delta_v = payload.estimate_total_delta_v(asteroid_mass, 1.0);
-        // Inflated gravity tractor (500 tons) produces more delta-v
-        assert!(delta_v > 0.0);
-        assert!(delta_v < 5.0); // Still relatively slow even with inflated mass
+        // With 50 kN thrust and 2M kg fuel on 3e10 kg asteroid
+        // Provides meaningful delta-v
+        assert!(
+            delta_v > 1.0,
+            "Ion beam should provide >1 m/s, got {}",
+            delta_v
+        );
+        assert!(
+            delta_v < 20.0,
+            "Ion beam delta-v should be reasonable, got {}",
+            delta_v
+        );
     }
 }

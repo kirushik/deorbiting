@@ -2,13 +2,10 @@
 //!
 //! Each method has distinct physics:
 //! - Ion Beam Shepherd: Direct thrust from ion exhaust
-//! - Gravity Tractor: Gravitational pull from spacecraft mass
 //! - Laser Ablation: Momentum from vaporized surface material
+//! - Solar Sail: Radiation pressure from reflected sunlight
 
 use bevy::math::DVec2;
-
-/// Gravitational constant (m³·kg⁻¹·s⁻²)
-const G: f64 = 6.67430e-11;
 
 /// Standard gravity (m/s²) for Isp calculations
 const G0: f64 = 9.80665;
@@ -54,33 +51,6 @@ pub fn ion_fuel_consumption_rate(thrust_n: f64, specific_impulse: f64) -> f64 {
     thrust_n / (specific_impulse * G0)
 }
 
-/// Gravity Tractor acceleration calculation.
-///
-/// The spacecraft hovers at a fixed distance from the asteroid, using its
-/// thrusters to maintain position. The gravitational attraction between
-/// the spacecraft and asteroid slowly accelerates the asteroid.
-///
-/// # Arguments
-/// * `spacecraft_mass_kg` - Mass of the spacecraft in kg
-/// * `hover_distance_m` - Distance from asteroid center of mass in meters
-///
-/// # Returns
-/// Acceleration magnitude in m/s²
-///
-/// # Reference
-/// Lu, E. & Love, S. (2005) "Gravitational tractor for towing asteroids"
-/// 20,000 kg spacecraft at 200m → ~0.032 N force
-#[inline]
-pub fn gravity_tractor_acceleration(spacecraft_mass_kg: f64, hover_distance_m: f64) -> f64 {
-    if hover_distance_m <= 0.0 {
-        return 0.0;
-    }
-    // F = G × M × m / r²
-    // a = F / m_asteroid = G × M_spacecraft / r²
-    // (Note: this is the acceleration imparted TO the asteroid)
-    G * spacecraft_mass_kg / (hover_distance_m * hover_distance_m)
-}
-
 /// Laser ablation thrust calculation.
 ///
 /// A high-powered laser vaporizes the asteroid's surface, creating a plume
@@ -93,9 +63,9 @@ pub fn gravity_tractor_acceleration(spacecraft_mass_kg: f64, hover_distance_m: f
 /// # Returns
 /// Thrust in Newtons
 ///
-/// # Reference
-/// DE-STARLITE concept: 100 kW laser → 2.3 N thrust at 1 AU
-/// Lubin, P. (2016) "A Roadmap to Interstellar Flight"
+/// # Note
+/// Gameplay-boosted from realistic DE-STARLITE values (100 kW → 2.3 N) by 50x
+/// to provide meaningful delta-v against 3e10 kg asteroids.
 #[inline]
 pub fn laser_ablation_thrust(power_kw: f64, solar_distance_au: f64) -> f64 {
     if power_kw <= 0.0 || solar_distance_au <= 0.0 {
@@ -103,7 +73,8 @@ pub fn laser_ablation_thrust(power_kw: f64, solar_distance_au: f64) -> f64 {
     }
 
     // Base thrust: 2.3 N per 100 kW at 1 AU (DE-STARLITE reference)
-    let base_thrust_per_100kw = 2.3;
+    // Boosted 50x for gameplay effectiveness
+    let base_thrust_per_100kw = 2.3 * 50.0; // 115 N per 100 kW
 
     // Solar efficiency: power falls off with distance squared
     // (assuming solar-powered laser, not nuclear)
@@ -147,14 +118,14 @@ pub fn laser_ablation_acceleration(
 /// # Returns
 /// Thrust in Newtons
 ///
-/// # Physics
+/// # Note
+/// Gameplay-boosted from realistic solar radiation pressure by 100x
+/// to provide meaningful delta-v against 3e10 kg asteroids.
+///
+/// # Physics (realistic baseline)
 /// Solar radiation pressure at 1 AU ≈ 9.08 μN/m² for perfect reflection.
 /// P = 2 × S / c where S = 1361 W/m² (solar constant), c = 3×10⁸ m/s
 /// Thrust = P × Area × (1 AU / distance)²
-///
-/// # Reference
-/// NASA Solar Cruiser: 1,672 m² sail
-/// Typical sails: 1,000 - 100,000 m²
 #[inline]
 pub fn solar_sail_thrust(sail_area_m2: f64, solar_distance_au: f64) -> f64 {
     if sail_area_m2 <= 0.0 || solar_distance_au <= 0.0 {
@@ -163,7 +134,8 @@ pub fn solar_sail_thrust(sail_area_m2: f64, solar_distance_au: f64) -> f64 {
 
     // Solar radiation pressure for perfect reflection at 1 AU
     // P = 2 × S / c = 2 × 1361 / 3e8 ≈ 9.08 μN/m²
-    const SRP_AT_1AU: f64 = 9.08e-6; // N/m²
+    // Boosted 100x for gameplay effectiveness
+    const SRP_AT_1AU: f64 = 9.08e-6 * 100.0; // 9.08e-4 N/m²
 
     // Thrust falls off with distance squared
     let distance_factor = 1.0 / (solar_distance_au * solar_distance_au);
@@ -309,41 +281,24 @@ mod tests {
     }
 
     #[test]
-    fn test_gravity_tractor_acceleration() {
-        // 20,000 kg at 200m
-        let mass = 20_000.0;
-        let distance = 200.0;
-        let acc = gravity_tractor_acceleration(mass, distance);
-        // a = G × 20000 / 200² = 6.67430e-11 × 20000 / 40000
-        // ≈ 3.337e-11 m/s²
-        let expected = G * mass / (distance * distance);
-        assert!((acc - expected).abs() < 1e-20);
-    }
-
-    #[test]
-    fn test_gravity_tractor_zero_distance() {
-        assert_eq!(gravity_tractor_acceleration(20_000.0, 0.0), 0.0);
-    }
-
-    #[test]
     fn test_laser_ablation_thrust_at_1au() {
-        // 100 kW at 1 AU should give 2.3 N
+        // 100 kW at 1 AU should give 115 N (gameplay-boosted 50x from 2.3 N)
         let thrust = laser_ablation_thrust(100.0, 1.0);
-        assert!((thrust - 2.3).abs() < 0.01);
+        assert!((thrust - 115.0).abs() < 0.1);
     }
 
     #[test]
     fn test_laser_ablation_thrust_at_2au() {
         // At 2 AU, solar efficiency is 1/4
         let thrust = laser_ablation_thrust(100.0, 2.0);
-        assert!((thrust - 2.3 / 4.0).abs() < 0.01);
+        assert!((thrust - 115.0 / 4.0).abs() < 0.1);
     }
 
     #[test]
     fn test_laser_ablation_scales_with_power() {
-        // 200 kW at 1 AU should give 4.6 N
+        // 200 kW at 1 AU should give 230 N (2x the 100 kW value)
         let thrust = laser_ablation_thrust(200.0, 1.0);
-        assert!((thrust - 4.6).abs() < 0.01);
+        assert!((thrust - 230.0).abs() < 0.1);
     }
 
     #[test]

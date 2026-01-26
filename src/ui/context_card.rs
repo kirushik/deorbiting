@@ -654,7 +654,6 @@ fn deflector_display(
     use crate::ui::icons;
     match payload {
         ContinuousPayload::IonBeam { .. } => (icons::ION_BEAM, "Ion Beam"),
-        ContinuousPayload::GravityTractor { .. } => (icons::GRAVITY_TRACTOR, "Gravity Tractor"),
         ContinuousPayload::LaserAblation { .. } => (icons::LASER, "Laser Ablation"),
         ContinuousPayload::SolarSail { .. } => (icons::SOLAR_SAIL, "Solar Sail"),
     }

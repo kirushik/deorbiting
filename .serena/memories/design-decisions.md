@@ -130,31 +130,29 @@ Physics based on real research:
 
 ### Phase 5/6 Split
 - Phase 5 (complete): Instant deflection (kinetic, nuclear)
-- Phase 6 (complete): Continuous deflection (ion beam, gravity tractor, laser ablation)
+- Phase 6 (complete): Continuous deflection (ion beam, laser ablation, solar sail)
 
-## Phase 6 Implementation (2026-01-19)
+## Phase 6 Implementation (2026-01-19, updated 2026-01-26)
 
 ### Continuous Deflection Methods
-Four continuous deflection methods implemented in `src/continuous/`:
+Three continuous deflection methods implemented in `src/continuous/`:
 
-1. **Ion Beam Shepherd** - Spacecraft hovers near asteroid, ion exhaust pushes it
+1. **Ion Beam Shepherd** - Spacecraft near asteroid, ion exhaust pushes it
    - Formula: `acceleration = thrust_N / asteroid_mass_kg`
    - Fuel consumption: `mdot = thrust / (Isp × g0)`
-   - Typical thrust: 10-1000 mN
+   - Default: 50 kN thrust, 2,000,000 kg fuel capacity
 
-2. **Gravity Tractor** - Spacecraft mass gravitationally pulls asteroid
-   - Formula: `acceleration = G × spacecraft_mass / distance²`
-   - Example: 20,000 kg at 200m → ~0.033 N force
-   - Very slow (decades), most controlled method
+2. **Laser Ablation** - Earth-based DE-STAR system vaporizes asteroid surface
+   - Formula: `thrust_N = 115 × (power_kW / 100) × solar_efficiency` (50x gameplay boost)
+   - Default: 50 MW power, 6-month operation duration
+   - Zero flight time (ground-based system)
 
-3. **Laser Ablation** - Vaporize asteroid surface, creating thrust
-   - Formula: `thrust_N = 2.3 × (power_kW / 100) × solar_efficiency`
-   - Solar efficiency: `min(1.0, 1/distance_AU²)`
+3. **Solar Sail** - Reflects sunlight for radiation pressure thrust
+   - Solar radiation pressure: ~9.08e-4 N/m² at 1 AU (100x gameplay boost)
+   - Formula: `thrust = sail_area × 9.08e-4 × reflectivity / distance_AU²`
+   - Default: 10 km² sail area
 
-4. **Solar Sail** - Reflects sunlight for radiation pressure thrust
-   - Solar radiation pressure: ~9.08 μN/m² at 1 AU
-   - Formula: `thrust = sail_area × 9.08e-6 × reflectivity / distance_AU²`
-   - No fuel consumption; mission duration limited only by hardware lifetime
+**Removed:** Gravity Tractor (too slow for gameplay timescales, redundant with ion beam)
 
 ### Additional Instant Payloads
 - **NuclearSplit** - Armageddon-style asteroid splitting
@@ -167,7 +165,7 @@ Four continuous deflection methods implemented in `src/continuous/`:
 ### Key Components
 - `ContinuousDeflector` - Component tracking target, payload, state
 - `ContinuousDeflectorState` - EnRoute, Operating, FuelDepleted, Complete, Cancelled
-- `ContinuousPayload` - IonBeam, GravityTractor, LaserAblation, SolarSail variants
+- `ContinuousPayload` - IonBeam, LaserAblation, SolarSail variants
 - `ThrustDirection` - Retrograde, Prograde, Radial, Custom
 
 ### Physics Integration
@@ -212,7 +210,6 @@ Inflated default parameters for gameplay effectiveness. Key insight: raw delta-v
 | **Heavy kinetic mass** | - | 250,000 kg | New |
 | **Nuclear ref Δv** | 0.02 m/s | 0.30 m/s | 15× |
 | Ion beam thrust | 0.1 N | 10 N | 100× |
-| Gravity tractor | 20,000 kg | 500,000 kg | 25× |
 | Laser ablation | 100 kW | 10,000 kW | 100× |
 | Solar sail area | 10,000 m² | 1,000,000 m² | 100× |
 
@@ -263,10 +260,9 @@ Key components:
 - Effects scale with yield (logarithmic) for nuclear payloads
 
 **Continuous Method Visualizations** (`src/render/deflectors.rs`):
-- **Ion Beam**: Cone of 5 flickering cyan lines opposite to thrust direction, with particle dots
-- **Laser Ablation**: Red/orange beam from spacecraft to asteroid, pulsing glow circle at impact point
-- **Solar Sail**: Diamond shape perpendicular to sun direction, scaled by sail area, with struts and tether
-- **Gravity Tractor**: 3 curved dashed purple field lines connecting spacecraft positions to asteroid
+- **Ion Beam**: Cone of 7 flickering cyan lines opposite to thrust direction, with particle dots and spacecraft body
+- **Laser Ablation**: Red/orange beam incoming from Earth direction, ablation plume at impact point
+- **Solar Sail**: Diamond shape perpendicular to sun direction, scaled by sail area, with incoming/reflected solar rays
 
 All effects use gizmos (immediate-mode rendering) for simplicity and performance
 
