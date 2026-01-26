@@ -1,0 +1,6 @@
+# Use lld linker for faster, more memory-efficient linking on Linux
+# This helps CI builds stay within GitHub Actions memory limits
+# Note: requires lld to be installed (apt install lld)
+
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "link-arg=-fuse-ld=lld"]

@@ -8,6 +8,10 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # Reduce memory usage during builds (matches Bevy's CI)
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_TEST_DEBUG: 0
+  CARGO_PROFILE_DEV_DEBUG: 0
 
 jobs:
   test:
@@ -20,6 +24,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
+            lld \
+            clang \
             libasound2-dev \
             libudev-dev \
             libxkbcommon-dev \
@@ -31,16 +37,9 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache cargo registry
-        uses: actions/cache@v4
+      - uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
+          shared-key: "ci-linux"
 
       - name: Run tests
         run: cargo test
@@ -55,6 +54,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
+            lld \
+            clang \
             libasound2-dev \
             libudev-dev \
             libxkbcommon-dev \
@@ -68,16 +69,9 @@ jobs:
         with:
           components: clippy
 
-      - name: Cache cargo registry
-        uses: actions/cache@v4
+      - uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-clippy-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-clippy-
+          shared-key: "ci-linux"
 
       - name: Run clippy
         run: cargo clippy --lib --tests -- -D warnings

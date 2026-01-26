@@ -3,7 +3,7 @@
 //! This example reproduces the issue where planet orbits become erratic
 //! when simulation time goes centuries beyond table coverage (e.g., year 2844).
 //!
-//! Run with: cargo run --example test_long_extrapolation
+//! Run with: cargo test --test long_extrapolation
 //!
 //! Expected behavior BEFORE fix:
 //! - Orbits at year 2844 are offset from Sun (constant dp offset accumulates error)

@@ -54,6 +54,32 @@ Instead, leverage the `cargo run --example` feature: create a small example in t
 Feel free to create multiple example files for different test cases; treat the more useful ones as mini-integration tests, and keep them around for future use.
 This might also be a better alternative to running one-off Python scripts for testing calculations.
 
+### Tests vs Examples
+
+This project uses Rust's standard directory conventions:
+
+#### `tests/` - Integration Tests
+- **Purpose**: Verify that major features work correctly end-to-end
+- **Built in CI**: Yes (`cargo build --tests` and `cargo test`)
+- **Naming**: Descriptive names without `test_` prefix (e.g., `scenarios.rs`, `time_sync.rs`)
+- **When to add**: When you implement a new feature that needs verification
+- **Imports**: Must use `use deorbiting::*;` since tests are external to the crate
+- **Run individually**: `cargo test --test <name>` (e.g., `cargo test --test scenarios`)
+
+#### `examples/` - Developer Utilities
+- **Purpose**: Benchmarks, diagnostic tools, debug utilities, one-off analysis
+- **Built in CI**: No (too memory-intensive for GitHub Actions)
+- **Naming**: Descriptive with category prefix (e.g., `benchmark_*.rs`, `debug_*.rs`)
+- **When to add**: For performance analysis, debugging sessions, or analysis tools
+- **Cleanup**: Delete throwaway debug examples after use; keep only reusable utilities
+- **Run individually**: `cargo run --example <name>` (e.g., `cargo run --example benchmark_gravity`)
+
+#### Guidelines
+- New feature? Add integration test to `tests/`
+- Performance analysis? Add benchmark to `examples/`
+- Debugging an issue? Create temp example, delete when done
+- One-off analysis? Create example, keep if reusable, delete otherwise
+
 ### Before Ending a Session
 
 1. **Update checklist:** Mark completed items with `[x]`

@@ -3,7 +3,7 @@
 //! This example tests the physics integration by simulating an asteroid
 //! orbiting the Sun for one year and verifying orbital stability.
 //!
-//! Run with: cargo run --example test_asteroid_orbit
+//! Run with: cargo test --test asteroid_orbit
 
 use bevy::math::DVec2;
 

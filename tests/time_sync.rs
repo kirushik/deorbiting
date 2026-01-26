@@ -8,7 +8,7 @@
 //! With the fix, running for N simulation days at 1x should put the asteroid
 //! at the same place as running for N simulation days at 10x.
 //!
-//! Run with: cargo run --example test_time_sync
+//! Run with: cargo test --test time_sync
 
 use bevy::math::DVec2;
 

@@ -5,7 +5,7 @@
 //! - Delta-v accumulates correctly
 //! - Trajectory changes as expected
 //!
-//! Run with: cargo run --example test_ion_beam_deflection
+//! Run with: cargo test --test ion_beam_deflection
 
 use bevy::math::DVec2;
 

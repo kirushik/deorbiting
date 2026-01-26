@@ -3,7 +3,7 @@
 //! Verifies that Ion Beam, Laser Ablation, and Solar Sail can provide
 //! sufficient combined delta-v to deflect an asteroid away from Earth.
 //!
-//! Run with: cargo run --example test_continuous_deflection
+//! Run with: cargo test --test continuous_deflection
 
 const AU_TO_METERS: f64 = 1.495978707e11;
 const SECONDS_PER_DAY: f64 = 86400.0;

@@ -3,7 +3,7 @@
 //! This example simulates each scenario using realistic physics to verify
 //! they produce the expected outcomes (collision, flyby, escape, etc.).
 //!
-//! Run with: cargo run --example test_scenarios
+//! Run with: cargo test --test scenarios
 
 use bevy::math::DVec2;
 use std::collections::HashMap;

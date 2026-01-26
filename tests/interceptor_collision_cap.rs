@@ -3,7 +3,7 @@
 //! This verifies the fix for the bug where interceptors would target asteroid
 //! positions past the collision point with Earth.
 //!
-//! Run with: cargo run --example test_interceptor_collision_cap
+//! Run with: cargo test --test interceptor_collision_cap
 
 use bevy::math::DVec2;
 use deorbiting::ephemeris::{COLLISION_MULTIPLIER, CelestialBodyId, Ephemeris};

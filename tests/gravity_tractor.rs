@@ -5,7 +5,7 @@
 //! - Thrust direction matches spacecraft position
 //! - Long-duration deflection accumulates expected delta-v
 //!
-//! Run with: cargo run --example test_gravity_tractor
+//! Run with: cargo test --test gravity_tractor
 
 use bevy::math::DVec2;
 

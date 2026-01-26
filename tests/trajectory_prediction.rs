@@ -3,7 +3,7 @@
 //! This example tests the trajectory prediction algorithm by simulating
 //! a circular orbit and verifying the predicted path matches expected results.
 //!
-//! Run with: cargo run --example test_trajectory_prediction
+//! Run with: cargo test --test trajectory_prediction
 
 use bevy::math::DVec2;
 
