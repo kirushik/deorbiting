@@ -110,7 +110,7 @@ jobs:
           node-version: "20"
 
       - name: Install Valknut
-        run: npm install -g @sibyllinesoft/valknut
+        run: npm install -g @sibyllinesoft/valknut@1.4.0
 
       - name: Generate Valknut report
         run: |
