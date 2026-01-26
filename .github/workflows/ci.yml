@@ -112,11 +112,15 @@ jobs:
       - name: Install Valknut
         run: npm install -g @sibyllinesoft/valknut
 
-      - name: Run Valknut analysis
+      - name: Generate Valknut report
         run: |
           valknut analyze ./src \
             --format html \
-            --out quality-reports \
+            --out quality-reports
+
+      - name: Check quality gate
+        run: |
+          valknut analyze ./src \
             --quality-gate \
             --min-health 85 \
             --max-critical 0 \
