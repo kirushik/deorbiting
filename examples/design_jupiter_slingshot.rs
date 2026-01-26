@@ -161,7 +161,7 @@ fn test_trajectory(
 
 fn test_direct_intercept(planet_data: &HashMap<&str, (f64, f64, f64, f64)>) {
     // Start from 2 AU, aim for Jupiter's position in ~500 days
-    let start_time = 0.0;
+    let _start_time = 0.0;
     let transfer_time = 500.0 * DAY_SECONDS;
 
     let jupiter_future = planet_position("Jupiter", transfer_time, planet_data);
@@ -196,7 +196,7 @@ fn test_direct_intercept(planet_data: &HashMap<&str, (f64, f64, f64, f64)>) {
 fn test_aimed_approach(planet_data: &HashMap<&str, (f64, f64, f64, f64)>) {
     // Place asteroid so it will encounter Jupiter from behind
     let jupiter_pos = planet_position("Jupiter", 0.0, planet_data);
-    let jupiter_r = jupiter_pos.length();
+    let _jupiter_r = jupiter_pos.length();
     let jupiter_angle = jupiter_pos.y.atan2(jupiter_pos.x);
 
     // Jupiter's velocity direction (prograde tangent)
@@ -246,10 +246,10 @@ fn simulate(
 
     while time < max_time {
         // Verlet step
-        pos = pos + vel * dt + acc * (0.5 * dt * dt);
+        pos += vel * dt + acc * (0.5 * dt * dt);
         time += dt;
         let acc_new = compute_acceleration(pos, time, planet_data);
-        vel = vel + (acc + acc_new) * (0.5 * dt);
+        vel += (acc + acc_new) * (0.5 * dt);
         acc = acc_new;
 
         // Track Jupiter distance

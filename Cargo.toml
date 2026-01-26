@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
 
+[features]
+default = []
+# Embed ephemeris tables in binary for standalone distribution (~18MB larger)
+embedded-ephemeris = []
+
 [dependencies]
 bevy = "0.18"
 bevy_egui = "0.39"
@@ -20,3 +25,11 @@ rayon = "1.11"
 [lints.clippy]
 type_complexity = "allow"
 too_many_arguments = "allow"
+
+# Optimized release profile for distribution
+[profile.dist]
+inherits = "release"
+lto = true           # Link-time optimization for smaller/faster binary
+strip = true         # Remove debug symbols (~50% size reduction)
+opt-level = 3        # Maximum optimization
+codegen-units = 1    # Better optimization (slower compile)

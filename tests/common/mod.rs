@@ -31,6 +31,7 @@ pub fn angular_momentum(pos: DVec2, vel: DVec2) -> f64 {
 }
 
 /// Compute orbital period for elliptical orbit.
+#[allow(dead_code)]
 pub fn orbital_period(semi_major_axis: f64) -> f64 {
     use std::f64::consts::TAU;
     TAU * (semi_major_axis.powi(3) / GM_SUN).sqrt()
@@ -62,6 +63,7 @@ pub fn simulate_verlet(
 }
 
 /// Convert seconds to days.
+#[allow(dead_code)]
 pub fn seconds_to_days(seconds: f64) -> f64 {
     seconds / SECONDS_PER_DAY
 }

@@ -8,6 +8,8 @@
 //! - 2D heliocentric (Sun at origin), J2000 ecliptic plane.
 
 pub mod data;
+#[cfg(feature = "embedded-ephemeris")]
+mod embedded_tables;
 pub mod horizons_tables;
 pub mod kepler;
 pub mod table;
@@ -208,12 +210,12 @@ impl Ephemeris {
             let start = tbl.start_time();
             let end = tbl.end_time();
 
-            if time >= start && time <= end {
-                if let Ok(state) = tbl.sample(time) {
-                    return Some(state.pos);
-                }
-                // If sampling failed for some unexpected reason, fall through to Kepler.
+            if time >= start && time <= end
+                && let Ok(state) = tbl.sample(time)
+            {
+                return Some(state.pos);
             }
+            // If sampling failed for some unexpected reason, fall through to Kepler.
             // For `time < start` or `time > end`, fall through to Kepler.
             // Tables are forward-only by design; extrapolation uses pure Kepler.
         }
@@ -248,12 +250,12 @@ impl Ephemeris {
             let start = tbl.start_time();
             let end = tbl.end_time();
 
-            if time >= start && time <= end {
-                if let Ok(state) = tbl.sample(time) {
-                    return Some(state.vel);
-                }
-                // If sampling failed for some unexpected reason, fall through to Kepler.
+            if time >= start && time <= end
+                && let Ok(state) = tbl.sample(time)
+            {
+                return Some(state.vel);
             }
+            // If sampling failed for some unexpected reason, fall through to Kepler.
             // For `time < start` or `time > end`, fall through to Kepler.
             // Tables are forward-only by design; extrapolation uses pure Kepler.
         }
@@ -1040,7 +1042,7 @@ mod position_tests {
         ] {
             let moon_pos = eph
                 .get_position_by_id(moon_id, time)
-                .expect(&format!("{:?} position should be available", moon_id));
+                .unwrap_or_else(|| panic!("{:?} position should be available", moon_id));
             let dist_from_jupiter = (moon_pos - jupiter_pos).length() / AU;
 
             assert!(

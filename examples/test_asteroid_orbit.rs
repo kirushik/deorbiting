@@ -12,6 +12,7 @@ use bevy::math::DVec2;
 // or refactor to a library. For now, we'll use the essential physics directly.
 
 /// Physical constants
+#[allow(dead_code)]
 const G: f64 = 6.67430e-11;
 const AU_TO_METERS: f64 = 1.495978707e11;
 const SECONDS_PER_DAY: f64 = 86400.0;
@@ -39,7 +40,7 @@ fn verlet_step(pos: &mut DVec2, vel: &mut DVec2, acc: &mut DVec2, dt: f64) {
     let acc_new = compute_acceleration_sun_only(*pos);
 
     // Velocity update
-    *vel = *vel + (*acc + acc_new) * (0.5 * dt);
+    *vel += (*acc + acc_new) * (0.5 * dt);
 
     *acc = acc_new;
 }

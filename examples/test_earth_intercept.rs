@@ -98,7 +98,7 @@ fn test_new_approach(earth_pos: DVec2) {
         let tangent = DVec2::new(-asteroid_angle.sin(), asteroid_angle.cos());
         let vel = -tangent * v_circular; // Retrograde
 
-        let (hit, time, _) = simulate_trajectory(asteroid_pos, vel, &earth_pos_fn);
+        let (hit, time, _) = simulate_trajectory(asteroid_pos, vel, earth_pos_fn);
         let result = if hit {
             format!("HIT at {:.1} days", time / 86400.0)
         } else {
@@ -156,8 +156,8 @@ fn simulate_trajectory(
         let acc = -pos.normalize_or_zero() * SUN_GM / (r * r);
 
         // Simple Euler integration
-        vel = vel + acc * dt;
-        pos = pos + vel * dt;
+        vel += acc * dt;
+        pos += vel * dt;
         t += dt;
     }
 
@@ -213,7 +213,7 @@ fn test_broken_approach(earth_pos: DVec2) {
     }
 }
 
-fn test_hohmann_approach(earth_pos: DVec2, earth_vel: DVec2) {
+fn test_hohmann_approach(earth_pos: DVec2, _earth_vel: DVec2) {
     // Place asteroid at 1.3 AU at same angle as Earth
     // Give it velocity for transfer orbit with perihelion at Earth's orbit
     let angle = earth_pos.y.atan2(earth_pos.x);
@@ -288,7 +288,7 @@ fn test_radial_infall(earth_pos: DVec2) {
     }
 }
 
-fn test_retrograde_approach(earth_pos: DVec2, earth_vel: DVec2) {
+fn test_retrograde_approach(earth_pos: DVec2, _earth_vel: DVec2) {
     // Head-on collision: place asteroid on Earth's orbit but moving opposite direction
     // Offset by some angle so they'll meet
     let angle = earth_pos.y.atan2(earth_pos.x);

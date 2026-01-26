@@ -70,12 +70,12 @@ fn generate_body_positions(time_offset: f64) -> [[f64; 2]; NUM_BODIES] {
 
     let mut positions = [[0.0; 2]; NUM_BODIES];
 
-    for i in 0..NUM_BODIES {
-        let angle = 2.0 * std::f64::consts::PI * time_offset / (periods_days[i] * 86400.0);
+    for (i, period_days) in periods_days.iter().enumerate().take(NUM_BODIES) {
+        let angle = 2.0 * std::f64::consts::PI * time_offset / (period_days * 86400.0);
         let r = radii_au[i] * AU;
 
         // For moons, add parent position
-        let (base_x, base_y) = if i >= 9 && i <= 13 {
+        let (base_x, base_y) = if (9..=13).contains(&i) {
             // Jupiter moons
             (positions[5][0], positions[5][1])
         } else if i == 14 {

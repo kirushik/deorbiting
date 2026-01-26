@@ -146,7 +146,7 @@ pub fn predict_asteroid_at_time(
         // Simple Velocity Verlet
         let acc1 = compute_acceleration(pos, t, ephemeris);
         let half_vel = vel + acc1 * dt * 0.5;
-        pos = pos + half_vel * dt;
+        pos += half_vel * dt;
         let acc2 = compute_acceleration(pos, t + dt, ephemeris);
         vel = half_vel + acc2 * dt * 0.5;
         t += dt;
@@ -189,7 +189,7 @@ fn predict_asteroid_at_time_with_collision(
         // Simple Velocity Verlet
         let acc1 = compute_acceleration(pos, t, ephemeris);
         let half_vel = vel + acc1 * dt * 0.5;
-        pos = pos + half_vel * dt;
+        pos += half_vel * dt;
         let acc2 = compute_acceleration(pos, t + dt, ephemeris);
         vel = half_vel + acc2 * dt * 0.5;
         t += dt;
@@ -235,7 +235,7 @@ pub fn generate_transfer_arc(
 
             // Velocity Verlet
             let half_vel = vel + acc * dt * 0.5;
-            pos = pos + half_vel * dt;
+            pos += half_vel * dt;
             let r_new = pos.length();
             let acc_new = -GM_SUN * pos / (r_new * r_new * r_new);
             vel = half_vel + acc_new * dt * 0.5;
@@ -270,7 +270,7 @@ fn validate_lambert_solution(
 
         let acc = -GM_SUN * pos / (r * r * r);
         let half_vel = vel + acc * step * 0.5;
-        pos = pos + half_vel * step;
+        pos += half_vel * step;
         let r_new = pos.length();
         let acc_new = -GM_SUN * pos / (r_new * r_new * r_new);
         vel = half_vel + acc_new * step * 0.5;

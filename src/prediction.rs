@@ -1329,9 +1329,9 @@ mod tests {
         for body in bodies {
             let (r, g, b) = body_color(body);
             // All components should be in [0, 1]
-            assert!(r >= 0.0 && r <= 1.0, "Red out of range for {:?}", body);
-            assert!(g >= 0.0 && g <= 1.0, "Green out of range for {:?}", body);
-            assert!(b >= 0.0 && b <= 1.0, "Blue out of range for {:?}", body);
+            assert!((0.0..=1.0).contains(&r), "Red out of range for {:?}", body);
+            assert!((0.0..=1.0).contains(&g), "Green out of range for {:?}", body);
+            assert!((0.0..=1.0).contains(&b), "Blue out of range for {:?}", body);
         }
     }
 

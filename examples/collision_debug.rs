@@ -98,7 +98,7 @@ fn main() {
         pos = pos + vel * dt + acc * (0.5 * dt * dt);
         let r_new = pos.length();
         let acc_new = -pos.normalize() * gm_sun / (r_new * r_new);
-        vel = vel + (acc + acc_new) * (0.5 * dt);
+        vel += (acc + acc_new) * (0.5 * dt);
 
         t += dt;
     }

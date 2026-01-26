@@ -420,12 +420,12 @@ mod tests {
 
             let diff_str = if one_zero_other_not {
                 if physics_mag == 0.0 {
-                    format!("physics=0, pred≠0")
+                    "physics=0, pred≠0".to_string()
                 } else {
-                    format!("physics≠0, pred=0")
+                    "physics≠0, pred=0".to_string()
                 }
             } else if both_zero {
-                format!("both zero")
+                "both zero".to_string()
             } else {
                 format!(
                     "{:.1}%",

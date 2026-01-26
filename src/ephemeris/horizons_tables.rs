@@ -1,4 +1,6 @@
 use crate::ephemeris::data::CelestialBodyId;
+#[cfg(feature = "embedded-ephemeris")]
+use crate::ephemeris::embedded_tables;
 use crate::ephemeris::table::{EphemerisTable, EphemerisTableError, State2};
 use bevy::math::DVec2;
 use std::collections::HashMap;
@@ -37,15 +39,63 @@ pub struct HorizonsTables {
 }
 
 impl HorizonsTables {
-    /// Load all available tables from `assets/ephemeris/`.
+    /// Load all ephemeris tables.
     ///
-    /// Missing files are ignored; callers can fall back to Kepler for those bodies.
+    /// With `embedded-ephemeris` feature: loads from compiled-in binary data.
+    /// Without feature: loads from `assets/ephemeris/*.bin` files.
+    ///
+    /// Only planets have ephemeris tables - moons use Kepler approximation (visual-only).
     pub fn load_from_assets_dir() -> Result<Self, EphemerisTableError> {
+        #[cfg(feature = "embedded-ephemeris")]
+        {
+            Self::load_embedded()
+        }
+        #[cfg(not(feature = "embedded-ephemeris"))]
+        {
+            Self::load_from_filesystem()
+        }
+    }
+
+    /// Load tables from embedded binary data (standalone distribution).
+    #[cfg(feature = "embedded-ephemeris")]
+    fn load_embedded() -> Result<Self, EphemerisTableError> {
+        let mut tables: HashMap<CelestialBodyId, EphemerisTable> = HashMap::new();
+
+        let candidates: &[(CelestialBodyId, &[u8])] = &[
+            (CelestialBodyId::Mercury, embedded_tables::MERCURY),
+            (CelestialBodyId::Venus, embedded_tables::VENUS),
+            (CelestialBodyId::Earth, embedded_tables::EARTH),
+            (CelestialBodyId::Mars, embedded_tables::MARS),
+            (CelestialBodyId::Jupiter, embedded_tables::JUPITER),
+            (CelestialBodyId::Saturn, embedded_tables::SATURN),
+            (CelestialBodyId::Uranus, embedded_tables::URANUS),
+            (CelestialBodyId::Neptune, embedded_tables::NEPTUNE),
+        ];
+
+        for (id, bytes) in candidates {
+            let table = EphemerisTable::from_bytes(bytes)?;
+
+            if let Some(expected) = stable_body_id(*id)
+                && table.body_id != expected
+            {
+                return Err(EphemerisTableError::BodyIdMismatch {
+                    expected,
+                    got: table.body_id,
+                });
+            }
+
+            tables.insert(*id, table);
+        }
+
+        Ok(Self { tables })
+    }
+
+    /// Load tables from filesystem (development builds).
+    #[cfg(not(feature = "embedded-ephemeris"))]
+    fn load_from_filesystem() -> Result<Self, EphemerisTableError> {
         let dir = std::path::Path::new("assets/ephemeris");
         let mut tables: HashMap<CelestialBodyId, EphemerisTable> = HashMap::new();
 
-        // We intentionally hardcode names so the build doesn't depend on directory listing.
-        // Only planets have ephemeris tables - moons use Kepler approximation (visual-only).
         let candidates: &[(CelestialBodyId, &str)] = &[
             (CelestialBodyId::Mercury, "mercury.bin"),
             (CelestialBodyId::Venus, "venus.bin"),
@@ -68,7 +118,6 @@ impl HorizonsTables {
             if let Some(expected) = stable_body_id(*id)
                 && table.body_id != expected
             {
-                // Hard error: indicates wrong file ↔ body mapping (e.g. wrong filename or stale export).
                 return Err(EphemerisTableError::BodyIdMismatch {
                     expected,
                     got: table.body_id,

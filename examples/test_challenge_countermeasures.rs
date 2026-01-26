@@ -14,6 +14,7 @@ const ASTEROID_MASS: f64 = 1e9; // 1 billion kg (~80m diameter)
 
 /// Propagate asteroid and check for Earth collision.
 /// Returns (collides_with_earth, closest_approach_to_earth_in_km)
+#[allow(dead_code)]
 fn simulate_trajectory(
     mut pos: DVec2,
     mut vel: DVec2,
@@ -38,7 +39,7 @@ fn simulate_trajectory(
         // Velocity Verlet integration
         let acc1 = compute_acceleration(pos, t, ephemeris);
         let half_vel = vel + acc1 * step * 0.5;
-        pos = pos + half_vel * step;
+        pos += half_vel * step;
         let acc2 = compute_acceleration(pos, t + step, ephemeris);
         vel = half_vel + acc2 * step * 0.5;
         t += step;
@@ -60,6 +61,7 @@ fn simulate_trajectory(
 }
 
 /// Propagate asteroid forward for a given time, returning new state.
+#[allow(dead_code)]
 fn propagate_asteroid(
     mut pos: DVec2,
     mut vel: DVec2,
@@ -75,7 +77,7 @@ fn propagate_asteroid(
         let step = (end_time - t).min(dt);
         let acc1 = compute_acceleration(pos, t, ephemeris);
         let half_vel = vel + acc1 * step * 0.5;
-        pos = pos + half_vel * step;
+        pos += half_vel * step;
         let acc2 = compute_acceleration(pos, t + step, ephemeris);
         vel = half_vel + acc2 * step * 0.5;
         t += step;
@@ -164,7 +166,7 @@ fn simulate_closest_approach(
         let step = (end_time - t).min(dt);
         let acc1 = compute_acceleration(pos, t, ephemeris);
         let half_vel = vel + acc1 * step * 0.5;
-        pos = pos + half_vel * step;
+        pos += half_vel * step;
         let acc2 = compute_acceleration(pos, t + step, ephemeris);
         vel = half_vel + acc2 * step * 0.5;
         t += step;

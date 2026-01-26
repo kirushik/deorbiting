@@ -157,7 +157,7 @@ fn test_trajectory_color_boundaries() {
     let mars_distance = 1.5 * AU_TO_METERS;
 
     // Create trajectory that crosses Mars orbit
-    let (pos, vel) = common::elliptical_orbit(1.0, 0.3);
+    let (_pos, _vel) = common::elliptical_orbit(1.0, 0.3);
 
     // Semi-major axis
     let r_p = AU_TO_METERS;

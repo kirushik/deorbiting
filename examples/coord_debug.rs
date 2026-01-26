@@ -72,7 +72,7 @@ fn track_cursor(
     static mut FRAME: u32 = 0;
     unsafe {
         FRAME += 1;
-        if FRAME % 60 == 0 {
+        if FRAME.is_multiple_of(60) {
             info!(
                 "Screen: ({:.0}, {:.0}), World: ({:.2}, {:.2})",
                 cursor_pos.x, cursor_pos.y, world_pos.x, world_pos.y

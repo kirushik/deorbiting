@@ -41,9 +41,9 @@ impl IntegratorState {
 
     fn step(&mut self) {
         // Velocity Verlet integration
-        self.pos = self.pos + self.vel * self.dt + self.acc * (0.5 * self.dt * self.dt);
+        self.pos += self.vel * self.dt + self.acc * (0.5 * self.dt * self.dt);
         let acc_new = compute_acceleration(self.pos);
-        self.vel = self.vel + (self.acc + acc_new) * (0.5 * self.dt);
+        self.vel += (self.acc + acc_new) * (0.5 * self.dt);
         self.acc = acc_new;
     }
 }

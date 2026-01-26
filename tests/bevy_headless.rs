@@ -45,8 +45,10 @@ fn test_simulation_time_resource() {
 #[test]
 fn test_simulation_time_advances() {
     let mut app = create_minimal_app();
-    let mut sim_time = SimulationTime::default();
-    sim_time.paused = false;
+    let sim_time = SimulationTime {
+        paused: false,
+        ..SimulationTime::default()
+    };
 
     app.insert_resource(sim_time);
 
@@ -72,8 +74,10 @@ fn test_simulation_time_advances() {
 #[test]
 fn test_simulation_time_pause() {
     let mut app = create_minimal_app();
-    let mut sim_time = SimulationTime::default();
-    sim_time.paused = true;
+    let sim_time = SimulationTime {
+        paused: true,
+        ..SimulationTime::default()
+    };
     let initial_time = sim_time.current;
 
     app.insert_resource(sim_time);

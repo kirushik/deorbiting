@@ -198,9 +198,9 @@ mod current {
         }
 
         // Check planets - DUPLICATE ephemeris lookups!
-        for i in 0..8 {
-            let planet_pos = kepler_position(&planets[i], time);
-            let collision_radius = planets[i].radius * COLLISION_MULTIPLIER;
+        for (i, planet) in planets.iter().enumerate().take(8) {
+            let planet_pos = kepler_position(planet, time);
+            let collision_radius = planet.radius * COLLISION_MULTIPLIER;
             if (pos - planet_pos).length() < collision_radius {
                 return Some(i + 1);
             }

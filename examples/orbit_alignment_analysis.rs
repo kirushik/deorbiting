@@ -38,7 +38,7 @@ fn kepler_state(time_days: f64) -> (DVec2, DVec2) {
     let omega = MERCURY_OMEGA_DEG.to_radians();
     let m0 = MERCURY_M0_DEG.to_radians();
     let n = MERCURY_N_DEG_PER_DAY.to_radians(); // rad/day
-    let n_per_sec = n / 86400.0; // rad/s
+    let _n_per_sec = n / 86400.0; // rad/s
 
     // Mean anomaly at time
     let m = m0 + n * time_days;

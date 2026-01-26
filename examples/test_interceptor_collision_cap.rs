@@ -28,7 +28,7 @@ fn predict_with_collision(
         // Velocity Verlet integration
         let acc1 = compute_acceleration(pos, t, ephemeris);
         let half_vel = vel + acc1 * dt * 0.5;
-        pos = pos + half_vel * dt;
+        pos += half_vel * dt;
         let acc2 = compute_acceleration(pos, t + dt, ephemeris);
         vel = half_vel + acc2 * dt * 0.5;
         t += dt;

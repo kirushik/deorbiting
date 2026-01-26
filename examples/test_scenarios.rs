@@ -15,6 +15,7 @@ const DAY_SECONDS: f64 = 86400.0;
 
 /// Sun's standard gravitational parameter (GM) - m³/s²
 const GM_SUN: f64 = 1.32712440018e20;
+#[allow(dead_code)]
 const SUN_MASS: f64 = 1.989e30;
 
 /// Planetary data: (semi_major_axis_AU, eccentricity, mass_kg, radius_km)
@@ -137,7 +138,7 @@ fn verlet_step(
     let acc_new = compute_acceleration(*pos, *time, planet_data);
 
     // Velocity update
-    *vel = *vel + (*acc + acc_new) * (0.5 * dt);
+    *vel += (*acc + acc_new) * (0.5 * dt);
     *acc = acc_new;
 }
 
@@ -494,8 +495,8 @@ fn simulate_scenario(scenario: &Scenario, planet_data: &HashMap<&str, (f64, f64,
     );
 
     // Classify outcome
-    if collision_body.is_some() {
-        println!("\nOUTCOME: COLLISION with {}", collision_body.unwrap());
+    if let Some(body) = collision_body {
+        println!("\nOUTCOME: COLLISION with {}", body);
     } else {
         let final_energy = 0.5 * vel.length_squared() - GM_SUN / pos.length();
         if final_energy > 0.0 {

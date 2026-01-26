@@ -102,13 +102,13 @@ impl IntegratorState {
 
     fn step(&mut self, thrust_acc: DVec2) {
         // Position update: x' = x + v×dt + 0.5×a×dt²
-        self.pos = self.pos + self.vel * self.dt + self.acc * (0.5 * self.dt * self.dt);
+        self.pos += self.vel * self.dt + self.acc * (0.5 * self.dt * self.dt);
 
         // New acceleration = gravity + thrust
         let acc_new = compute_gravity(self.pos) + thrust_acc;
 
         // Velocity update: v' = v + 0.5×(a + a')×dt
-        self.vel = self.vel + (self.acc + acc_new) * (0.5 * self.dt);
+        self.vel += (self.acc + acc_new) * (0.5 * self.dt);
         self.acc = acc_new;
     }
 }
@@ -199,7 +199,7 @@ fn test_basic_deflection() {
 
     // Simulate for 30 days
     let dt = 3600.0; // 1 hour
-    let (pos_deflected, vel_deflected, pos_undeflected, vel_undeflected) = simulate_deflection(
+    let (_pos_deflected, vel_deflected, _pos_undeflected, vel_undeflected) = simulate_deflection(
         initial_pos,
         initial_vel,
         asteroid_mass,

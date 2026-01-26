@@ -144,7 +144,7 @@ fn test_vis_viva_equation() {
     let r_p = 1.0 * AU_TO_METERS; // 1 AU perihelion
     let e = 1.0 - r_p / a; // eccentricity
 
-    let (pos, vel) = common::elliptical_orbit(1.0, e);
+    let (_pos, vel) = common::elliptical_orbit(1.0, e);
 
     // At perihelion, vis-viva gives:
     let v_expected = (GM_SUN * (2.0 / r_p - 1.0 / a)).sqrt();

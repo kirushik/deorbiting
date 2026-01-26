@@ -347,20 +347,17 @@ mod tests {
 
     #[test]
     fn test_render_scale_is_positive() {
-        assert!(RENDER_SCALE > 0.0);
+        const { assert!(RENDER_SCALE > 0.0) };
         // 1e-9 maps physics (meters) to render units (gigameters)
-        assert!((RENDER_SCALE - 1e-9).abs() < 1e-15);
+        const { assert!((RENDER_SCALE - 1e-9).abs() < 1e-15) };
     }
 
     #[test]
     fn test_zoom_bounds_valid() {
-        assert!(MIN_ZOOM > 0.0, "MIN_ZOOM must be positive");
-        assert!(
-            MAX_ZOOM > MIN_ZOOM,
-            "MAX_ZOOM must be greater than MIN_ZOOM"
-        );
-        assert!(DEFAULT_ZOOM >= MIN_ZOOM, "DEFAULT_ZOOM must be >= MIN_ZOOM");
-        assert!(DEFAULT_ZOOM <= MAX_ZOOM, "DEFAULT_ZOOM must be <= MAX_ZOOM");
+        const { assert!(MIN_ZOOM > 0.0) }; // MIN_ZOOM must be positive
+        const { assert!(MAX_ZOOM > MIN_ZOOM) }; // MAX_ZOOM must be greater than MIN_ZOOM
+        const { assert!(DEFAULT_ZOOM >= MIN_ZOOM) }; // DEFAULT_ZOOM must be >= MIN_ZOOM
+        const { assert!(DEFAULT_ZOOM <= MAX_ZOOM) }; // DEFAULT_ZOOM must be <= MAX_ZOOM
     }
 
     #[test]
@@ -385,8 +382,8 @@ mod tests {
     #[test]
     fn test_double_click_threshold_reasonable() {
         // Double-click time should be between 0.1 and 1.0 seconds
-        assert!(DOUBLE_CLICK_TIME >= 0.1, "Double-click time too short");
-        assert!(DOUBLE_CLICK_TIME <= 1.0, "Double-click time too long");
+        const { assert!(DOUBLE_CLICK_TIME >= 0.1) }; // Double-click time not too short
+        const { assert!(DOUBLE_CLICK_TIME <= 1.0) }; // Double-click time not too long
     }
 
     #[test]
@@ -410,20 +407,17 @@ mod tests {
     #[test]
     fn test_zoom_speed_reasonable() {
         // ZOOM_SPEED should be small enough for fine control
-        assert!(ZOOM_SPEED > 0.0);
-        assert!(
-            ZOOM_SPEED < 1.0,
-            "Zoom speed should be less than 100% per scroll"
-        );
+        const { assert!(ZOOM_SPEED > 0.0) };
+        const { assert!(ZOOM_SPEED < 1.0) }; // Zoom speed less than 100% per scroll
         // Typical values are around 0.05-0.2
-        assert!(ZOOM_SPEED <= 0.3);
+        const { assert!(ZOOM_SPEED <= 0.3) };
     }
 
     #[test]
     fn test_viewport_height_positive() {
-        assert!(VIEWPORT_HEIGHT > 0.0);
+        const { assert!(VIEWPORT_HEIGHT > 0.0) };
         // Should show a meaningful portion of the inner solar system
         // 500 render units ≈ 3.3 AU
-        assert!(VIEWPORT_HEIGHT >= 100.0);
+        const { assert!(VIEWPORT_HEIGHT >= 100.0) };
     }
 }

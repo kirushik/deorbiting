@@ -285,7 +285,7 @@ fn simulate_jupiter_slingshot(data: &HashMap<&str, (f64, f64, f64, f64)>) {
             let acc_jup = -delta * (gm_jupiter / (jup_r_sq * jup_r));
             acc_sun + acc_jup
         };
-        vel = vel + (acc + acc_new) * (0.5 * dt);
+        vel += (acc + acc_new) * (0.5 * dt);
         time += dt;
 
         // Track closest approach

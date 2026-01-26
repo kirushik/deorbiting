@@ -317,10 +317,11 @@ mod tests {
 
     #[test]
     fn test_drag_state_auto_pause_flag() {
-        let mut state = DragState::default();
-
-        // When simulation was running and we start drag, set auto_paused
-        state.auto_paused = true;
+        // When simulation was running and we start drag, auto_paused should be set
+        let mut state = DragState {
+            auto_paused: true,
+            ..DragState::default()
+        };
         assert!(state.auto_paused);
 
         // After drag ends, clear auto_paused

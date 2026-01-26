@@ -201,8 +201,8 @@ mod deterministic_tests {
     fn test_sun_gm_matches_constant() {
         // GM_SUN constant should match the data
         // (This is a sanity check that constants are consistent)
-        assert!(GM_SUN > 1e20, "GM_SUN seems too small");
-        assert!(GM_SUN < 1e21, "GM_SUN seems too large");
+        const { assert!(GM_SUN > 1e20) }; // GM_SUN seems reasonable
+        const { assert!(GM_SUN < 1e21) };
     }
 
     #[test]

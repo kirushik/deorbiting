@@ -10,6 +10,7 @@
 use bevy::math::DVec2;
 
 /// Physical constants
+#[allow(dead_code)]
 const AU_TO_METERS: f64 = 1.495978707e11;
 const SECONDS_PER_DAY: f64 = 86400.0;
 
@@ -17,6 +18,7 @@ const SECONDS_PER_DAY: f64 = 86400.0;
 const G: f64 = 6.67430e-11;
 
 /// Sun's standard gravitational parameter (GM) - m³/s²
+#[allow(dead_code)]
 const GM_SUN: f64 = 1.32712440018e20;
 
 /// Gravity tractor deflector parameters
@@ -74,6 +76,7 @@ impl GravityTractor {
 }
 
 /// Compute gravitational acceleration at a position from Sun only.
+#[allow(dead_code)]
 fn compute_gravity(pos: DVec2) -> DVec2 {
     let r_sq = pos.length_squared();
     if r_sq < 1.0 {
@@ -84,6 +87,7 @@ fn compute_gravity(pos: DVec2) -> DVec2 {
 }
 
 /// Velocity Verlet integrator
+#[allow(dead_code)]
 struct IntegratorState {
     pos: DVec2,
     vel: DVec2,
@@ -91,6 +95,7 @@ struct IntegratorState {
     dt: f64,
 }
 
+#[allow(dead_code)]
 impl IntegratorState {
     fn new(pos: DVec2, vel: DVec2, dt: f64) -> Self {
         let acc = compute_gravity(pos);
@@ -98,9 +103,9 @@ impl IntegratorState {
     }
 
     fn step(&mut self, thrust_acc: DVec2) {
-        self.pos = self.pos + self.vel * self.dt + self.acc * (0.5 * self.dt * self.dt);
+        self.pos += self.vel * self.dt + self.acc * (0.5 * self.dt * self.dt);
         let acc_new = compute_gravity(self.pos) + thrust_acc;
-        self.vel = self.vel + (self.acc + acc_new) * (0.5 * self.dt);
+        self.vel += (self.acc + acc_new) * (0.5 * self.dt);
         self.acc = acc_new;
     }
 }

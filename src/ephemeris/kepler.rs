@@ -423,7 +423,7 @@ mod tests {
         let orbit = KeplerOrbit::from_elements(AU_TO_METERS, 0.99, 0.0, 0.0, 0.01);
 
         // Near perihelion (M close to 0), Newton's method may struggle
-        for m in [0.001, 0.01, 0.1, 3.14, 6.28] {
+        for m in [0.001, 0.01, 0.1, std::f64::consts::PI, std::f64::consts::TAU] {
             let e_anom = orbit.solve_eccentric_anomaly(m);
             let m_check = e_anom - orbit.eccentricity * e_anom.sin();
             let m_normalized = m.rem_euclid(std::f64::consts::TAU);

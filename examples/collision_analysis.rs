@@ -156,7 +156,7 @@ fn test_elliptical_intercept() {
 
             // But this ignores gravity! Need to add orbital component
             // For now, use vis-viva to get orbital velocity at this radius
-            let v_escape = (2.0 * G * SUN_MASS / r).sqrt();
+            let _v_escape = (2.0 * G * SUN_MASS / r).sqrt();
             let v_circular = (G * SUN_MASS / r).sqrt();
 
             // Try retrograde circular as baseline
@@ -233,7 +233,7 @@ fn simulate(start_pos: DVec2, start_vel: DVec2) -> (bool, f64, f64) {
         pos = pos + vel * dt + acc * (0.5 * dt * dt);
         let r_new = pos.length();
         let acc_new = -pos.normalize() * G * SUN_MASS / (r_new * r_new);
-        vel = vel + (acc + acc_new) * (0.5 * dt);
+        vel += (acc + acc_new) * (0.5 * dt);
 
         t += dt;
     }
