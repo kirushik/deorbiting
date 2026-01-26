@@ -19,6 +19,7 @@ mod proptest_ephemeris;
 
 pub use data::{CelestialBodyData, CelestialBodyId, CelestialBodyTrivia, all_bodies, get_trivia};
 pub use horizons_tables::TableCoverage;
+use table::State2;
 
 use crate::types::G;
 use bevy::math::DVec2;
@@ -90,6 +91,9 @@ pub struct Ephemeris {
 
     /// Pre-computed GM values for all bodies (computed once at startup).
     gm_cache: GmCache,
+
+    /// Pre-computed collision radii for all bodies (computed once at startup).
+    collision_cache: [f64; GRAVITY_SOURCE_COUNT],
 }
 
 impl Default for Ephemeris {
@@ -119,6 +123,8 @@ impl Ephemeris {
     /// those tables will be used for higher accuracy. Otherwise, we fall back
     /// to the baked-in Keplerian elements.
     pub fn new() -> Self {
+        const SUN_COLLISION_MULT: f64 = 2.0;
+
         let mut body_data = HashMap::new();
         for data in all_bodies() {
             body_data.insert(data.id, data);
@@ -134,12 +140,22 @@ impl Ephemeris {
             }
         }
 
+        // Pre-compute collision radii for all bodies
+        let mut collision_cache = [0.0; GRAVITY_SOURCE_COUNT];
+        for (i, &id) in BODY_ORDER.iter().enumerate() {
+            if let Some(data) = body_data.get(&id) {
+                let mult = if i == 0 { SUN_COLLISION_MULT } else { COLLISION_MULTIPLIER };
+                collision_cache[i] = data.radius * mult;
+            }
+        }
+
         Self {
             entity_to_id: HashMap::new(),
             id_to_entity: HashMap::new(),
             body_data,
             horizons,
             gm_cache,
+            collision_cache,
         }
     }
 
@@ -180,6 +196,20 @@ impl Ephemeris {
         self.get_body_data(entity).map(|d| d.radius)
     }
 
+
+    /// Sample state from table if available and in-range.
+    /// Returns None if no table, out of range, or sampling fails.
+    #[inline]
+    fn sample_table_state(&self, id: CelestialBodyId, time: f64) -> Option<State2> {
+        let h = self.horizons.as_ref()?;
+        let tbl = h.table(id)?;
+        if time >= tbl.start_time() && time <= tbl.end_time() {
+            tbl.sample(time).ok()
+        } else {
+            None
+        }
+    }
+
     /// Compute position of a celestial body at given time.
     ///
     /// # Arguments
@@ -195,33 +225,9 @@ impl Ephemeris {
 
     /// Compute position of a celestial body by ID at given time.
     pub fn get_position_by_id(&self, id: CelestialBodyId, time: f64) -> Option<DVec2> {
-        // Prefer high-accuracy Horizons table ephemeris when available.
-        //
-        // If `time` is outside the table range, we fall back to pure Kepler orbits.
-        // We don't use offset extrapolation because:
-        // 1. The Horizons-Kepler offset at the boundary rotates with each orbit
-        // 2. Applying a constant offset far from the boundary causes large errors
-        //    (e.g., Jupiter can appear at 3 AU instead of 5 AU)
-        // 3. Pure Kepler produces stable, physically meaningful elliptical orbits
-        //    even if less accurate than perturbed solutions.
-        if let Some(h) = &self.horizons
-            && let Some(tbl) = h.table(id)
-        {
-            let start = tbl.start_time();
-            let end = tbl.end_time();
-
-            if time >= start && time <= end
-                && let Ok(state) = tbl.sample(time)
-            {
-                return Some(state.pos);
-            }
-            // If sampling failed for some unexpected reason, fall through to Kepler.
-            // For `time < start` or `time > end`, fall through to Kepler.
-            // Tables are forward-only by design; extrapolation uses pure Kepler.
-        }
-
-        // No table available or outside coverage: pure Kepler model.
-        self.get_kepler_position_by_id(id, time)
+        self.sample_table_state(id, time)
+            .map(|s| s.pos)
+            .or_else(|| self.get_kepler_position_by_id(id, time))
     }
 
     /// Compute velocity of a celestial body at given time.
@@ -239,29 +245,9 @@ impl Ephemeris {
 
     /// Compute velocity of a celestial body by ID at given time.
     pub fn get_velocity_by_id(&self, id: CelestialBodyId, time: f64) -> Option<DVec2> {
-        // Prefer high-accuracy Horizons table ephemeris when available.
-        //
-        // If `time` is outside the table range, we fall back to pure Kepler orbits.
-        // This matches the position extrapolation behavior - no offset tricks,
-        // just pure Kepler for physically meaningful results outside table coverage.
-        if let Some(h) = &self.horizons
-            && let Some(tbl) = h.table(id)
-        {
-            let start = tbl.start_time();
-            let end = tbl.end_time();
-
-            if time >= start && time <= end
-                && let Ok(state) = tbl.sample(time)
-            {
-                return Some(state.vel);
-            }
-            // If sampling failed for some unexpected reason, fall through to Kepler.
-            // For `time < start` or `time > end`, fall through to Kepler.
-            // Tables are forward-only by design; extrapolation uses pure Kepler.
-        }
-
-        // No table available or outside coverage: pure Kepler model.
-        self.get_kepler_velocity_by_id(id, time)
+        self.sample_table_state(id, time)
+            .map(|s| s.vel)
+            .or_else(|| self.get_kepler_velocity_by_id(id, time))
     }
 
     /// Sample positions for all gravity source bodies at given time.
@@ -404,9 +390,6 @@ impl Ephemeris {
     /// # Returns
     /// Fixed array of `GravitySourceFull` with id, position, GM, and collision radius.
     pub fn get_gravity_sources_full(&self, time: f64) -> GravitySourcesFull {
-        // Sun collision radius uses 2x multiplier (Sun is already huge)
-        const SUN_COLLISION_MULT: f64 = 2.0;
-
         let positions = self.sample_gravity_body_positions(time);
         let mut result: GravitySourcesFull = [GravitySourceFull {
             id: CelestialBodyId::Sun,
@@ -418,25 +401,12 @@ impl Ephemeris {
         for i in 0..GRAVITY_SOURCE_COUNT {
             let id = BODY_ORDER[i];
 
-            // Sun uses smaller collision multiplier (already huge)
-            let collision_mult = if i == 0 {
-                SUN_COLLISION_MULT
-            } else {
-                COLLISION_MULTIPLIER
-            };
-
-            let collision_radius = self
-                .body_data
-                .get(&id)
-                .map(|d| d.radius * collision_mult)
-                .unwrap_or(0.0);
-
             if let Some(pos) = positions[i] {
                 result[i] = GravitySourceFull {
                     id,
                     pos,
                     gm: self.gm_cache[i],
-                    collision_radius,
+                    collision_radius: self.collision_cache[i],
                 };
             } else {
                 // Position lookup failed - exclude from gravity (GM = 0)
@@ -1145,5 +1115,45 @@ mod position_tests {
                 }
             }
         }
+    }
+
+
+    #[test]
+    fn test_collision_radii_in_gravity_sources_full() {
+        // Verify collision radii are computed correctly for all bodies
+        let eph = Ephemeris::new();
+        let time = 0.0; // J2000 epoch
+        let sources = eph.get_gravity_sources_full(time);
+
+        // Sun should have ~2x radius (small multiplier)
+        let sun_data = eph.get_body_data_by_id(CelestialBodyId::Sun).unwrap();
+        assert!(
+            (sources[0].collision_radius - sun_data.radius * 2.0).abs() < 1.0,
+            "Sun collision radius should be ~2x physical radius"
+        );
+
+        // Earth should have 50x radius (large multiplier for asteroid collision)
+        let earth_data = eph.get_body_data_by_id(CelestialBodyId::Earth).unwrap();
+        let earth_idx = BODY_ORDER.iter().position(|&id| id == CelestialBodyId::Earth).unwrap();
+        assert!(
+            (sources[earth_idx].collision_radius - earth_data.radius * COLLISION_MULTIPLIER).abs() < 1.0,
+            "Earth collision radius should be ~50x physical radius"
+        );
+    }
+
+    #[test]
+    fn test_position_falls_back_to_kepler_outside_table_range() {
+        let eph = Ephemeris::new();
+
+        // Far future time - definitely outside any table range (100 years from J2000)
+        let far_future = 100.0 * 365.25 * 86400.0;
+
+        // Should still return a position (from Kepler), not None
+        let earth_pos = eph.get_position_by_id(CelestialBodyId::Earth, far_future);
+        assert!(earth_pos.is_some(), "Should fall back to Kepler for far future times");
+
+        // And the velocity should also work
+        let earth_vel = eph.get_velocity_by_id(CelestialBodyId::Earth, far_future);
+        assert!(earth_vel.is_some(), "Velocity should also fall back to Kepler");
     }
 }
