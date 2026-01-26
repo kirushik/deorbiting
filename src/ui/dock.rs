@@ -364,6 +364,15 @@ fn render_help_overlay(ctx: &egui::Context) {
                         ui.end_row();
                     }
                 });
+
+            ui.add_space(8.0);
+            ui.separator();
+            ui.add_space(4.0);
+            ui.label(
+                egui::RichText::new("Free software (GPLv3 license) — share and modify freely")
+                    .size(11.0)
+                    .color(egui::Color32::from_rgb(140, 140, 160)),
+            );
         });
 }
 

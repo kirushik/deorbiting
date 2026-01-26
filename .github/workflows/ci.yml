@@ -96,6 +96,16 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+  licenses:
+    name: License Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check licenses
+
   examples:
     name: Build Examples
     runs-on: ubuntu-latest
