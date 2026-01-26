@@ -107,7 +107,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
 
       - name: Install Valknut
         run: npm install -g @sibyllinesoft/valknut
@@ -118,9 +118,9 @@ jobs:
             --format html \
             --out quality-reports \
             --quality-gate \
-            --min-health 82 \
-            --max-critical 1 \
-            --max-high-priority 6 \
+            --min-health 85 \
+            --max-critical 0 \
+            --max-high-priority 5 \
             --max-issues 75 \
             --max-debt 12
 
