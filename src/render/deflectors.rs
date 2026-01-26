@@ -21,6 +21,116 @@ use super::z_layers;
 /// This matches the scale used by interceptor icons.
 const VISUAL_UNIT: f32 = 0.01 * AU_TO_METERS as f32 * RENDER_SCALE as f32;
 
+// ============================================================================
+// Beam Occlusion Helpers
+// ============================================================================
+
+/// Calculate the entry point of a line into a circle (line-circle intersection).
+///
+/// Returns Some(t) where the line enters the circle at `line_start + t * line_dir`,
+/// or None if no intersection occurs within the valid range.
+///
+/// # Parameters
+/// - `line_start`: Start point of the line
+/// - `line_dir`: Direction of the line (should be normalized)
+/// - `line_length`: Maximum distance along the line to check
+/// - `circle_center`: Center of the circle
+/// - `circle_radius`: Radius of the circle
+fn line_circle_entry(
+    line_start: Vec3,
+    line_dir: Vec3,
+    line_length: f32,
+    circle_center: Vec3,
+    circle_radius: f32,
+) -> Option<f32> {
+    // Project in 2D (ignore Z)
+    let to_center = circle_center - line_start;
+    let to_center_2d = Vec3::new(to_center.x, to_center.y, 0.0);
+    let line_dir_2d = Vec3::new(line_dir.x, line_dir.y, 0.0);
+
+    // Project circle center onto line
+    let t_closest = to_center_2d.dot(line_dir_2d);
+
+    // Skip if circle is behind start or past end
+    if t_closest < -circle_radius || t_closest > line_length + circle_radius {
+        return None;
+    }
+
+    // Distance from circle center to line
+    let closest_point = line_start + line_dir * t_closest;
+    let dist_to_line = (circle_center - closest_point).length();
+
+    // No intersection if line passes outside circle
+    if dist_to_line >= circle_radius {
+        return None;
+    }
+
+    // Calculate entry point using quadratic formula
+    let discriminant = circle_radius * circle_radius - dist_to_line * dist_to_line;
+    if discriminant <= 0.0 {
+        return None;
+    }
+
+    let half_chord = discriminant.sqrt();
+    let t_entry = t_closest - half_chord;
+
+    // Only return if entry is within valid segment and positive
+    if t_entry > 0.0 && t_entry < line_length {
+        Some(t_entry)
+    } else {
+        None
+    }
+}
+
+/// Check if a beam is occluded by any celestial body and find the effective endpoint.
+///
+/// Returns (effective_endpoint, is_occluded) where:
+/// - effective_endpoint is either the original target or the first occlusion point
+/// - is_occluded is true if the beam is blocked by an occluder
+///
+/// # Parameters
+/// - `beam_start`: Starting point of the beam
+/// - `beam_end`: Target endpoint of the beam
+/// - `occluders`: List of (position, radius) pairs for potential occluders
+/// - `skip_near_start_dist`: Occluders within this distance of start are ignored
+///   (e.g., Earth shouldn't block its own beam)
+fn check_beam_occlusion(
+    beam_start: Vec3,
+    beam_end: Vec3,
+    occluders: &[(Vec3, f32)],
+    skip_near_start_dist_mult: f32,
+) -> (Vec3, bool) {
+    let beam_vec = beam_end - beam_start;
+    let beam_dist = beam_vec.length();
+    if beam_dist < 0.01 {
+        return (beam_end, false);
+    }
+    let beam_dir = beam_vec / beam_dist;
+
+    let mut effective_end = beam_end;
+    let mut is_occluded = false;
+
+    for &(body_pos, body_radius) in occluders {
+        // Skip bodies very close to beam start (e.g., Earth for Earth-based laser)
+        let start_to_body = (body_pos - beam_start).length();
+        if start_to_body < body_radius * skip_near_start_dist_mult {
+            continue;
+        }
+
+        // Check for intersection
+        if let Some(t_entry) = line_circle_entry(beam_start, beam_dir, beam_dist, body_pos, body_radius) {
+            let occlusion_point = beam_start + beam_dir * t_entry;
+            let current_dist = (effective_end - beam_start).length();
+            if t_entry < current_dist {
+                effective_end = occlusion_point;
+                is_occluded = true;
+            }
+        }
+    }
+
+    (effective_end, is_occluded)
+}
+
 /// System to draw continuous deflector visualization.
 pub fn draw_deflector_trajectories(
     deflectors: Query<(Entity, &ContinuousDeflector)>,
@@ -500,54 +610,14 @@ fn draw_laser_beam(
     }
     let beam_dir = beam_vec / beam_dist;
 
-    // Check for occlusion by celestial bodies
-    // Find the closest intersection point (if any)
-    let mut effective_end = asteroid_render;
-    let mut is_occluded = false;
-
-    for &(body_pos, body_radius) in occluders {
-        // Skip if body is very close to Earth (Earth itself shouldn't occlude its own beam)
-        let earth_to_body = (body_pos - earth_render).length();
-        if earth_to_body < body_radius * 2.0 {
-            continue;
-        }
-
-        // Line-circle intersection test
-        // Parametric line: P(t) = earth_render + t * beam_dir, t in [0, beam_dist]
-        // Circle: |P - body_pos| = body_radius
-        let to_body = body_pos - earth_render;
-        let to_body_2d = Vec3::new(to_body.x, to_body.y, 0.0);
-        let beam_dir_2d = Vec3::new(beam_dir.x, beam_dir.y, 0.0);
-
-        // Project body center onto beam line
-        let t_closest = to_body_2d.dot(beam_dir_2d);
-
-        // Skip if body is behind Earth or past asteroid
-        if t_closest < 0.0 || t_closest > beam_dist {
-            continue;
-        }
-
-        // Distance from body center to beam line
-        let closest_point = earth_render + beam_dir * t_closest;
-        let dist_to_line = (body_pos - closest_point).length();
-
-        // Check if beam passes through body's visual radius
-        if dist_to_line < body_radius {
-            // Calculate intersection point (entry into the body)
-            // Using quadratic formula for line-circle intersection
-            let discriminant = body_radius * body_radius - dist_to_line * dist_to_line;
-            if discriminant > 0.0 {
-                let half_chord = discriminant.sqrt();
-                let t_entry = t_closest - half_chord;
-
-                // If intersection is before current effective end, update it
-                if t_entry > 0.0 && t_entry < (effective_end - earth_render).length() {
-                    effective_end = earth_render + beam_dir * t_entry;
-                    is_occluded = true;
-                }
-            }
-        }
-    }
+    // Check for occlusion by celestial bodies using shared helper
+    // Skip bodies within 2x their radius of Earth (Earth shouldn't block its own beam)
+    let (effective_end, is_occluded) = check_beam_occlusion(
+        earth_render,
+        asteroid_render,
+        occluders,
+        2.0, // skip_near_start_dist_mult
+    );
 
     // Flickering intensity for energy effect
     let flicker = 0.7 + 0.3 * (anim_time * 30.0).sin().abs();

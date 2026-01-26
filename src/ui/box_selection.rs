@@ -57,6 +57,44 @@ impl BoxSelectionState {
     }
 }
 
+/// Find asteroids within a rectangular region, sorted by distance to center.
+///
+/// Returns a vector of (entity, distance_to_center) pairs, sorted closest first.
+/// Filters out asteroids with NaN positions.
+fn find_asteroids_in_region<'a>(
+    asteroids: impl Iterator<Item = (Entity, &'a Transform)>,
+    world_min: Vec2,
+    world_max: Vec2,
+) -> Vec<(Entity, f32)> {
+    let box_center = (world_min + world_max) / 2.0;
+
+    let mut results: Vec<(Entity, f32)> = asteroids
+        .filter_map(|(entity, transform)| {
+            let pos = transform.translation.truncate();
+            if pos.x >= world_min.x
+                && pos.x <= world_max.x
+                && pos.y >= world_min.y
+                && pos.y <= world_max.y
+            {
+                let dist = (pos - box_center).length();
+                // Filter out NaN distances
+                if dist.is_finite() {
+                    Some((entity, dist))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    // Sort by distance to center (closest first)
+    results.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    results
+}
+
 /// System to handle box selection input.
 #[allow(clippy::too_many_arguments)]
 pub fn box_selection_input(
@@ -136,39 +174,18 @@ pub fn box_selection_input(
         let (min, max) = box_state.screen_rect();
         let box_size = max - min;
         if box_size.x > 5.0 && box_size.y > 5.0 {
-            // Find asteroids in the box
             let (world_min, world_max) = box_state.world_rect();
 
-            let mut asteroids_in_box: Vec<(Entity, f32)> = asteroids
-                .iter()
-                .filter_map(|(entity, transform, _)| {
-                    let pos = transform.translation.truncate();
-                    if pos.x >= world_min.x
-                        && pos.x <= world_max.x
-                        && pos.y >= world_min.y
-                        && pos.y <= world_max.y
-                    {
-                        // Calculate distance to box center
-                        let box_center = (world_min + world_max) / 2.0;
-                        let dist = (pos - box_center).length();
-                        // Filter out NaN distances
-                        if dist.is_finite() {
-                            Some((entity, dist))
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                })
-                .collect();
+            // Find asteroids in the box, sorted by distance to center
+            let asteroids_in_box = find_asteroids_in_region(
+                asteroids.iter().map(|(e, t, _)| (e, t)),
+                world_min,
+                world_max,
+            );
 
             // Select the asteroid closest to the center of the box
-            if !asteroids_in_box.is_empty() {
-                // Sort with NaN-safe comparison
-                asteroids_in_box
-                    .sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-                selected.body = Some(SelectableBody::Asteroid(asteroids_in_box[0].0));
+            if let Some((entity, _)) = asteroids_in_box.first() {
+                selected.body = Some(SelectableBody::Asteroid(*entity));
             }
         }
     }

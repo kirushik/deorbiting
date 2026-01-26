@@ -264,6 +264,41 @@ impl Ephemeris {
         self.get_kepler_velocity_by_id(id, time)
     }
 
+    /// Sample positions for all gravity source bodies at given time.
+    ///
+    /// Returns array of `Option<DVec2>` for each gravity body (Sun + 8 planets).
+    /// Sun (index 0) is always at origin. Planets use batched table sampling
+    /// when available, with Kepler fallback for missing/out-of-range data.
+    ///
+    /// This is the single source of truth for position sampling logic used by
+    /// `get_gravity_sources()` and `get_gravity_sources_full()`.
+    fn sample_gravity_body_positions(&self, time: f64) -> [Option<DVec2>; GRAVITY_SOURCE_COUNT] {
+        let mut positions: [Option<DVec2>; GRAVITY_SOURCE_COUNT] =
+            [None; GRAVITY_SOURCE_COUNT];
+
+        // Sun is always at origin (index 0)
+        positions[0] = Some(DVec2::ZERO);
+
+        // Try batched table sampling for bodies 1-8 (planets only)
+        if let Some(h) = &self.horizons {
+            let table_positions = h.sample_all_positions(time);
+            for (i, table_pos) in table_positions.iter().enumerate() {
+                let body_idx = i + 1; // Skip Sun
+                positions[body_idx] = table_pos.or_else(|| {
+                    // Fallback to individual query (outside table range or missing table)
+                    self.get_position_by_id(BODY_ORDER[body_idx], time)
+                });
+            }
+        } else {
+            // No tables: use Kepler for all bodies
+            for i in 1..GRAVITY_SOURCE_COUNT {
+                positions[i] = self.get_position_by_id(BODY_ORDER[i], time);
+            }
+        }
+
+        positions
+    }
+
     /// Get all gravity sources at a given time.
     ///
     /// Returns positions and GM (μ = G·M) values, NOT masses.
@@ -282,49 +317,20 @@ impl Ephemeris {
     /// # Returns
     /// Fixed array of (position in meters, GM in m³/s²) pairs for all massive bodies.
     pub fn get_gravity_sources(&self, time: f64) -> GravitySources {
+        let positions = self.sample_gravity_body_positions(time);
         let mut result: GravitySources = [(DVec2::ZERO, 0.0); GRAVITY_SOURCE_COUNT];
 
-        // Sun is always at origin (index 0)
-        result[0] = (DVec2::ZERO, self.gm_cache[0]);
-
-        // Try batched table sampling for bodies 1-8 (planets only, moons are decorative)
-        if let Some(h) = &self.horizons {
-            let positions = h.sample_all_positions(time);
-            for (i, table_pos) in positions.iter().enumerate() {
-                let body_idx = i + 1; // Skip Sun
-                if let Some(pos) = *table_pos {
-                    result[body_idx] = (pos, self.gm_cache[body_idx]);
-                } else {
-                    // Fallback to individual query (outside table range or missing table)
-                    let id = BODY_ORDER[body_idx];
-                    if let Some(pos) = self.get_position_by_id(id, time) {
-                        result[body_idx] = (pos, self.gm_cache[body_idx]);
-                    } else {
-                        // Position lookup failed - exclude from gravity (GM = 0)
-                        warn_once!(
-                            "Failed to get position for {:?} at time {:.1}, excluding from gravity",
-                            id,
-                            time
-                        );
-                        result[body_idx] = (DVec2::ZERO, 0.0);
-                    }
-                }
-            }
-        } else {
-            // No tables: use Kepler for all bodies
-            for i in 1..GRAVITY_SOURCE_COUNT {
-                let id = BODY_ORDER[i];
-                if let Some(pos) = self.get_position_by_id(id, time) {
-                    result[i] = (pos, self.gm_cache[i]);
-                } else {
-                    // Position lookup failed - exclude from gravity (GM = 0)
-                    warn_once!(
-                        "Failed to get position for {:?} at time {:.1}, excluding from gravity",
-                        id,
-                        time
-                    );
-                    result[i] = (DVec2::ZERO, 0.0);
-                }
+        for i in 0..GRAVITY_SOURCE_COUNT {
+            if let Some(pos) = positions[i] {
+                result[i] = (pos, self.gm_cache[i]);
+            } else {
+                // Position lookup failed - exclude from gravity (GM = 0)
+                warn_once!(
+                    "Failed to get position for {:?} at time {:.1}, excluding from gravity",
+                    BODY_ORDER[i],
+                    time
+                );
+                result[i] = (DVec2::ZERO, 0.0);
             }
         }
 
@@ -401,6 +407,7 @@ impl Ephemeris {
         // Sun collision radius uses 2x multiplier (Sun is already huge)
         const SUN_COLLISION_MULT: f64 = 2.0;
 
+        let positions = self.sample_gravity_body_positions(time);
         let mut result: GravitySourcesFull = [GravitySourceFull {
             id: CelestialBodyId::Sun,
             pos: DVec2::ZERO,
@@ -408,86 +415,42 @@ impl Ephemeris {
             collision_radius: 0.0,
         }; GRAVITY_SOURCE_COUNT];
 
-        // Sun at origin (index 0)
-        let sun_radius = self
-            .body_data
-            .get(&CelestialBodyId::Sun)
-            .map(|d| d.radius)
-            .unwrap_or(6.96e8);
-        result[0] = GravitySourceFull {
-            id: CelestialBodyId::Sun,
-            pos: DVec2::ZERO,
-            gm: self.gm_cache[0],
-            collision_radius: sun_radius * SUN_COLLISION_MULT,
-        };
+        for i in 0..GRAVITY_SOURCE_COUNT {
+            let id = BODY_ORDER[i];
 
-        // Planets (indices 1-8) - batch position lookup where possible
-        if let Some(h) = &self.horizons {
-            let positions = h.sample_all_positions(time);
-            for (i, table_pos) in positions.iter().enumerate() {
-                let body_idx = i + 1;
-                let id = BODY_ORDER[body_idx];
-                let collision_radius = self
-                    .body_data
-                    .get(&id)
-                    .map(|d| d.radius * COLLISION_MULTIPLIER)
-                    .unwrap_or(0.0);
+            // Sun uses smaller collision multiplier (already huge)
+            let collision_mult = if i == 0 {
+                SUN_COLLISION_MULT
+            } else {
+                COLLISION_MULTIPLIER
+            };
 
-                let pos_opt = table_pos.or_else(|| self.get_position_by_id(id, time));
+            let collision_radius = self
+                .body_data
+                .get(&id)
+                .map(|d| d.radius * collision_mult)
+                .unwrap_or(0.0);
 
-                if let Some(pos) = pos_opt {
-                    result[body_idx] = GravitySourceFull {
-                        id,
-                        pos,
-                        gm: self.gm_cache[body_idx],
-                        collision_radius,
-                    };
-                } else {
-                    // Position lookup failed - exclude from gravity (GM = 0)
-                    warn_once!(
-                        "Failed to get position for {:?} at time {:.1}, excluding from gravity",
-                        id,
-                        time
-                    );
-                    result[body_idx] = GravitySourceFull {
-                        id,
-                        pos: DVec2::ZERO,
-                        gm: 0.0,               // Exclude from gravity
-                        collision_radius: 0.0, // No collision with missing body
-                    };
-                }
-            }
-        } else {
-            // No tables: use Kepler for all bodies
-            for i in 1..GRAVITY_SOURCE_COUNT {
-                let id = BODY_ORDER[i];
-                let collision_radius = self
-                    .body_data
-                    .get(&id)
-                    .map(|d| d.radius * COLLISION_MULTIPLIER)
-                    .unwrap_or(0.0);
-
-                if let Some(pos) = self.get_position_by_id(id, time) {
-                    result[i] = GravitySourceFull {
-                        id,
-                        pos,
-                        gm: self.gm_cache[i],
-                        collision_radius,
-                    };
-                } else {
-                    // Position lookup failed - exclude from gravity (GM = 0)
-                    warn_once!(
-                        "Failed to get position for {:?} at time {:.1}, excluding from gravity",
-                        id,
-                        time
-                    );
-                    result[i] = GravitySourceFull {
-                        id,
-                        pos: DVec2::ZERO,
-                        gm: 0.0,               // Exclude from gravity
-                        collision_radius: 0.0, // No collision with missing body
-                    };
-                }
+            if let Some(pos) = positions[i] {
+                result[i] = GravitySourceFull {
+                    id,
+                    pos,
+                    gm: self.gm_cache[i],
+                    collision_radius,
+                };
+            } else {
+                // Position lookup failed - exclude from gravity (GM = 0)
+                warn_once!(
+                    "Failed to get position for {:?} at time {:.1}, excluding from gravity",
+                    id,
+                    time
+                );
+                result[i] = GravitySourceFull {
+                    id,
+                    pos: DVec2::ZERO,
+                    gm: 0.0,               // Exclude from gravity
+                    collision_radius: 0.0, // No collision with missing body
+                };
             }
         }
 
@@ -1069,5 +1032,118 @@ mod position_tests {
         // 26 years after J2000 - outside moon table coverage (tables end at ~24 years)
         let time = 26.0 * 365.25 * 86400.0;
         test_moons_near_parent(&eph, time, "year 26");
+    }
+
+    #[test]
+    fn test_gravity_sources_full_matches_gravity_sources() {
+        // Verify that get_gravity_sources_full() returns the same positions and GMs
+        // as get_gravity_sources(), just with additional collision radius data.
+        let eph = Ephemeris::new();
+
+        // Test at several times within and outside table coverage
+        let test_times = [
+            0.0,                                // J2000 epoch
+            365.25 * 86400.0,                   // 1 year
+            10.0 * 365.25 * 86400.0,            // 10 years
+            200.0 * 365.25 * 86400.0,           // 200 years (past table coverage)
+        ];
+
+        for time in test_times {
+            let sources = eph.get_gravity_sources(time);
+            let sources_full = eph.get_gravity_sources_full(time);
+
+            for i in 0..GRAVITY_SOURCE_COUNT {
+                let (pos, gm) = sources[i];
+                let full = &sources_full[i];
+
+                // Positions must match exactly
+                assert!(
+                    (pos.x - full.pos.x).abs() < 1e-6,
+                    "Position X mismatch at time {}: index {}, got {} vs {}",
+                    time, i, pos.x, full.pos.x
+                );
+                assert!(
+                    (pos.y - full.pos.y).abs() < 1e-6,
+                    "Position Y mismatch at time {}: index {}, got {} vs {}",
+                    time, i, pos.y, full.pos.y
+                );
+
+                // GMs must match exactly
+                assert!(
+                    (gm - full.gm).abs() < 1e-6,
+                    "GM mismatch at time {}: index {}, got {} vs {}",
+                    time, i, gm, full.gm
+                );
+
+                // Collision radius must be positive for valid sources
+                if gm > 0.0 {
+                    assert!(
+                        full.collision_radius > 0.0,
+                        "Collision radius should be positive for body with GM > 0 at time {}",
+                        time
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_sample_position_matches_sample_pos_component() {
+        // Verify that sample_position() returns the same position as sample().pos
+        // This ensures the two code paths are consistent.
+        let eph = Ephemeris::new();
+
+        // Only test if we have Horizons tables loaded
+        if let Some(horizons) = &eph.horizons {
+            let test_times = [
+                0.0,
+                86400.0,              // 1 day
+                365.25 * 86400.0,     // 1 year
+                10.0 * 365.25 * 86400.0, // 10 years
+            ];
+
+            // Test each planet table
+            for body_id in CelestialBodyId::PLANETS {
+                if let Some(table) = horizons.table(*body_id) {
+                    // Check if the times are within table range
+                    let start = table.start_time();
+                    let end = table.end_time();
+
+                    for &time in &test_times {
+                        if time >= start && time <= end {
+                            // Get position from sample() (full state)
+                            let full_state = table.sample(time);
+                            // Get position from sample_position() (position only)
+                            let pos_only = table.sample_position(time);
+
+                            match (full_state, pos_only) {
+                                (Ok(state), Ok(pos)) => {
+                                    // Position components must match
+                                    let diff = (state.pos - pos).length();
+                                    assert!(
+                                        diff < 1e-10,
+                                        "sample_position() mismatch for {:?} at time {}: diff = {} m",
+                                        body_id, time, diff
+                                    );
+                                }
+                                (Err(e1), Err(e2)) => {
+                                    // Both errored - that's fine, they're consistent
+                                    panic!(
+                                        "Both sample functions failed for {:?}: {:?}, {:?}",
+                                        body_id, e1, e2
+                                    );
+                                }
+                                _ => {
+                                    panic!(
+                                        "Inconsistent results for {:?} at time {}",
+                                        body_id, time
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

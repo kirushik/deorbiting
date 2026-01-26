@@ -76,6 +76,108 @@ fn format_period(days: f64) -> String {
     }
 }
 
+/// Check if a point is inside a rectangle defined by corners.
+#[inline]
+fn point_in_rect(x: f32, y: f32, left: f32, top: f32, right: f32, bottom: f32) -> bool {
+    x >= left && x <= right && y >= top && y <= bottom
+}
+
+/// Calculate velocity arrow overlap penalty for a card position.
+///
+/// Returns a score reduction based on whether the velocity arrow overlaps
+/// the card, and a bonus if the card is on the opposite side from velocity.
+fn velocity_arrow_overlap_penalty(
+    vel_dir: Vec2,
+    screen_pos: Vec2,
+    card_left: f32,
+    card_top: f32,
+) -> f32 {
+    let card_right = card_left + CARD_WIDTH;
+    let card_bottom = card_top + CARD_HEIGHT;
+
+    // Arrow endpoint and midpoint
+    let arrow_end_x = screen_pos.x + vel_dir.x * VELOCITY_ARROW_LENGTH;
+    let arrow_end_y = screen_pos.y + vel_dir.y * VELOCITY_ARROW_LENGTH;
+    let arrow_mid_x = screen_pos.x + vel_dir.x * VELOCITY_ARROW_LENGTH * 0.5;
+    let arrow_mid_y = screen_pos.y + vel_dir.y * VELOCITY_ARROW_LENGTH * 0.5;
+
+    let mut penalty = 0.0;
+
+    // Endpoint overlap is heavy penalty (blocks drag handle)
+    if point_in_rect(arrow_end_x, arrow_end_y, card_left, card_top, card_right, card_bottom) {
+        penalty += 80.0;
+    }
+
+    // Midpoint overlap is medium penalty
+    if point_in_rect(arrow_mid_x, arrow_mid_y, card_left, card_top, card_right, card_bottom) {
+        penalty += 40.0;
+    }
+
+    // Bonus for card on opposite side from velocity
+    let card_center_x = card_left + CARD_WIDTH / 2.0;
+    let card_center_y = card_top + CARD_HEIGHT / 2.0;
+    let to_card_x = card_center_x - screen_pos.x;
+    let to_card_y = card_center_y - screen_pos.y;
+    let dot = to_card_x * vel_dir.x + to_card_y * vel_dir.y;
+    if dot < 0.0 {
+        penalty -= 20.0; // Negative penalty = bonus
+    }
+
+    penalty
+}
+
+/// Score a candidate card position based on screen bounds and velocity.
+///
+/// Higher scores are better. Base score is 100, with penalties for:
+/// - Going off-screen (2x the overlap distance)
+/// - Overlapping dock area (3x the overlap distance)
+/// - Overlapping velocity arrow
+///
+/// And bonuses for:
+/// - Being on the right side (reading direction)
+/// - Being opposite the velocity direction
+fn score_card_position(
+    card_left: f32,
+    card_top: f32,
+    offset_x: f32,
+    screen_left: f32,
+    screen_right: f32,
+    screen_top: f32,
+    usable_bottom: f32,
+    velocity_dir: Option<Vec2>,
+    screen_pos: Vec2,
+) -> f32 {
+    let card_right = card_left + CARD_WIDTH;
+    let card_bottom = card_top + CARD_HEIGHT;
+    let mut score: f32 = 100.0;
+
+    // Off-screen penalties
+    if card_left < screen_left {
+        score -= (screen_left - card_left) * 2.0;
+    }
+    if card_right > screen_right {
+        score -= (card_right - screen_right) * 2.0;
+    }
+    if card_top < screen_top {
+        score -= (screen_top - card_top) * 2.0;
+    }
+    if card_bottom > usable_bottom {
+        score -= (card_bottom - usable_bottom) * 3.0;
+    }
+
+    // Velocity arrow overlap
+    if let Some(vel_dir) = velocity_dir {
+        score -= velocity_arrow_overlap_penalty(vel_dir, screen_pos, card_left, card_top);
+    }
+
+    // Right side preference
+    if offset_x > 0.0 {
+        score += 5.0;
+    }
+
+    score
+}
+
 /// 8-position label placement algorithm.
 /// Tries 8 candidate positions around the object and picks the best one.
 /// Based on cartographic label placement principles.
@@ -89,86 +191,35 @@ fn smart_card_position(
 
     // Define 8 candidate positions: E, NE, N, NW, W, SW, S, SE
     // Each is (offset_x, offset_y) from screen_pos to card's top-left corner
-    let candidates: [(f32, f32, &str); 8] = [
-        (CARD_MARGIN, -CARD_HEIGHT / 2.0, "E"), // East (right-center)
-        (CARD_MARGIN, -CARD_HEIGHT - CARD_MARGIN, "NE"), // Northeast
-        (-CARD_WIDTH / 2.0, -CARD_HEIGHT - CARD_MARGIN, "N"), // North (top-center)
-        (-CARD_WIDTH - CARD_MARGIN, -CARD_HEIGHT - CARD_MARGIN, "NW"), // Northwest
-        (-CARD_WIDTH - CARD_MARGIN, -CARD_HEIGHT / 2.0, "W"), // West (left-center)
-        (-CARD_WIDTH - CARD_MARGIN, CARD_MARGIN, "SW"), // Southwest
-        (-CARD_WIDTH / 2.0, CARD_MARGIN, "S"),  // South (bottom-center)
-        (CARD_MARGIN, CARD_MARGIN, "SE"),       // Southeast
+    let candidates: [(f32, f32); 8] = [
+        (CARD_MARGIN, -CARD_HEIGHT / 2.0),                    // E
+        (CARD_MARGIN, -CARD_HEIGHT - CARD_MARGIN),            // NE
+        (-CARD_WIDTH / 2.0, -CARD_HEIGHT - CARD_MARGIN),      // N
+        (-CARD_WIDTH - CARD_MARGIN, -CARD_HEIGHT - CARD_MARGIN), // NW
+        (-CARD_WIDTH - CARD_MARGIN, -CARD_HEIGHT / 2.0),      // W
+        (-CARD_WIDTH - CARD_MARGIN, CARD_MARGIN),             // SW
+        (-CARD_WIDTH / 2.0, CARD_MARGIN),                     // S
+        (CARD_MARGIN, CARD_MARGIN),                           // SE
     ];
 
     let mut best_score = f32::MIN;
     let mut best_pos = egui::pos2(screen_pos.x + CARD_MARGIN, screen_pos.y - CARD_HEIGHT / 2.0);
 
-    for (offset_x, offset_y, _name) in candidates {
+    for (offset_x, offset_y) in candidates {
         let card_left = screen_pos.x + offset_x;
         let card_top = screen_pos.y + offset_y;
-        let card_right = card_left + CARD_WIDTH;
-        let card_bottom = card_top + CARD_HEIGHT;
 
-        let mut score: f32 = 100.0;
-
-        // Penalty: off-screen left
-        if card_left < screen.left() {
-            score -= (screen.left() - card_left) * 2.0;
-        }
-        // Penalty: off-screen right
-        if card_right > screen.right() {
-            score -= (card_right - screen.right()) * 2.0;
-        }
-        // Penalty: off-screen top
-        if card_top < screen.top() {
-            score -= (screen.top() - card_top) * 2.0;
-        }
-        // Penalty: overlaps dock area
-        if card_bottom > usable_bottom {
-            score -= (card_bottom - usable_bottom) * 3.0;
-        }
-
-        // Penalty: overlaps velocity arrow zone
-        if let Some(vel_dir) = velocity_dir {
-            // Calculate the velocity arrow endpoint
-            let arrow_end_x = screen_pos.x + vel_dir.x * VELOCITY_ARROW_LENGTH;
-            let arrow_end_y = screen_pos.y + vel_dir.y * VELOCITY_ARROW_LENGTH;
-
-            // Check if arrow endpoint or midpoint is inside the card
-            let arrow_mid_x = screen_pos.x + vel_dir.x * VELOCITY_ARROW_LENGTH * 0.5;
-            let arrow_mid_y = screen_pos.y + vel_dir.y * VELOCITY_ARROW_LENGTH * 0.5;
-
-            let endpoint_inside = arrow_end_x >= card_left
-                && arrow_end_x <= card_right
-                && arrow_end_y >= card_top
-                && arrow_end_y <= card_bottom;
-            let midpoint_inside = arrow_mid_x >= card_left
-                && arrow_mid_x <= card_right
-                && arrow_mid_y >= card_top
-                && arrow_mid_y <= card_bottom;
-
-            if endpoint_inside {
-                score -= 80.0; // Heavy penalty - this blocks the drag handle
-            }
-            if midpoint_inside {
-                score -= 40.0; // Medium penalty
-            }
-
-            // Bonus: position is on opposite side from velocity
-            let card_center_x = card_left + CARD_WIDTH / 2.0;
-            let card_center_y = card_top + CARD_HEIGHT / 2.0;
-            let to_card_x = card_center_x - screen_pos.x;
-            let to_card_y = card_center_y - screen_pos.y;
-            let dot = to_card_x * vel_dir.x + to_card_y * vel_dir.y;
-            if dot < 0.0 {
-                score += 20.0; // Bonus for being on opposite side
-            }
-        }
-
-        // Slight preference for right side (reading direction)
-        if offset_x > 0.0 {
-            score += 5.0;
-        }
+        let score = score_card_position(
+            card_left,
+            card_top,
+            offset_x,
+            screen.left(),
+            screen.right(),
+            screen.top(),
+            usable_bottom,
+            velocity_dir,
+            screen_pos,
+        );
 
         if score > best_score {
             best_score = score;

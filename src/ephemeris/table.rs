@@ -46,6 +46,46 @@ pub enum EphemerisTableError {
     OutOfRange { time: f64, start: f64, end: f64 },
 }
 
+/// SIMD Hermite position interpolation helper.
+///
+/// Computes interpolated position using cubic Hermite splines with SIMD acceleration.
+/// Both endpoints (s0, s1) must be provided, along with the interpolation parameter s in [0, 1]
+/// and the time step between samples.
+///
+/// This is the single source of truth for Hermite position interpolation,
+/// used by both `sample()` and `sample_position()`.
+#[inline]
+fn hermite_interpolate_position(s0: &State2, s1: &State2, s: f64, step: f64) -> DVec2 {
+    // Pack data into SIMD vectors: [p0.x, p0.y, p1.x, p1.y]
+    let p = f64x4::new([s0.pos.x, s0.pos.y, s1.pos.x, s1.pos.y]);
+
+    // Velocity tangents scaled by step: [m0.x, m0.y, m1.x, m1.y]
+    let m = f64x4::new([
+        s0.vel.x * step,
+        s0.vel.y * step,
+        s1.vel.x * step,
+        s1.vel.y * step,
+    ]);
+
+    // Hermite basis functions (same for x and y)
+    let s2 = s * s;
+    let s3 = s2 * s;
+    let h00 = 2.0 * s3 - 3.0 * s2 + 1.0;
+    let h10 = s3 - 2.0 * s2 + s;
+    let h01 = -2.0 * s3 + 3.0 * s2;
+    let h11 = s3 - s2;
+
+    // Basis coefficients: [h00, h00, h01, h01] for positions, [h10, h10, h11, h11] for tangents
+    let h_pos = f64x4::new([h00, h00, h01, h01]);
+    let h_tan = f64x4::new([h10, h10, h11, h11]);
+
+    // Compute weighted sum
+    let result = p * h_pos + m * h_tan;
+    let r = result.to_array();
+
+    DVec2::new(r[0] + r[2], r[1] + r[3])
+}
+
 impl EphemerisTable {
     pub fn load(path: impl AsRef<Path>) -> Result<Self, EphemerisTableError> {
         let mut f = File::open(path)?;
@@ -118,42 +158,23 @@ impl EphemerisTable {
     ///
     /// Requires that the table includes both position and velocity for each sample.
     pub fn sample(&self, t: f64) -> Result<State2, EphemerisTableError> {
-        let start = self.start_time();
-        let end = self.end_time();
-        if t < start || t > end {
-            return Err(EphemerisTableError::OutOfRange {
+        let (i0, s) = self
+            .get_sample_index(t)
+            .ok_or_else(|| EphemerisTableError::OutOfRange {
                 time: t,
-                start,
-                end,
-            });
-        }
+                start: self.start_time(),
+                end: self.end_time(),
+            })?;
 
-        let u = (t - self.start_t0) / self.step_seconds;
-        let mut i = u.floor() as isize;
-
-        // Clamp to a valid segment [i, i+1]
-        if i < 0 {
-            i = 0;
-        }
-        if i as usize >= self.samples.len() - 1 {
-            i = (self.samples.len() - 2) as isize;
-        }
-
-        let i0 = i as usize;
-        let i1 = i0 + 1;
-
-        let t0 = self.start_t0 + self.step_seconds * i0 as f64;
-        let s = (t - t0) / self.step_seconds;
-
-        // Pack data into SIMD vectors: [p0.x, p0.y, p1.x, p1.y] etc.
         let s0 = &self.samples[i0];
-        let s1 = &self.samples[i1];
-
-        // Position endpoints: [p0.x, p0.y, p1.x, p1.y]
-        let p = f64x4::new([s0.pos.x, s0.pos.y, s1.pos.x, s1.pos.y]);
-
-        // Velocity tangents scaled by step: [m0.x, m0.y, m1.x, m1.y]
+        let s1 = &self.samples[i0 + 1];
         let step = self.step_seconds;
+
+        // Position uses shared helper
+        let pos = hermite_interpolate_position(s0, s1, s, step);
+
+        // Velocity uses derivative of Hermite basis (computed separately for clarity)
+        let p = f64x4::new([s0.pos.x, s0.pos.y, s1.pos.x, s1.pos.y]);
         let m = f64x4::new([
             s0.vel.x * step,
             s0.vel.y * step,
@@ -161,28 +182,7 @@ impl EphemerisTable {
             s1.vel.y * step,
         ]);
 
-        // Hermite basis functions (same for x and y)
         let s2 = s * s;
-        let s3 = s2 * s;
-        let h00 = 2.0 * s3 - 3.0 * s2 + 1.0;
-        let h10 = s3 - 2.0 * s2 + s;
-        let h01 = -2.0 * s3 + 3.0 * s2;
-        let h11 = s3 - s2;
-
-        // Basis coefficients: [h00, h00, h01, h01] for positions, [h10, h10, h11, h11] for tangents
-        let h_pos = f64x4::new([h00, h00, h01, h01]);
-        let h_tan = f64x4::new([h10, h10, h11, h11]);
-
-        // Compute weighted sum: result = [p0.x*h00, p0.y*h00, p1.x*h01, p1.y*h01] + [m0.x*h10, ...]
-        let weighted_pos = p * h_pos;
-        let weighted_tan = m * h_tan;
-        let result = weighted_pos + weighted_tan;
-
-        // Sum pairs: pos = [0] + [2], [1] + [3]
-        let r = result.to_array();
-        let pos = DVec2::new(r[0] + r[2], r[1] + r[3]);
-
-        // Derivative of Hermite basis for velocity
         let dh00 = 6.0 * s2 - 6.0 * s;
         let dh10 = 3.0 * s2 - 4.0 * s + 1.0;
         let dh01 = -6.0 * s2 + 6.0 * s;
@@ -191,10 +191,7 @@ impl EphemerisTable {
         let dh_pos = f64x4::new([dh00, dh00, dh01, dh01]);
         let dh_tan = f64x4::new([dh10, dh10, dh11, dh11]);
 
-        let dweighted_pos = p * dh_pos;
-        let dweighted_tan = m * dh_tan;
-        let dresult = dweighted_pos + dweighted_tan;
-
+        let dresult = p * dh_pos + m * dh_tan;
         let dr = dresult.to_array();
         let vel = DVec2::new((dr[0] + dr[2]) / step, (dr[1] + dr[3]) / step);
 
@@ -240,34 +237,10 @@ impl EphemerisTable {
                 end: self.end_time(),
             })?;
 
-        let i1 = i0 + 1;
         let s0 = &self.samples[i0];
-        let s1 = &self.samples[i1];
-        let step = self.step_seconds;
+        let s1 = &self.samples[i0 + 1];
 
-        // SIMD: [p0.x, p0.y, p1.x, p1.y]
-        let p = f64x4::new([s0.pos.x, s0.pos.y, s1.pos.x, s1.pos.y]);
-        let m = f64x4::new([
-            s0.vel.x * step,
-            s0.vel.y * step,
-            s1.vel.x * step,
-            s1.vel.y * step,
-        ]);
-
-        let s2 = s * s;
-        let s3 = s2 * s;
-        let h00 = 2.0 * s3 - 3.0 * s2 + 1.0;
-        let h10 = s3 - 2.0 * s2 + s;
-        let h01 = -2.0 * s3 + 3.0 * s2;
-        let h11 = s3 - s2;
-
-        let h_pos = f64x4::new([h00, h00, h01, h01]);
-        let h_tan = f64x4::new([h10, h10, h11, h11]);
-
-        let result = p * h_pos + m * h_tan;
-        let r = result.to_array();
-
-        Ok(DVec2::new(r[0] + r[2], r[1] + r[3]))
+        Ok(hermite_interpolate_position(s0, s1, s, self.step_seconds))
     }
 }
 
