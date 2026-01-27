@@ -1128,7 +1128,7 @@ mod position_tests {
         // Sun should have ~2x radius (small multiplier)
         let sun_data = eph.get_body_data_by_id(CelestialBodyId::Sun).unwrap();
         assert!(
-            (sources[0].collision_radius - sun_data.radius * 2.0).abs() < 1.0,
+            (sources[0].collision_radius - sun_data.radius * super::SUN_COLLISION_MULT).abs() < 1.0,
             "Sun collision radius should be ~2x physical radius"
         );
 
