@@ -86,6 +86,36 @@ fn hermite_interpolate_position(s0: &State2, s1: &State2, s: f64, step: f64) -> 
     DVec2::new(r[0] + r[2], r[1] + r[3])
 }
 
+
+/// SIMD Hermite velocity interpolation helper.
+///
+/// Computes interpolated velocity using the derivative of cubic Hermite splines.
+/// Both endpoints (s0, s1) must be provided, along with the interpolation parameter s in [0, 1]
+/// and the time step between samples.
+#[inline]
+fn hermite_interpolate_velocity(s0: &State2, s1: &State2, s: f64, step: f64) -> DVec2 {
+    let p = f64x4::new([s0.pos.x, s0.pos.y, s1.pos.x, s1.pos.y]);
+    let m = f64x4::new([
+        s0.vel.x * step,
+        s0.vel.y * step,
+        s1.vel.x * step,
+        s1.vel.y * step,
+    ]);
+
+    let s2 = s * s;
+    let dh00 = 6.0 * s2 - 6.0 * s;
+    let dh10 = 3.0 * s2 - 4.0 * s + 1.0;
+    let dh01 = -6.0 * s2 + 6.0 * s;
+    let dh11 = 3.0 * s2 - 2.0 * s;
+
+    let dh_pos = f64x4::new([dh00, dh00, dh01, dh01]);
+    let dh_tan = f64x4::new([dh10, dh10, dh11, dh11]);
+
+    let dresult = p * dh_pos + m * dh_tan;
+    let dr = dresult.to_array();
+    DVec2::new((dr[0] + dr[2]) / step, (dr[1] + dr[3]) / step)
+}
+
 impl EphemerisTable {
     pub fn load(path: impl AsRef<Path>) -> Result<Self, EphemerisTableError> {
         let mut f = File::open(path)?;
@@ -170,32 +200,10 @@ impl EphemerisTable {
         let s1 = &self.samples[i0 + 1];
         let step = self.step_seconds;
 
-        // Position uses shared helper
-        let pos = hermite_interpolate_position(s0, s1, s, step);
-
-        // Velocity uses derivative of Hermite basis (computed separately for clarity)
-        let p = f64x4::new([s0.pos.x, s0.pos.y, s1.pos.x, s1.pos.y]);
-        let m = f64x4::new([
-            s0.vel.x * step,
-            s0.vel.y * step,
-            s1.vel.x * step,
-            s1.vel.y * step,
-        ]);
-
-        let s2 = s * s;
-        let dh00 = 6.0 * s2 - 6.0 * s;
-        let dh10 = 3.0 * s2 - 4.0 * s + 1.0;
-        let dh01 = -6.0 * s2 + 6.0 * s;
-        let dh11 = 3.0 * s2 - 2.0 * s;
-
-        let dh_pos = f64x4::new([dh00, dh00, dh01, dh01]);
-        let dh_tan = f64x4::new([dh10, dh10, dh11, dh11]);
-
-        let dresult = p * dh_pos + m * dh_tan;
-        let dr = dresult.to_array();
-        let vel = DVec2::new((dr[0] + dr[2]) / step, (dr[1] + dr[3]) / step);
-
-        Ok(State2 { pos, vel })
+        Ok(State2 {
+            pos: hermite_interpolate_position(s0, s1, s, step),
+            vel: hermite_interpolate_velocity(s0, s1, s, step),
+        })
     }
 
     /// Get the sample index for a given time (for batched access).

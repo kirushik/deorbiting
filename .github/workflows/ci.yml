@@ -97,3 +97,40 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check licenses
+
+  code-quality:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Valknut
+        run: npm install -g @sibyllinesoft/valknut@1.4.0
+
+      - name: Generate Valknut report
+        run: |
+          valknut analyze ./src \
+            --format html \
+            --out quality-reports
+
+      - name: Check quality gate
+        run: |
+          valknut analyze ./src \
+            --quality-gate \
+            --min-health 85 \
+            --max-critical 0 \
+            --max-high-priority 5 \
+            --max-issues 75 \
+            --max-debt 12
+
+      - name: Upload quality reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: quality-reports
+          path: quality-reports
